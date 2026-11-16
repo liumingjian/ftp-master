@@ -26,6 +26,7 @@ export type User = {
   orgs: string[] // own Organization plus its ancestors
   groups: string[]
   admin: boolean
+  inactive?: boolean
 }
 
 export const USERS: User[] = [
@@ -35,6 +36,32 @@ export const USERS: User[] = [
   { id: 'admin', name: '王管理', orgLabel: '信息中心', orgs: ['company', 'it'], groups: [], admin: true },
 ]
 
+/** Everyone in the directory, including people you cannot switch to in the prototype bar. */
+export const PEOPLE: User[] = [
+  ...USERS,
+  { id: 'sunqi', name: '孙七', orgLabel: '研发部 / 后端组', orgs: ['company', 'rd', 'rd-be'], groups: ['park'], admin: false },
+  { id: 'zhouba', name: '周八', orgLabel: '研发部 / 前端组', orgs: ['company', 'rd', 'rd-fe'], groups: [], admin: false },
+  { id: 'wujiu', name: '吴九', orgLabel: '财务部', orgs: ['company', 'fin'], groups: ['park'], admin: false },
+  { id: 'qianshi', name: '钱十', orgLabel: '市场部', orgs: ['company', 'mkt'], groups: ['dmp'], admin: false, inactive: true },
+]
+
+export type Org = { id: string; name: string; parent?: string }
+export const ORGS: Org[] = [
+  { id: 'company', name: '全公司' },
+  { id: 'rd', name: '研发部', parent: 'company' },
+  { id: 'rd-be', name: '后端组', parent: 'rd' },
+  { id: 'rd-fe', name: '前端组', parent: 'rd' },
+  { id: 'fin', name: '财务部', parent: 'company' },
+  { id: 'mkt', name: '市场部', parent: 'company' },
+  { id: 'it', name: '信息中心', parent: 'company' },
+]
+
+export type Group = { id: string; name: string }
+export const GROUPS: Group[] = [
+  { id: 'park', name: '智慧园区项目组' },
+  { id: 'dmp', name: '数据中台项目组' },
+]
+
 const G = {
   company: (level: number): Grant => ({ kind: 'org', id: 'company', label: '全公司', level }),
   rd: (level: number): Grant => ({ kind: 'org', id: 'rd', label: '研发部', level }),
@@ -42,6 +69,9 @@ const G = {
   park: (level: number): Grant => ({ kind: 'group', id: 'park', label: '智慧园区项目组', level }),
   dmp: (level: number): Grant => ({ kind: 'group', id: 'dmp', label: '数据中台项目组', level }),
   lisi: (level: number): Grant => ({ kind: 'user', id: 'lisi', label: '李四', level }),
+  sunqi: (level: number): Grant => ({ kind: 'user', id: 'sunqi', label: '孙七', level }),
+  mkt: (level: number): Grant => ({ kind: 'org', id: 'mkt', label: '市场部', level }),
+  qianshi: (level: number): Grant => ({ kind: 'user', id: 'qianshi', label: '钱十', level }),
 }
 
 let seq = 0
@@ -63,7 +93,7 @@ function f(name: string, size: number, modified: string, by: string, extra: Part
 export const ROOT: Node = d('全部文件', [], [
   d('研发部', [G.rd(4)], [
     d('后端组', [], [
-      d('设计文档', [], [
+      d('设计文档', [G.sunqi(1)], [
         f('接口规范 v3.docx', 2.1 * MB, '2026-11-15 18:02', '张三', {
           versions: [
             { v: 3, at: '2026-11-15 18:02', by: '张三', size: 2.1 * MB },
@@ -111,14 +141,14 @@ export const ROOT: Node = d('全部文件', [], [
         f('汇报演示.pptx', 12 * MB, '2026-11-06 09:00', '张三'),
       ]),
     ], '2026-11-16 09:40', '孙七'),
-    d('2025-数据中台', [G.dmp(2)], [
+    d('2025-数据中台', [G.dmp(2), G.qianshi(3)], [
       f('验收报告.pdf', 2.4 * MB, '2025-12-20 10:00', '赵六'),
       f('数据字典.xlsx', 1.3 * MB, '2025-12-18 10:00', '赵六'),
     ]),
   ]),
   d('公共资料', [G.company(1)], [
     f('员工手册.pdf', 6.1 * MB, '2026-03-01 09:00', '王管理'),
-    d('模板', [], [f('周报模板.docx', 0.05 * MB, '2026-01-05 09:00', '王管理')]),
+    d('模板', [G.mkt(3)], [f('周报模板.docx', 0.05 * MB, '2026-01-05 09:00', '王管理')]),
   ]),
 ])
 

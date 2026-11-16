@@ -1,18 +1,23 @@
-// PROTOTYPE: file-browser variants on one page, switchable via ?variant=F|A1|M1|M2|M3 (F is the current pick).
+// PROTOTYPE: file-browser variants on one page, switchable via ?variant=P1|P2|P3|P4|F|A1|M1|M2|M3 (P1–P4: round 4 Grant UIs on F).
 // Earlier rounds (A, B, C, A2–A4) are in this branch's git history.
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { USERS, User } from './data'
 import { PrototypeSwitcher } from './PrototypeSwitcher'
 import { VariantA1 } from './VariantA1'
-import { VariantF, VariantM1, VariantM2, VariantM3 } from './VariantMotion'
+import { VariantF, VariantM1, VariantM2, VariantM3, VariantP1, VariantP2, VariantP3, VariantP4 } from './VariantMotion'
 import './styles.css'
 import './modern.css'
 import './motion.css'
+import './grant.css'
 
 export type VariantProps = { user: User; plugin: boolean }
 
 const VARIANTS = [
+  { key: 'P1', name: '授权 · 共享弹窗', C: VariantP1 },
+  { key: 'P2', name: '授权 · 侧栏刻度条', C: VariantP2 },
+  { key: 'P3', name: '授权 · 权限矩阵', C: VariantP3 },
+  { key: 'P4', name: '授权 · 以人为中心', C: VariantP4 },
   { key: 'F', name: '选定：M2 克制 + 删除飞入回收站', C: VariantF },
   { key: 'A1', name: '上一轮 A1（基准）', C: VariantA1 },
   { key: 'M1', name: '灵动 · 弹簧物理', C: VariantM1 },

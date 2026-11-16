@@ -128,3 +128,13 @@ export function nextSample(): [string, number] {
   const [n, mb] = SAMPLE[sampleI++ % SAMPLE.length]
   return [n, mb * 1024 * 1024]
 }
+
+/** Set (or with level 0, revoke) a direct Grant. Returns an undo. Grant changes would be Admin-only Audit Events. */
+export function setGrant(n: Node, g: Node['grants'][number]): () => void {
+  const before = [...n.grants]
+  n.grants = g.level ? (n.grants.some((x) => x.kind === g.kind && x.id === g.id) ? n.grants.map((x) => (x.kind === g.kind && x.id === g.id ? { ...g } : x)) : [...n.grants, { ...g }]) : n.grants.filter((x) => !(x.kind === g.kind && x.id === g.id))
+  grantLog.unshift({ at: now(), what: `${g.level ? '授予' : '撤销'} ${g.label}${g.level ? ` “${['', '查看', '下载', '编辑', '管理'][g.level]}”` : ''}`, where: pathString(n) })
+  changed()
+  return () => ((n.grants = before), changed())
+}
+export const grantLog: { at: string; what: string; where: string }[] = []

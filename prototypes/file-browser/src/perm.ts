@@ -20,6 +20,7 @@ function matches(u: User, g: Grant) {
 }
 
 export function level(u: User, n: Node): number {
+  if (u.inactive) return 0
   if (u.admin) return 4
   let m = 0
   for (const x of pathOf(n)) for (const g of x.grants) if (matches(u, g)) m = Math.max(m, g.level)

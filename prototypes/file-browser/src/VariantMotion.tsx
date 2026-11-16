@@ -19,6 +19,10 @@ import { Entry, LEVELS, allVisible, fmtSize, grantSources, level, listing, pathO
 import { bin, mkdir, move, nextSample, remove, restore, upload, useStore, type BinItem } from './store'
 import { Avatar, FakeDoc, FileIcon, Toaster, primaryAction, toast } from './ui'
 import { InlineRename } from './VariantA1'
+import { GrantDialog, GrantInspector, GrantMatrix, GrantPeople, type GrantProps } from './VariantGrant'
+import { canManage } from './grants'
+import { entryPoints } from './perm'
+import { ShieldCheck } from 'lucide-react'
 
 type Flavor = 'spring' | 'calm' | 'glass'
 const MOTION: Record<Flavor, Transition> = {
@@ -33,11 +37,18 @@ export const VariantM3 = (p: VariantProps) => <MotionExplorer {...p} flavor="gla
 /** Round 3 pick: M2's calm motion everywhere, plus M1's delete-flies-into-the-bin. */
 export const VariantF = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin />
 
+// Round 4: four ways to make and explain Grants, all on F.
+type GrantUI = { mount: 'modal' | 'inspector' | 'page'; C: React.ComponentType<GrantProps>; page?: string }
+export const VariantP1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'modal', C: GrantDialog }} />
+export const VariantP2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'inspector', C: GrantInspector }} />
+export const VariantP3 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: GrantMatrix, page: '权限总览' }} />
+export const VariantP4 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: GrantPeople, page: '按人查看权限' }} />
+
 type Uploading = { id: number; name: string; size: number; pct: number; dir: Node }
 type Ghost = { id: number; node: Node; from: DOMRect; to: DOMRect }
 type SortKey = 'name' | 'modifiedBy' | 'modified' | 'size'
 
-function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }: VariantProps & { flavor: Flavor; flyToBin?: boolean }) {
+function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', grantUI }: VariantProps & { flavor: Flavor; flyToBin?: boolean; grantUI?: GrantUI }) {
   useStore()
   const T = MOTION[flavor]
   const [cwd, setCwd] = useState<Node>(ROOT)
@@ -60,6 +71,10 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'name', dir: 1 })
   const [lasso, setLasso] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const [grantFor, setGrantFor] = useState<Node | null>(null)
+  const openGrant = (n: Node) => (grantUI?.mount === 'inspector' ? setInfo(n) : setGrantFor(n))
+  const managesSomething = user.admin || entryPoints(user).some((e) => level(user, e) >= 4)
+  const grantPage = grantUI?.mount === 'page' && grantFor
 
   const dragging = useRef<Node[]>([])
   const rowRefs = useRef(new Map<string, HTMLElement>())
@@ -80,6 +95,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }
       setTimeout(() => setLoading(false), 320)
     }
     setCwd(n)
+    setGrantFor(null)
     setInBin(false)
     setSel(new Set())
     setQ('')
@@ -406,10 +422,15 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }
           <div className="m-tree">
             <Tree n={ROOT} depth={0} />
           </div>
+          {grantUI?.page && managesSomething && (
+            <div className={`m-tree-row m-bin ${grantPage ? 'active' : ''}`} onClick={() => (setInBin(false), setInfo(null), setGrantFor(cwd))}>
+              <ShieldCheck size={16} /> {grantUI.page}
+            </div>
+          )}
           <div
             ref={binRef}
             className={`m-tree-row m-bin ${inBin ? 'active' : ''} ${dragOver === 'bin' ? 'drop danger' : ''}`}
-            onClick={() => (setInBin(true), setInfo(null), setSel(new Set()))}
+            onClick={() => (setInBin(true), setGrantFor(null), setInfo(null), setSel(new Set()))}
             onDragOver={(e) => {
               if (dragging.current.length && dragging.current.every((n) => level(user, n) >= 4)) e.preventDefault(), setDragOver('bin')
             }}
@@ -435,7 +456,10 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }
           </div>
         </aside>
 
-        <main className="m-main" onMouseDown={startLasso}>
+        <main className="m-main" onMouseDown={grantPage ? undefined : startLasso}>
+          {grantPage && grantUI ? (
+            <grantUI.C key={grantFor.id} n={grantFor} user={user} close={() => setGrantFor(null)} go={go} />
+          ) : (
           <AnimatePresence mode="wait" custom={navDir} initial={false}>
             <motion.div
               key={inBin ? 'bin' : q ? 'search' : cwd.id}
@@ -464,6 +488,9 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }
                       ))
                     )}
                     {!q && cwd !== ROOT && <span className="m-perm-pill">你可{LEVELS[level(user, cwd)]}</span>}
+                    {!q && grantUI && canManage(user, cwd) && (
+                      <button className="m-btn sm ghost" onClick={() => openGrant(cwd)}><UserPlus size={14} /> 授权</button>
+                    )}
                   </div>
 
                   {cwd === ROOT && !q && recent.length > 0 && (
@@ -594,6 +621,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }
               )}
             </motion.div>
           </AnimatePresence>
+          )}
         </main>
 
         <AnimatePresence>
@@ -605,7 +633,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }
               animate={flavor === 'glass' ? { opacity: 1, x: 0, scale: 1 } : { width: 340, opacity: 1 }}
               exit={flavor === 'glass' ? { opacity: 0, x: 30, scale: 0.97 } : { width: 0, opacity: 0 }}
             >
-              <Inspector n={info} user={user} close={() => setInfo(null)} />
+              <Inspector n={info} user={user} close={() => setInfo(null)} grantUI={grantUI} openGrant={() => setGrantFor(info)} go={go} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -646,7 +674,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }
             >
               <a onClick={() => (setInfo(menu.n), setMenu(null))}><Info size={14} /> 详情与版本</a>
               {level(user, menu.n) >= 3 && <a onClick={() => (setEditing(menu.n), setMenu(null))}><Pencil size={14} /> 重命名</a>}
-              {level(user, menu.n) >= 4 && <a onClick={() => (setInfo(menu.n), setMenu(null))}><UserPlus size={14} /> 授权</a>}
+              {level(user, menu.n) >= 4 && <a onClick={() => (grantUI ? openGrant(menu.n) : setInfo(menu.n), setMenu(null))}><UserPlus size={14} /> 授权</a>}
               {level(user, menu.n) >= 4 && <a className="danger" onClick={() => (del([menu.n]), setMenu(null))}><Trash2 size={14} /> 删除</a>}
             </motion.div>
           )}
@@ -719,6 +747,9 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }
               ))}
             </motion.div>
           )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {grantUI?.mount === 'modal' && grantFor && <grantUI.C key="grant" n={grantFor} user={user} close={() => setGrantFor(null)} go={go} />}
         </AnimatePresence>
         <Toaster />
       </div>
@@ -821,7 +852,7 @@ function BinView({ flavor }: { flavor: Flavor }) {
   )
 }
 
-function Inspector({ n, user, close }: { n: Node; user: VariantProps['user']; close: () => void }) {
+function Inspector({ n, user, close, grantUI, openGrant, go }: { n: Node; user: VariantProps['user']; close: () => void; grantUI?: GrantUI; openGrant: () => void; go: (n: Node) => void }) {
   return (
     <aside className="m-insp">
       <AnimatePresence mode="wait">
@@ -839,6 +870,10 @@ function Inspector({ n, user, close }: { n: Node; user: VariantProps['user']; cl
               <FakeDoc n={n} />
             </div>
           )}
+          {grantUI?.mount === 'inspector' ? (
+            <grantUI.C n={n} user={user} close={close} go={go} />
+          ) : (
+          <>
           <div className="m-section-title">谁能访问</div>
           {grantSources(n).map(({ grant, from }, i) => (
             <motion.div key={i} className="m-grant" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0, transition: { delay: 0.05 + i * 0.04 } }}>
@@ -850,7 +885,9 @@ function Inspector({ n, user, close }: { n: Node; user: VariantProps['user']; cl
               <span className="m-tag">{LEVELS[grant.level]}</span>
             </motion.div>
           ))}
-          {level(user, n) >= 4 && <button className="m-btn ghost" onClick={() => stub('添加授权', n)}><UserPlus size={15} /> 添加授权</button>}
+          {level(user, n) >= 4 && <button className="m-btn ghost" onClick={() => (grantUI ? openGrant() : stub('添加授权', n))}><UserPlus size={15} /> {grantUI ? '管理授权' : '添加授权'}</button>}
+          </>
+          )}
           {n.versions && (
             <>
               <div className="m-section-title">版本</div>
