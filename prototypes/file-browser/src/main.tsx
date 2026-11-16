@@ -1,25 +1,22 @@
-// PROTOTYPE: file-browser variants on one page, switchable via ?variant=A|A1|A2|A3|A4.
-// Round 1 also had B (column view) and C (entry/search first); see git history of this branch.
+// PROTOTYPE: file-browser variants on one page, switchable via ?variant=A1|M1|M2|M3.
+// Earlier rounds (A, B, C, A2–A4) are in this branch's git history.
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { USERS, User } from './data'
 import { PrototypeSwitcher } from './PrototypeSwitcher'
-import { VariantA } from './VariantA'
 import { VariantA1 } from './VariantA1'
-import { VariantA2 } from './VariantA2'
-import { VariantA3 } from './VariantA3'
-import { VariantA4 } from './VariantA4'
+import { VariantM1, VariantM2, VariantM3 } from './VariantMotion'
 import './styles.css'
 import './modern.css'
+import './motion.css'
 
 export type VariantProps = { user: User; plugin: boolean }
 
 const VARIANTS = [
-  { key: 'A', name: '原版（基准）', C: VariantA },
-  { key: 'A1', name: '悬停即操作 · 拖拽', C: VariantA1 },
-  { key: 'A2', name: '键盘与命令面板', C: VariantA2 },
-  { key: 'A3', name: '主动提示 · 一键处理', C: VariantA3 },
-  { key: 'A4', name: '即点即看 · 版本滑块', C: VariantA4 },
+  { key: 'A1', name: '上一轮 A1（基准）', C: VariantA1 },
+  { key: 'M1', name: '灵动 · 弹簧物理', C: VariantM1 },
+  { key: 'M2', name: '克制 · 精准迅捷', C: VariantM2 },
+  { key: 'M3', name: '通透 · 玻璃景深', C: VariantM3 },
 ]
 
 function useParams() {

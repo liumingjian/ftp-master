@@ -3,13 +3,20 @@
 Question: what should the file browser over the Shared Tree look like?
 
 Round 1 compared three layouts (A explorer, B columns, C entry/search first); A's layout won.
-Round 2 keeps A's skeleton (tree / table / details) and varies the interaction model:
+Round 2 varied A's interaction model (A1 hover-to-act, A2 keyboard, A3 proactive, A4 preview); A1 won.
+Round 3 keeps A1 and asks how it should move and feel. Folders the User can only pass through
+(Traversable Ancestors) are no longer shown; permitted items beneath them are hoisted up with a path hint.
 
-- `A`  original, as a baseline
-- `A1` hover to act: row actions on hover, drop files anywhere to upload, drag rows onto folders to move, undo instead of confirm
-- `A2` keyboard and command palette: ⌘K runs anything, keyboard cursor, details follow the cursor, dark theme
-- `A3` proactive: entry-point sidebar, attention cards with one-click fixes, smart primary button per row, filter chips, inline granting
-- `A4` see before you open: single click previews, version slider with restore, folder summaries, sibling jump from the path bar
+- `A1` round 2 winner, as a baseline
+- `M1` spring: physical springs, directional navigation, staggered rows, deletes fly into the bin
+- `M2` calm: fast fades, cursor spotlight, skeletons and a top progress bar, nothing bounces
+- `M3` glass: frosted panels over an ambient gradient, depth transitions, tilting cards, floating inspector
+
+Shared in M1–M3: hover peek, lasso / shift-click / ⌘A selection, spring-loaded folders while dragging,
+drag onto the bin to delete, stacked drag ghost, upload button that becomes a progress ring, animated
+sorting, dark mode with a circular reveal, prefers-reduced-motion respected.
+
+Earlier variants are in this branch's git history.
 
 Switch via `?variant=`, the floating bottom bar, or ← →. The bar also switches the signed-in User (`?user=`)
 and whether the Office Plugin is present (`?plugin=1`).

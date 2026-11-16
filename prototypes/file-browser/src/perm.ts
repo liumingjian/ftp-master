@@ -113,3 +113,17 @@ export function actionsFor(u: User, n: Node, plugin: boolean) {
 export function stub(label: string, n?: Node) {
   alert(`PROTOTYPE：${label}${n ? ` → ${n.name}` : ''}（未实现）`)
 }
+
+/**
+ * A folder's contents with Traversable Ancestors hidden: anything the User can only pass through
+ * is skipped, and the permitted items beneath it are hoisted up, carrying the hidden path as `via`.
+ */
+export type Entry = { node: Node; via: Node[] }
+export function listing(u: User, dir: Node): Entry[] {
+  const out: Entry[] = []
+  const walk = (n: Node, via: Node[]) => {
+    for (const c of kids(u, n)) traversable(u, c) ? walk(c, [...via, c]) : out.push({ node: c, via })
+  }
+  walk(dir, [])
+  return out
+}
