@@ -7,6 +7,7 @@ Round 2 varied A's interaction model (A1 hover-to-act, A2 keyboard, A3 proactive
 Round 3 keeps A1 and asks how it should move and feel. Folders the User can only pass through
 (Traversable Ancestors) are no longer shown; permitted items beneath them are hoisted up with a path hint.
 
+- `F`  **round 3 pick**: M2's calm motion, plus M1's delete-flies-into-the-bin (default)
 - `A1` round 2 winner, as a baseline
 - `M1` spring: physical springs, directional navigation, staggered rows, deletes fly into the bin
 - `M2` calm: fast fades, cursor spotlight, skeletons and a top progress bar, nothing bounces
@@ -15,6 +16,8 @@ Round 3 keeps A1 and asks how it should move and feel. Folders the User can only
 Shared in M1–M3: hover peek, lasso / shift-click / ⌘A selection, spring-loaded folders while dragging,
 drag onto the bin to delete, stacked drag ghost, upload button that becomes a progress ring, animated
 sorting, dark mode with a circular reveal, prefers-reduced-motion respected.
+
+Verdict of round 3: M2 as the base, borrowing only M1's fly-to-bin delete. That is variant `F`.
 
 Earlier variants are in this branch's git history.
 

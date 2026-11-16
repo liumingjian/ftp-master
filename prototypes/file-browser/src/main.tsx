@@ -1,11 +1,11 @@
-// PROTOTYPE: file-browser variants on one page, switchable via ?variant=A1|M1|M2|M3.
+// PROTOTYPE: file-browser variants on one page, switchable via ?variant=F|A1|M1|M2|M3 (F is the current pick).
 // Earlier rounds (A, B, C, A2–A4) are in this branch's git history.
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { USERS, User } from './data'
 import { PrototypeSwitcher } from './PrototypeSwitcher'
 import { VariantA1 } from './VariantA1'
-import { VariantM1, VariantM2, VariantM3 } from './VariantMotion'
+import { VariantF, VariantM1, VariantM2, VariantM3 } from './VariantMotion'
 import './styles.css'
 import './modern.css'
 import './motion.css'
@@ -13,6 +13,7 @@ import './motion.css'
 export type VariantProps = { user: User; plugin: boolean }
 
 const VARIANTS = [
+  { key: 'F', name: '选定：M2 克制 + 删除飞入回收站', C: VariantF },
   { key: 'A1', name: '上一轮 A1（基准）', C: VariantA1 },
   { key: 'M1', name: '灵动 · 弹簧物理', C: VariantM1 },
   { key: 'M2', name: '克制 · 精准迅捷', C: VariantM2 },
@@ -38,7 +39,7 @@ function useParams() {
 
 function App() {
   const { p, set } = useParams()
-  const variant = VARIANTS.find((v) => v.key === p.get('variant')) ?? VARIANTS[1]
+  const variant = VARIANTS.find((v) => v.key === p.get('variant')) ?? VARIANTS[0]
   const user = USERS.find((u) => u.id === p.get('user')) ?? USERS[0]
   const plugin = p.get('plugin') === '1'
   const V = variant.C

@@ -30,12 +30,14 @@ const MOTION: Record<Flavor, Transition> = {
 export const VariantM1 = (p: VariantProps) => <MotionExplorer {...p} flavor="spring" />
 export const VariantM2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" />
 export const VariantM3 = (p: VariantProps) => <MotionExplorer {...p} flavor="glass" />
+/** Round 3 pick: M2's calm motion everywhere, plus M1's delete-flies-into-the-bin. */
+export const VariantF = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin />
 
 type Uploading = { id: number; name: string; size: number; pct: number; dir: Node }
 type Ghost = { id: number; node: Node; from: DOMRect; to: DOMRect }
 type SortKey = 'name' | 'modifiedBy' | 'modified' | 'size'
 
-function MotionExplorer({ user, plugin, flavor }: VariantProps & { flavor: Flavor }) {
+function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring' }: VariantProps & { flavor: Flavor; flyToBin?: boolean }) {
   useStore()
   const T = MOTION[flavor]
   const [cwd, setCwd] = useState<Node>(ROOT)
@@ -159,7 +161,7 @@ function MotionExplorer({ user, plugin, flavor }: VariantProps & { flavor: Flavo
   const del = (nodes: Node[]) => {
     nodes = nodes.filter((n) => level(user, n) >= 4)
     if (!nodes.length) return toast('删除需要“管理”权限')
-    if (flavor === 'spring' && binRef.current) {
+    if (flyToBin && binRef.current) {
       const to = binRef.current.getBoundingClientRect()
       const fresh = nodes
         .map((n, i) => ({ id: Date.now() + i, node: n, from: rowRefs.current.get(n.id)?.getBoundingClientRect(), to }))
