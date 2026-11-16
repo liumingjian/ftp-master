@@ -1,0 +1,130 @@
+// PROTOTYPE in-memory mutations over the mock Shared Tree. Reload the page to reset.
+import { useEffect, useState } from 'react'
+import { Node, RECYCLE_BIN, ROOT } from './data'
+
+export type BinItem = { name: string; from: string; by: string; at: string; purgeIn: string; node?: Node; parent?: Node }
+
+export const bin: BinItem[] = [...RECYCLE_BIN]
+const listeners = new Set<() => void>()
+
+/** Re-render the calling component whenever the tree is mutated. */
+export function useStore() {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const f = () => tick((x) => x + 1)
+    listeners.add(f)
+    return () => void listeners.delete(f)
+  }, [])
+}
+
+function changed() {
+  listeners.forEach((f) => f())
+}
+
+const now = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
+let seq = 1000
+
+export function rename(n: Node, name: string) {
+  n.name = name
+  changed()
+}
+
+export function move(n: Node, to: Node) {
+  if (to === n || to === n.parent || isAncestor(n, to)) return false
+  detach(n)
+  to.children!.push(n)
+  n.parent = to
+  changed()
+  return true
+}
+
+function isAncestor(a: Node, b: Node) {
+  for (let p: Node | undefined = b; p; p = p.parent) if (p === a) return true
+  return false
+}
+
+function detach(n: Node) {
+  const p = n.parent!
+  p.children = p.children!.filter((c) => c !== n)
+}
+
+export function remove(nodes: Node[], by: string): BinItem[] {
+  const items = nodes.map((n) => {
+    const item: BinItem = { name: n.name, from: pathString(n.parent!), by, at: now(), purgeIn: '30 天', node: n, parent: n.parent }
+    detach(n)
+    bin.unshift(item)
+    return item
+  })
+  changed()
+  return items
+}
+
+export function restore(items: BinItem[]) {
+  for (const it of items) {
+    if (it.node && it.parent) {
+      it.parent.children!.push(it.node)
+      it.node.parent = it.parent
+    }
+    bin.splice(bin.indexOf(it), 1)
+  }
+  changed()
+}
+
+/** Upload: a same-named file becomes a new File Version instead of asking. */
+export function upload(dir: Node, name: string, size: number, by: string): { node: Node; newVersion: boolean } {
+  const existing = dir.children!.find((c) => c.type === 'file' && c.name === name)
+  if (existing) {
+    const v = (existing.versions?.[0]?.v ?? 0) + 1
+    existing.versions = [{ v, at: now(), by, size }, ...(existing.versions ?? [])]
+    existing.size = size
+    existing.modified = now()
+    existing.modifiedBy = by
+    changed()
+    return { node: existing, newVersion: true }
+  }
+  const node: Node = {
+    id: `u${seq++}`, name, type: 'file', size, modified: now(), modifiedBy: by, grants: [], parent: dir,
+    versions: [{ v: 1, at: now(), by, size }], audit: [{ at: now(), who: by, what: '上传', ok: true, ip: '10.2.3.14' }],
+  }
+  dir.children!.push(node)
+  changed()
+  return { node, newVersion: false }
+}
+
+export function mkdir(dir: Node, by: string): Node {
+  let name = '新建文件夹'
+  for (let i = 2; dir.children!.some((c) => c.name === name); i++) name = `新建文件夹 ${i}`
+  const node: Node = { id: `u${seq++}`, name, type: 'dir', size: 0, modified: now(), modifiedBy: by, grants: [], children: [], parent: dir }
+  dir.children!.push(node)
+  changed()
+  return node
+}
+
+export function restoreVersion(n: Node, v: number, by: string) {
+  const src = n.versions!.find((x) => x.v === v)!
+  const next = n.versions![0].v + 1
+  n.versions = [{ v: next, at: now(), by, size: src.size }, ...n.versions!]
+  n.modified = now()
+  n.modifiedBy = by
+  changed()
+  return next
+}
+
+export function addGrant(n: Node, g: Node['grants'][number]) {
+  n.grants = [...n.grants.filter((x) => !(x.kind === g.kind && x.id === g.id)), g]
+  changed()
+}
+
+export function pathString(n: Node) {
+  const parts: string[] = []
+  for (let p: Node | undefined = n; p && p !== ROOT; p = p.parent) parts.unshift(p.name)
+  return '/' + parts.join('/')
+}
+
+/** Fake upload names for simulated drops. */
+const SAMPLE = [['会议纪要-1116.docx', 0.3], ['现场照片.png', 3.8], ['报价单.xlsx', 0.6], ['接口规范 v3.docx', 2.3]] as const
+let sampleI = 0
+export function nextSample(): [string, number] {
+  const [n, mb] = SAMPLE[sampleI++ % SAMPLE.length]
+  return [n, mb * 1024 * 1024]
+}
