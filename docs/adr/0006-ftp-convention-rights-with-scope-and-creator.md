@@ -8,7 +8,7 @@ The uploader of a file becomes its Creator: an ordinary Grant of every Right on 
 
 ## Consequences
 
-- Effective Permission becomes a set of Rights (the union over reaching Grants within Scope), not a maximum level; its tests and every authorization check change accordingly. Office editing (ADR 0005) needs Modify; moving needs Modify on the source and Upload on the target.
+- Effective Permission becomes a set of Rights (the union over reaching Grants within Scope), not a maximum level; its tests and every authorization check change accordingly. Office editing (ADR 0005) needs Modify; moving needs Delete on the source parent and Upload on the target.
 - A Drop Box (Upload without Browse) needs upload into a directory the User cannot list; listings and the upload flow handle that explicitly.
 - A Creator may restore their own file from the Recycle Bin, in addition to Grant holders on the original parent.
 - Creator Grants apply to files only; folders created by a User give them nothing beyond what they already hold.

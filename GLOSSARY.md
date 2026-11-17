@@ -32,6 +32,10 @@ _Avoid_: Group, role, team
 The single directory hierarchy all files live in; its top-level directories are created by Administrators.
 _Avoid_: Space, drive, repository, personal space
 
+**Top-level Directory**:
+A directory directly under the root of the Shared Tree, created only by Administrators; the natural unit for assigning a department's or project's access.
+_Avoid_: Space, root folder, drive
+
 **Grant**:
 An assignment of a set of Rights on a directory or file to a User, Organization or User Group, with a Scope. It belongs to the item itself, so it survives renames and moves. Grants only ever allow; there is no deny.
 _Avoid_: ACL entry, authorization, share
@@ -41,7 +45,7 @@ A directory a User can open only because it lies on the path to something they h
 _Avoid_: Parent access, browse permission
 
 **Right**:
-One of six independent things a Grant can allow, following FTP server convention: Browse (see contents, preview), Download, Upload (new files, new directories, a same-named upload becomes a File Version), Modify (rename, move, edit, restore a File Version), Delete, and Grant (make Grants within the item; implies all the others). Download, Modify and Delete require Browse; Modify requires Download.
+One of six independent things a Grant can allow, following FTP server convention: Browse (see contents, preview), Download, Upload (new files, new directories, a same-named upload becomes a File Version), Modify (rename, edit, restore a File Version), Delete, and Grant (make Grants within the item; implies all the others). Download, Modify and Delete require Browse; Modify requires Download.
 _Avoid_: Permission Level, privilege, role
 
 **Preset**:
