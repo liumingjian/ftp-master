@@ -79,7 +79,7 @@ uploader gets an automatic Creator Grant with every right and can share only wit
 left-tree / right-table page serves every level with drafted changes and an impact preview. Recorded in GLOSSARY.md,
 ADR 0006 and issue #1. Open: 等保 level (三员分立), whether Creator Grants also apply to folders (prototype: files only).
 
-Round 7 (`T1`–`T4`, default `T1`) keeps D1 and asks: **where should transfers live, and how do they explain the hard cases?**
+Round 7 (`T1`–`T4`, default `T3` since the verdict) keeps D1 and asks: **where should transfers live, and how do they explain the hard cases?**
 (spec #1, stories 39–49 and 92). All four run on the same fake engine, `src/transfers.ts`: 64 MB parts, 3 files at a time
 sharing a 112 MB/s link, a network drop loses only the part in flight, a page reload keeps the server-side multipart session
 but loses the browser's File (the User must pick the same file again), single downloads are handed to the browser's own
@@ -98,3 +98,12 @@ download manager (no in-app progress), zips are refused above 10 GB before they 
 The dashed yellow 🧪 panel (bottom left) is the simulator, not design: scenarios (3 files, same names, a 41-file folder,
 18 GB, .exe + 25 GB, 12 GB zip), 断网 8 秒, 刷新页面, 快进 ×10, and the engine state. Try 王管理 in 研发部/后端组/发布包
 (it has a file to clash with), and 赵六 in 公共资料/资料投递 for a Drop Box.
+
+Verdict (2026-11-17): **T3 is the transfer design, and downloads are the browser's own.** Uploads appear as rows in the
+destination folder, filling up as they arrive (a folder drop is one row; its real folder stays hidden until done); same-name
+conflicts, refused files and "pick the file again after a reload" are asked on that row while the rest keeps going; a header
+pill lists uploads landing in other folders and the offline / reload banners sit above the table. There is no transfer
+panel or page. Single-file and zip downloads go straight to the browser's download manager with no in-app progress or
+toast; the only in-app message is the up-front refusal of a zip over 10 GB. Recorded in issue #1.
+Open: Drop Box clashes with a file the uploader cannot see (prototype: silent rename); a "uploads still running" warning
+before closing the page (not prototyped).

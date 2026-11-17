@@ -134,7 +134,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
     ? allVisible(user)
         .filter((n) => !traversable(user, n) && n.name.toLowerCase().includes(q.toLowerCase()))
         .map((node) => ({ node, via: pathOf(node).slice(1, -1) }))
-    : listing(user, cwd).filter((e) => !dropBox || userRights(user, e.node).has('list'))
+    : listing(user, cwd).filter((e) => (!dropBox || userRights(user, e.node).has('list')) && !(e.node.type === 'dir' && transferUI?.hide?.(cwd).has(e.node.name)))
   entries.sort((a, b) => {
     if (a.node.type !== b.node.type) return a.node.type === 'dir' ? -1 : 1
     const k = sort.key

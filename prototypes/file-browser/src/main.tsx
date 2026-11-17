@@ -15,9 +15,9 @@ import './transfer.css'
 export type VariantProps = { user: User; plugin: boolean }
 
 const VARIANTS = [
+  { key: 'T3', name: '第 7 轮选定 · 传输：就地进度，下载交给浏览器', C: VariantT3 },
   { key: 'T1', name: '第 7 轮 · 传输：角落托盘', C: VariantT1 },
   { key: 'T2', name: '第 7 轮 · 传输：传输页', C: VariantT2 },
-  { key: 'T3', name: '第 7 轮 · 传输：就地进度', C: VariantT3 },
   { key: 'T4', name: '第 7 轮 · 传输：先确认后传', C: VariantT4 },
   { key: 'D1', name: '第 6 轮 · 多级权限管理（FTP 权限项 + C1 表格）', C: VariantD1 },
   { key: 'C1', name: 'Confluence · 空间权限表', C: VariantC1 },

@@ -36,6 +36,8 @@ export type TransferUI = {
   Floating?: React.FC<TransferCtx>
   Rows?: React.FC<TransferCtx>
   Banner?: React.FC<TransferCtx>
+  /** T3: real folders in cwd that are still arriving; the progress row stands in for them */
+  hide?: (cwd: Node) => Set<string>
   /** what the variant does right after something is enqueued (b is the new batch, or the zip job's batch) */
   after: (b: Batch, ctx: TransferCtx) => void
 }
@@ -756,9 +758,21 @@ export const T2: TransferUI = {
     toast(b.kind === 'upload' ? `已加入传输列表：${b.label}` : b.kind === 'zip' ? '已加入传输列表：打包下载' : `已开始下载“${j.name}”`, { label: '查看', run: ctx.openPage })
   },
 }
+/** Round 7 verdict: downloads are the browser's own business. No in-app UI, except a refused zip must say why. */
 export const T3: TransferUI = {
   key: 'inline', Rows: InlineRows, Banner: InlineBanner, Header: InlinePill,
-  after: (b, ctx) => showToast(b, ctx, '前往', () => ctx.go(b.dir)),
+  hide: (cwd) =>
+    new Set(
+      T.batches
+        .filter((b) => b.kind === 'upload' && b.dir === cwd && b.folder && jobsOf(b).some((j) => isLive(j) || j.status === 'blocked'))
+        .map((b) => b.folder!),
+    ),
+  after: (b, ctx) => {
+    const j = jobsOf(b)[0]
+    if (b.kind === 'zip') return j.status === 'blocked' ? toast(j.reason!) : undefined
+    if (b.kind === 'download') return
+    if (b.dir !== ctx.cwd) toast(`正在上传到“${b.dir.name}”`, { label: '前往', run: () => ctx.go(b.dir) })
+  },
 }
 export const T4: TransferUI = {
   key: 'preflight', stage: true, Header: Activity, Floating: Preflight,
