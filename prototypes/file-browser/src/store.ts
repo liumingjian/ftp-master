@@ -1,6 +1,7 @@
 // PROTOTYPE in-memory mutations over the mock Shared Tree. Reload the page to reset.
 import { useEffect, useState } from 'react'
 import { GROUPS, Node, PEOPLE, RECYCLE_BIN, ROOT } from './data'
+import { record } from './audit'
 
 export type BinItem = { name: string; from: string; by: string; at: string; purgeIn: string; node?: Node; parent?: Node }
 
@@ -25,12 +26,14 @@ const now = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
 let seq = 1000
 
 export function rename(n: Node, name: string) {
+  record('rename', n, { detail: `→ ${name}` })
   n.name = name
   changed()
 }
 
 export function move(n: Node, to: Node) {
   if (to === n || to === n.parent || isAncestor(n, to)) return false
+  record('move', n, { detail: `→ ${pathString(to)}` })
   detach(n)
   to.children!.push(n)
   n.parent = to
@@ -50,6 +53,7 @@ function detach(n: Node) {
 
 export function remove(nodes: Node[], by: string): BinItem[] {
   const items = nodes.map((n) => {
+    record('delete', n)
     const item: BinItem = { name: n.name, from: pathString(n.parent!), by, at: now(), purgeIn: '30 天', node: n, parent: n.parent }
     detach(n)
     bin.unshift(item)
@@ -64,6 +68,7 @@ export function restore(items: BinItem[]) {
     if (it.node && it.parent) {
       it.parent.children!.push(it.node)
       it.node.parent = it.parent
+      record('restore', it.node)
     }
     bin.splice(bin.indexOf(it), 1)
   }
@@ -79,6 +84,7 @@ export function upload(dir: Node, name: string, size: number, by: string): { nod
     existing.size = size
     existing.modified = now()
     existing.modifiedBy = by
+    record('upload', existing, { detail: `同名上传 → v${v}` })
     changed()
     return { node: existing, newVersion: true }
   }
@@ -89,6 +95,7 @@ export function upload(dir: Node, name: string, size: number, by: string): { nod
     versions: [{ v: 1, at: now(), by, size }], audit: [{ at: now(), who: by, what: '上传', ok: true, ip: '10.2.3.14' }],
   }
   dir.children!.push(node)
+  record('upload', node)
   changed()
   return { node, newVersion: false }
 }
@@ -108,6 +115,7 @@ export function restoreVersion(n: Node, v: number, by: string) {
   n.versions = [{ v: next, at: now(), by, size: src.size }, ...n.versions!]
   n.modified = now()
   n.modifiedBy = by
+  record('version_restore', n, { detail: `恢复 v${v} → 生成 v${next}` })
   changed()
   return next
 }
@@ -135,6 +143,7 @@ export function nextSample(): [string, number] {
 export function setGrant(n: Node, g: Node['grants'][number]): () => void {
   const before = [...n.grants]
   n.grants = g.level ? (n.grants.some((x) => x.kind === g.kind && x.id === g.id) ? n.grants.map((x) => (x.kind === g.kind && x.id === g.id ? { ...g } : x)) : [...n.grants, { ...g }]) : n.grants.filter((x) => !(x.kind === g.kind && x.id === g.id))
+  record('grant', n, { detail: `${g.level ? '授予' : '撤销'} ${g.label}` })
   grantLog.unshift({ at: now(), what: `${g.level ? '授予' : '撤销'} ${g.label}${g.level ? ` “${['', '查看', '下载', '编辑', '管理'][g.level]}”` : ''}`, where: pathString(n) })
   changed()
   return () => ((n.grants = before), changed())
@@ -146,6 +155,7 @@ export function replaceGrants(n: Node, grants: Node['grants'], isolated: boolean
   const before = { grants: n.grants, isolated: n.isolated }
   n.grants = grants.map((g) => ({ ...g }))
   n.isolated = isolated || undefined
+  record('grant', n, { detail: `保存授权：${grants.length} 条直接授权（${grants.map((g) => g.label).slice(0, 4).join('、')}${grants.length > 4 ? ' 等' : ''}）` })
   grantLog.unshift({ at: now(), what: `${isolated ? '限制为仅指定的人' : '更新授权'}（${grants.length} 条）`, where: pathString(n) })
   changed()
   return () => ((n.grants = before.grants), (n.isolated = before.isolated), changed())

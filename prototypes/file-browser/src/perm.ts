@@ -130,6 +130,8 @@ export function actionsFor(u: User, n: Node, plugin: boolean) {
 }
 
 export function stub(label: string, n?: Node) {
+  if (n && n.type === 'file' && /预览|查看/.test(label)) return void import('./audit').then((a) => (a.record('preview', n), alert(`PROTOTYPE：预览 ${n.name}（已记一条“预览”审计）`)))
+  if (n && /编辑/.test(label)) return void import('./audit').then((a) => (a.record('edit_open', n), alert(`PROTOTYPE：打开编辑 ${n.name}（已记一条“打开编辑”审计）`)))
   alert(`PROTOTYPE：${label}${n ? ` → ${n.name}` : ''}（未实现）`)
 }
 

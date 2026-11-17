@@ -29,6 +29,9 @@ import { ArrowLeftRight } from 'lucide-react'
 import { userRights } from './rights'
 import { T as TX, batchOf, download as txDownload, enqueue, zip as txZip, type Incoming } from './transfers'
 import { Simulator, T1, T2, T3, T4, type TransferCtx, type TransferUI } from './VariantTransfer'
+import { AdminOnlyAudit, AuditFeed, AuditInvestigate, AuditTable, ItemActivity, type AuditInspProps, type AuditPageProps } from './VariantAudit'
+import { auditRoots, signIn } from './audit'
+import { ScrollText } from 'lucide-react'
 
 type Flavor = 'spring' | 'calm' | 'glass'
 const MOTION: Record<Flavor, Transition> = {
@@ -56,6 +59,13 @@ export const VariantT1 = (p: VariantProps) => <MotionExplorer {...p} flavor="cal
 export const VariantT2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={D1_GRANT} transferUI={T2} />
 export const VariantT3 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={D1_GRANT} transferUI={T3} />
 export const VariantT4 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={D1_GRANT} transferUI={T4} />
+// Round 8: where Audit Events are read, all on T3.
+type AuditUI = { page?: { label: string; C: React.ComponentType<AuditPageProps>; adminOnly?: boolean }; insp?: React.ComponentType<AuditInspProps> }
+const T3P = { flavor: 'calm' as const, flyToBin: true, grantUI: D1_GRANT, transferUI: T3 }
+export const VariantL1 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={{ page: { label: '审计日志', C: AuditTable } }} />
+export const VariantL2 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={{ page: { label: '审计调查', C: AuditInvestigate } }} />
+export const VariantL3 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={{ insp: ItemActivity, page: { label: '账户与登录审计', C: AdminOnlyAudit, adminOnly: true } }} />
+export const VariantL4 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={{ page: { label: '动态', C: AuditFeed } }} />
 // Round 5: Confluence-inspired, at ~200 people.
 export const VariantC1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: SpacePermissions, page: '空间权限' }} />
 export const VariantC2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'modal', C: RestrictDialog }} />
@@ -67,8 +77,13 @@ type Uploading = { id: number; name: string; size: number; pct: number; dir: Nod
 type Ghost = { id: number; node: Node; from: DOMRect; to: DOMRect }
 type SortKey = 'name' | 'modifiedBy' | 'modified' | 'size'
 
-function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', grantUI, transferUI }: VariantProps & { flavor: Flavor; flyToBin?: boolean; grantUI?: GrantUI; transferUI?: TransferUI }) {
+function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', grantUI, transferUI, auditUI }: VariantProps & { flavor: Flavor; flyToBin?: boolean; grantUI?: GrantUI; transferUI?: TransferUI; auditUI?: AuditUI }) {
   useStore()
+  // switching identity in the prototype bar = signing out and in again (recorded)
+  useEffect(() => signIn(user), [user])
+  const [inAudit, setInAudit] = useState(false)
+  const auditor = user.admin || auditRoots(user).length > 0
+  const showAuditPage = !!auditUI?.page && (auditUI.page.adminOnly ? user.admin : auditor)
   const T = MOTION[flavor]
   const [cwd, setCwd] = useState<Node>(ROOT)
   const [navDir, setNavDir] = useState(1)
@@ -121,6 +136,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
     setCwd(n)
     setGrantFor(null)
     setInTransfers(false)
+    setInAudit(false)
     setInBin(false)
     setSel(new Set())
     setQ('')
@@ -461,6 +477,11 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
               <ShieldCheck size={16} /> {grantUI.page}
             </div>
           )}
+          {showAuditPage && (
+            <div className={`m-tree-row m-bin ${inAudit ? 'active' : ''}`} onClick={() => (setInAudit(true), setInBin(false), setGrantFor(null), setInTransfers(false), setInfo(null))}>
+              <ScrollText size={16} /> {auditUI!.page!.label}
+            </div>
+          )}
           {transferUI?.page && (
             <div className={`m-tree-row m-bin ${inTransfers ? 'active' : ''}`} onClick={tctx.openPage}>
               <ArrowLeftRight size={16} /> {transferUI.page.label}
@@ -470,7 +491,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
           <div
             ref={binRef}
             className={`m-tree-row m-bin ${inBin ? 'active' : ''} ${dragOver === 'bin' ? 'drop danger' : ''}`}
-            onClick={() => (setInBin(true), setGrantFor(null), setInTransfers(false), setInfo(null), setSel(new Set()))}
+            onClick={() => (setInBin(true), setGrantFor(null), setInTransfers(false), setInAudit(false), setInfo(null), setSel(new Set()))}
             onDragOver={(e) => {
               if (dragging.current.length && dragging.current.every((n) => level(user, n) >= 4)) e.preventDefault(), setDragOver('bin')
             }}
@@ -496,8 +517,10 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
           </div>
         </aside>
 
-        <main className="m-main" onMouseDown={grantPage ? undefined : startLasso}>
-          {inTransfers && transferUI?.page ? (
+        <main className="m-main" onMouseDown={grantPage || inAudit ? undefined : startLasso}>
+          {inAudit && auditUI?.page ? (
+            <auditUI.page.C user={user} go={go} at={cwd} />
+          ) : inTransfers && transferUI?.page ? (
             <transferUI.page.C {...tctx} />
           ) : grantPage && grantUI ? (
             <grantUI.C key={grantFor.id} n={grantFor} user={user} close={() => setGrantFor(null)} go={go} />
@@ -532,6 +555,9 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
                     {!q && cwd !== ROOT && <span className="m-perm-pill">你可{LEVELS[level(user, cwd)]}</span>}
                     {!q && grantUI && canManage(user, cwd) && (
                       <button className="m-btn sm ghost" onClick={() => openGrant(cwd)}><UserPlus size={14} /> 授权</button>
+                    )}
+                    {!q && auditUI?.insp && cwd !== ROOT && userRights(user, cwd).has('grant') && (
+                      <button className="m-btn sm ghost" onClick={() => setInfo(cwd)}><ScrollText size={14} /> 动态</button>
                     )}
                   </div>
 
@@ -678,7 +704,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
               animate={flavor === 'glass' ? { opacity: 1, x: 0, scale: 1 } : { width: 340, opacity: 1 }}
               exit={flavor === 'glass' ? { opacity: 0, x: 30, scale: 0.97 } : { width: 0, opacity: 0 }}
             >
-              <Inspector n={info} user={user} close={() => setInfo(null)} grantUI={grantUI} openGrant={() => setGrantFor(info)} go={go} />
+              <Inspector n={info} user={user} close={() => setInfo(null)} grantUI={grantUI} openGrant={() => setGrantFor(info)} go={go} auditInsp={auditUI?.insp} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -797,7 +823,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
           {grantUI?.mount === 'modal' && grantFor && <grantUI.C key="grant" n={grantFor} user={user} close={() => setGrantFor(null)} go={go} />}
         </AnimatePresence>
         {transferUI?.Floating && <transferUI.Floating {...tctx} />}
-        {transferUI && <Simulator {...tctx} />}
+        {transferUI && !inAudit && <Simulator {...tctx} />}
         <Toaster />
       </div>
     </MotionConfig>
@@ -899,7 +925,7 @@ function BinView({ flavor }: { flavor: Flavor }) {
   )
 }
 
-function Inspector({ n, user, close, grantUI, openGrant, go }: { n: Node; user: VariantProps['user']; close: () => void; grantUI?: GrantUI; openGrant: () => void; go: (n: Node) => void }) {
+function Inspector({ n, user, close, grantUI, openGrant, go, auditInsp: AuditInsp }: { n: Node; user: VariantProps['user']; close: () => void; grantUI?: GrantUI; openGrant: () => void; go: (n: Node) => void; auditInsp?: React.ComponentType<AuditInspProps> }) {
   return (
     <aside className="m-insp">
       <AnimatePresence mode="wait">
@@ -953,6 +979,7 @@ function Inspector({ n, user, close, grantUI, openGrant, go }: { n: Node; user: 
               </div>
             </>
           )}
+          {AuditInsp && <AuditInsp key={n.id} n={n} user={user} go={go} />}
         </motion.div>
       </AnimatePresence>
     </aside>

@@ -107,3 +107,36 @@ panel or page. Single-file and zip downloads go straight to the browser's downlo
 toast; the only in-app message is the up-front refusal of a zip over 10 GB. Recorded in issue #1.
 Also decided: in a Drop Box, a clash with a file the uploader cannot see is renamed silently, so the other file's name
 never leaks; closing or reloading the page while uploads are still running asks first (the browser's own beforeunload prompt).
+
+Round 8 (`L1`–`L4`, default `L1`) asks: **where and how should Audit Events be read?** (spec #1, stories 68–75). All four sit on T3.
+The log (`src/audit.ts`) holds ~16k seeded events over 190 days plus live ones: uploads, deletes, renames, moves, downloads,
+zips (one event per file), previews/edits (the stub alerts), Grant saves, exports and identity switches (= sign-out + sign-in)
+are all recorded. Events are read-only everywhere; directory browsing is never recorded.
+
+- `L1` **检索表**: sidebar 审计日志. Filter by person, location (folder or file), time, category, failures, free text;
+  a per-day histogram (red = failures, click a day); dense table with the path at the time plus where it is now;
+  detail drawer with pivots (只看此人 / 此文件 / 此 IP); CSV export (UTF-8 BOM, itself audited).
+- `L2` **从问题出发**: sidebar 审计调查. Pick a question (这个文件谁动过 / 这个人做了什么 / 这里最近少了什么 / 谁下载最多 /
+  异常登录 / 权限与账户变更), get a one-sentence answer, a table, a timeline, and 导出依据.
+- `L3` **就地动态**: no console for department heads. The inspector of any file or folder you hold 授权 on gets a 动态 section
+  (a folder includes everything beneath it); folders get a 动态 button next to 授权. Administrators also get one page,
+  账户与登录审计, for what belongs to no file.
+- `L4` **动态流**: sidebar 动态. Runs of the same action by the same person within 30 min (or the same zip) collapse into one
+  card; previews and office-network sign-ins are hidden by default ("隐藏日常噪音"); signal cards on top
+  (password-guessing burst, sign-in from an unknown address, off-hours bulk download, delete spree, stale saves, refused access).
+
+Scripted incidents to look for: 李四 7 failed sign-ins from 172.16.9.23 at 02:10 on 11-15, then a success and two finance
+downloads; 孙七 zipping 研发部 twice and 项目 once after 22:30 on 11-16; 周八 deleting 12 files on 11-13 (purged 11-16);
+接口规范 v2 → v3 rename (11-12) and 设计稿.zip moved out of 公共资料 (11-03), whose older events keep the old path;
+overlapping edits on 补充协议一 with a stale save; 李四's refused download.
+
+Try identities: 王管理 (sees everything), 张三 (授权 on 研发部 only: sees only events there, no sign-ins/accounts/Grants;
+the 孙七 signal shrinks to 12 files), 李四 (财务部), 赵六 (no 授权 on any folder: no audit entry at all).
+
+Open questions this round raises:
+- Scope by location: an item is "within" your folder if it is there now **or** was at the time (prototype choice), so
+  张三 sees 设计稿.zip's history from when it sat in 公共资料. Alternative: only the location at the time.
+- Does a file's Creator (授权 on the file only) see that file's audit? Prototype: no, only 授权 on a directory counts.
+- Should delegated managers see Grant changes made inside their own folders? Story 73 says Administrators only.
+- Should exporting audit be an Audit Event (auditing the auditors)? Prototype: yes, Administrator-only.
+- Are previews worth recording at all, or only downloads? (Story 68 lists preview.)
