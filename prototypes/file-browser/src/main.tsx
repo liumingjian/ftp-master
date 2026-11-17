@@ -1,19 +1,24 @@
-// PROTOTYPE: file-browser variants on one page, switchable via ?variant=C1–C4|P1–P4|F|A1|M1–M3 (C: round 5 Confluence-style Grant UIs; P: round 4).
+// PROTOTYPE: file-browser variants on one page, switchable via ?variant=T1–T4|D1|C1–C4|P1–P4|F|A1|M1–M3 (T: round 7 transfer panels on D1; D: round 6; C: round 5; P: round 4).
 // Earlier rounds (A, B, C, A2–A4) are in this branch's git history.
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { USERS, User } from './data'
 import { PrototypeSwitcher } from './PrototypeSwitcher'
 import { VariantA1 } from './VariantA1'
-import { VariantD1, VariantC1, VariantC2, VariantC3, VariantC4, VariantF, VariantM1, VariantM2, VariantM3, VariantP1, VariantP2, VariantP3, VariantP4 } from './VariantMotion'
+import { VariantT1, VariantT2, VariantT3, VariantT4, VariantD1, VariantC1, VariantC2, VariantC3, VariantC4, VariantF, VariantM1, VariantM2, VariantM3, VariantP1, VariantP2, VariantP3, VariantP4 } from './VariantMotion'
 import './styles.css'
 import './modern.css'
 import './motion.css'
 import './grant.css'
+import './transfer.css'
 
 export type VariantProps = { user: User; plugin: boolean }
 
 const VARIANTS = [
+  { key: 'T1', name: '第 7 轮 · 传输：角落托盘', C: VariantT1 },
+  { key: 'T2', name: '第 7 轮 · 传输：传输页', C: VariantT2 },
+  { key: 'T3', name: '第 7 轮 · 传输：就地进度', C: VariantT3 },
+  { key: 'T4', name: '第 7 轮 · 传输：先确认后传', C: VariantT4 },
   { key: 'D1', name: '第 6 轮 · 多级权限管理（FTP 权限项 + C1 表格）', C: VariantD1 },
   { key: 'C1', name: 'Confluence · 空间权限表', C: VariantC1 },
   { key: 'C2', name: 'Confluence · 访问限制弹窗', C: VariantC2 },

@@ -159,3 +159,22 @@ export function makeGroup(name: string, people: import('./data').User[]) {
   changed()
   return id
 }
+
+/** Round 7: find or create a directory by name (folder uploads keep their structure; an existing folder is merged into). */
+export function ensureDir(dir: Node, name: string, by: string): Node {
+  const found = dir.children!.find((c) => c.type === 'dir' && c.name === name)
+  if (found) return found
+  const node: Node = { id: `u${seq++}`, name, type: 'dir', size: 0, modified: now(), modifiedBy: by, grants: [], children: [], parent: dir }
+  dir.children!.push(node)
+  changed()
+  return node
+}
+
+/** Round 7: "keep both" picks 名称 (1).ext, 名称 (2).ext, … */
+export function uniqueName(dir: Node, name: string): string {
+  const dot = name.lastIndexOf('.')
+  const [base, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+  let out = name
+  for (let i = 1; dir.children!.some((c) => c.name === out); i++) out = `${base} (${i})${ext}`
+  return out
+}

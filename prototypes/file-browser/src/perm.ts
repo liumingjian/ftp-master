@@ -96,6 +96,7 @@ export function officeEditable(u: User, n: Node, plugin: boolean) {
 export function fmtSize(b: number) {
   if (!b) return '—'
   if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`
+  if (b >= 1024 ** 3) return `${(b / 1024 ** 3).toFixed(1)} GB`
   return `${(b / 1024 / 1024).toFixed(1)} MB`
 }
 

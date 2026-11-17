@@ -25,6 +25,10 @@ import { PermissionManager } from './VariantFtp'
 import { canManage } from './grants'
 import { entryPoints } from './perm'
 import { ShieldCheck } from 'lucide-react'
+import { ArrowLeftRight } from 'lucide-react'
+import { userRights } from './rights'
+import { T as TX, batchOf, download as txDownload, enqueue, zip as txZip, type Incoming } from './transfers'
+import { Simulator, T1, T2, T3, T4, type TransferCtx, type TransferUI } from './VariantTransfer'
 
 type Flavor = 'spring' | 'calm' | 'glass'
 const MOTION: Record<Flavor, Transition> = {
@@ -46,6 +50,12 @@ export const VariantP2 = (p: VariantProps) => <MotionExplorer {...p} flavor="cal
 export const VariantP3 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: GrantMatrix, page: '权限总览' }} />
 // Round 6: C1's table at every level, FTP-convention rights, creator ownership.
 export const VariantD1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: PermissionManager, page: '权限管理' }} />
+// Round 7: where transfers live, all on D1.
+const D1_GRANT: GrantUI = { mount: 'page', C: PermissionManager, page: '权限管理' }
+export const VariantT1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={D1_GRANT} transferUI={T1} />
+export const VariantT2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={D1_GRANT} transferUI={T2} />
+export const VariantT3 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={D1_GRANT} transferUI={T3} />
+export const VariantT4 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={D1_GRANT} transferUI={T4} />
 // Round 5: Confluence-inspired, at ~200 people.
 export const VariantC1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: SpacePermissions, page: '空间权限' }} />
 export const VariantC2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'modal', C: RestrictDialog }} />
@@ -57,7 +67,7 @@ type Uploading = { id: number; name: string; size: number; pct: number; dir: Nod
 type Ghost = { id: number; node: Node; from: DOMRect; to: DOMRect }
 type SortKey = 'name' | 'modifiedBy' | 'modified' | 'size'
 
-function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', grantUI }: VariantProps & { flavor: Flavor; flyToBin?: boolean; grantUI?: GrantUI }) {
+function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', grantUI, transferUI }: VariantProps & { flavor: Flavor; flyToBin?: boolean; grantUI?: GrantUI; transferUI?: TransferUI }) {
   useStore()
   const T = MOTION[flavor]
   const [cwd, setCwd] = useState<Node>(ROOT)
@@ -81,6 +91,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
   const [lasso, setLasso] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [grantFor, setGrantFor] = useState<Node | null>(null)
+  const [inTransfers, setInTransfers] = useState(false)
   const openGrant = (n: Node) => (grantUI?.mount === 'inspector' ? setInfo(n) : setGrantFor(n))
   const managesSomething = user.admin || entryPoints(user).some((e) => level(user, e) >= 4)
   const grantPage = grantUI?.mount === 'page' && grantFor
@@ -92,7 +103,11 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
   const springTimer = useRef<{ target: Node; t: number } | null>(null)
   const tableRef = useRef<HTMLDivElement>(null)
 
-  const canWrite = cwd !== ROOT && level(user, cwd) >= 3
+  TX.actor = user
+  // round 7 uses round 6's rights: Upload alone is enough, and a Drop Box (Upload without Browse) hides other people's files
+  const canUploadTo = (n: Node) => n !== ROOT && (transferUI ? userRights(user, n).has('write') : level(user, n) >= 3)
+  const canWrite = canUploadTo(cwd)
+  const dropBox = !!transferUI && canWrite && !userRights(user, cwd).has('list')
   const active = ups.filter((u) => u.pct < 100)
   const crumbs = pathOf(cwd).filter((n) => n === ROOT || !traversable(user, n))
 
@@ -105,6 +120,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
     }
     setCwd(n)
     setGrantFor(null)
+    setInTransfers(false)
     setInBin(false)
     setSel(new Set())
     setQ('')
@@ -118,7 +134,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
     ? allVisible(user)
         .filter((n) => !traversable(user, n) && n.name.toLowerCase().includes(q.toLowerCase()))
         .map((node) => ({ node, via: pathOf(node).slice(1, -1) }))
-    : listing(user, cwd)
+    : listing(user, cwd).filter((e) => !dropBox || userRights(user, e.node).has('list'))
   entries.sort((a, b) => {
     if (a.node.type !== b.node.type) return a.node.type === 'dir' ? -1 : 1
     const k = sort.key
@@ -199,8 +215,16 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
     toast(`已将 ${nodes.length === 1 ? `“${nodes[0].name}”` : `${nodes.length} 项`}移到回收站`, { label: '撤销', run: () => restore(items) })
   }
 
+  const tUp = (files: Incoming[], dir = cwd, folder?: string) => transferUI!.after(enqueue(dir, files, { folder, stage: transferUI!.stage }), tctx)
+  const tctx: TransferCtx = {
+    user, cwd, go: (n) => go(n), canUpload: canWrite,
+    openPage: () => (setInTransfers(true), setGrantFor(null), setInBin(false), setInfo(null)),
+    upload: (files, folder) => tUp(files, cwd, folder),
+    zip: (fake) => transferUI!.after(batchOf(txZip([], fake)), tctx),
+  }
+  const dl = (n: Node) => (transferUI ? transferUI.after(txDownload(n), tctx) : stub('下载', n))
   const startUpload = (files: [string, number][], dir = cwd) =>
-    setUps((l) => [...l.filter((u) => u.pct < 100), ...files.map(([name, size], i) => ({ id: Date.now() + i, name, size, pct: 0, dir }))])
+    transferUI ? tUp(files.map(([name, size]) => ({ name, size })), dir) : setUps((l) => [...l.filter((u) => u.pct < 100), ...files.map(([name, size], i) => ({ id: Date.now() + i, name, size, pct: 0, dir }))])
 
   useEffect(() => {
     if (!active.length) return
@@ -238,7 +262,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
     springTimer.current = null
   }
   const dropProps = (target: Node) =>
-    target === ROOT || level(user, target) < 3
+    !canUploadTo(target)
       ? {}
       : {
           onDragOver: (e: React.DragEvent) => {
@@ -391,6 +415,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索全部可访问的文件" />
             <AnimatePresence>{q && <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}><X size={14} onClick={() => setQ('')} style={{ cursor: 'pointer' }} /></motion.span>}</AnimatePresence>
           </motion.label>
+          {transferUI?.Header && <transferUI.Header {...tctx} />}
           <motion.button className="m-btn icon ghost m-theme" whileTap={{ scale: 0.85 }} onClick={toggleTheme} title="切换深色/浅色">
             <AnimatePresence mode="wait" initial={false}>
               <motion.span key={theme} initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} style={{ display: 'grid' }}>
@@ -412,7 +437,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
             {canWrite && !inBin && (
               <motion.div className="m-side-actions" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
                 <motion.button layout className="m-btn primary grow m-upload" whileTap={{ scale: 0.96 }} title="也可以直接把文件拖进窗口" onClick={() => startUpload([nextSample()])}>
-                  {active.length ? (
+                  {active.length && !transferUI ? (
                     <>
                       <Ring pct={overall} /> 上传中 {ups.length - active.length}/{ups.length}
                     </>
@@ -436,10 +461,16 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
               <ShieldCheck size={16} /> {grantUI.page}
             </div>
           )}
+          {transferUI?.page && (
+            <div className={`m-tree-row m-bin ${inTransfers ? 'active' : ''}`} onClick={tctx.openPage}>
+              <ArrowLeftRight size={16} /> {transferUI.page.label}
+              <span style={{ marginLeft: 'auto' }}><transferUI.page.Badge /></span>
+            </div>
+          )}
           <div
             ref={binRef}
             className={`m-tree-row m-bin ${inBin ? 'active' : ''} ${dragOver === 'bin' ? 'drop danger' : ''}`}
-            onClick={() => (setInBin(true), setGrantFor(null), setInfo(null), setSel(new Set()))}
+            onClick={() => (setInBin(true), setGrantFor(null), setInTransfers(false), setInfo(null), setSel(new Set()))}
             onDragOver={(e) => {
               if (dragging.current.length && dragging.current.every((n) => level(user, n) >= 4)) e.preventDefault(), setDragOver('bin')
             }}
@@ -466,7 +497,9 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
         </aside>
 
         <main className="m-main" onMouseDown={grantPage ? undefined : startLasso}>
-          {grantPage && grantUI ? (
+          {inTransfers && transferUI?.page ? (
+            <transferUI.page.C {...tctx} />
+          ) : grantPage && grantUI ? (
             <grantUI.C key={grantFor.id} n={grantFor} user={user} close={() => setGrantFor(null)} go={go} />
           ) : (
           <AnimatePresence mode="wait" custom={navDir} initial={false}>
@@ -513,6 +546,8 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
                     </section>
                   )}
 
+                  {transferUI?.Banner && <transferUI.Banner {...tctx} />}
+                  {dropBox && !q && <div className="t-banner">这是投递箱：你可以上传，但看不到别人放在这里的文件，只能看到自己传的。</div>}
                   <div
                     ref={tableRef}
                     className="m-table"
@@ -537,6 +572,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
                       ))}
                       <span />
                     </div>
+                    {transferUI?.Rows && !q && !loading && <transferUI.Rows {...tctx} />}
                     {loading ? (
                       Array.from({ length: 5 }, (_, i) => (
                         <div key={i} className="m-tr m-skel">
@@ -593,7 +629,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
                                   </motion.button>
                                 )}
                                 {l >= 2 && (
-                                  <motion.button whileTap={{ scale: 0.85 }} className="m-btn icon sm" title="下载" onClick={() => stub('下载', n)}>
+                                  <motion.button whileTap={{ scale: 0.85 }} className="m-btn icon sm" title="下载" onClick={() => dl(n)}>
                                     <Download size={15} />
                                   </motion.button>
                                 )}
@@ -660,7 +696,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
                 </AnimatePresence>{' '}
                 项
               </b>
-              <button className="m-btn ghost" onClick={() => stub(`打包下载 ${sel.size} 项`)}><Download size={15} /> 下载</button>
+              <button className="m-btn ghost" onClick={() => (transferUI ? (transferUI.after(batchOf(txZip([...sel])), tctx), setSel(new Set())) : stub(`打包下载 ${sel.size} 项`))}><Download size={15} /> 下载</button>
               {[...sel].every((n) => level(user, n) >= 4) && (
                 <button className="m-btn ghost danger" onClick={() => del([...sel])}><Trash2 size={15} /> 删除</button>
               )}
@@ -739,7 +775,7 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
         </AnimatePresence>
 
         <AnimatePresence>
-          {ups.length > 0 && (
+          {ups.length > 0 && !transferUI && (
             <motion.div className="m-uptray" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}>
               <div className="m-uptray-head">
                 {active.length ? `正在上传 ${active.length} 个文件` : `${ups.length} 个文件已上传`}
@@ -760,6 +796,8 @@ function MotionExplorer({ user, plugin, flavor, flyToBin = flavor === 'spring', 
         <AnimatePresence>
           {grantUI?.mount === 'modal' && grantFor && <grantUI.C key="grant" n={grantFor} user={user} close={() => setGrantFor(null)} go={go} />}
         </AnimatePresence>
+        {transferUI?.Floating && <transferUI.Floating {...tctx} />}
+        {transferUI && <Simulator {...tctx} />}
         <Toaster />
       </div>
     </MotionConfig>

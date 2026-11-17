@@ -78,3 +78,23 @@ with presets including 投递箱), every Grant on a folder has a scope (本层�
 uploader gets an automatic Creator Grant with every right and can share only within the folder's audience, and one
 left-tree / right-table page serves every level with drafted changes and an impact preview. Recorded in GLOSSARY.md,
 ADR 0006 and issue #1. Open: 等保 level (三员分立), whether Creator Grants also apply to folders (prototype: files only).
+
+Round 7 (`T1`–`T4`, default `T1`) keeps D1 and asks: **where should transfers live, and how do they explain the hard cases?**
+(spec #1, stories 39–49 and 92). All four run on the same fake engine, `src/transfers.ts`: 64 MB parts, 3 files at a time
+sharing a 112 MB/s link, a network drop loses only the part in flight, a page reload keeps the server-side multipart session
+but loses the browser's File (the User must pick the same file again), single downloads are handed to the browser's own
+download manager (no in-app progress), zips are refused above 10 GB before they start, blocked extensions and files over
+20 GB are refused up front, and a Drop Box silently renames on a clash with a file the uploader cannot see.
+
+- `T1` **角落托盘**: Drive-style collapsible card bottom right. Folder drops are one row (expand for files); same-name
+  conflicts ask inside the card (全部存为新版本 / 全部保留两者 / 逐个选择) while the rest keeps going.
+- `T2` **传输页**: a sidebar destination like a sync client. Tabs 上传中 / 下载 / 已完成 / 未上传·已取消, a full table with
+  location, parts, speed, ETA, pause-all; conflicts are decided up front in a desktop-copy-style dialog.
+- `T3` **就地进度**: no panel. Uploads are rows in the destination folder filling up like files arriving; conflicts and
+  "re-pick after reload" are asked on the row; a header pill lists uploads landing elsewhere; downloads only toast.
+- `T4` **先确认后传**: every drop opens a preflight sheet (count, size, ETA, folder structure, refused files with reasons,
+  per-file 新版本 / 保留两者) and nothing starts until 开始上传; afterwards a header activity bubble covers both directions.
+
+The dashed yellow 🧪 panel (bottom left) is the simulator, not design: scenarios (3 files, same names, a 41-file folder,
+18 GB, .exe + 25 GB, 12 GB zip), 断网 8 秒, 刷新页面, 快进 ×10, and the engine state. Try 王管理 in 研发部/后端组/发布包
+(it has a file to clash with), and 赵六 in 公共资料/资料投递 for a Drop Box.
