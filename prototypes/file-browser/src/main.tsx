@@ -1,11 +1,11 @@
-// PROTOTYPE: file-browser variants on one page, switchable via ?variant=L1–L4|T1–T4|D1|C1–C4|P1–P4|F|A1|M1–M3 (L: round 8 audit on T3; T: round 7 transfer panels on D1; D: round 6; C: round 5; P: round 4).
+// PROTOTYPE: file-browser variants on one page, switchable via ?variant=K1–K4|L1–L4|T1–T4|D1|C1–C4|P1–P4|F|A1|M1–M3 (K: round 9 admin-only audit tracing; L: round 8 audit on T3; T: round 7 transfer panels on D1; D: round 6; C: round 5; P: round 4).
 // Earlier rounds (A, B, C, A2–A4) are in this branch's git history.
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { USERS, User } from './data'
 import { PrototypeSwitcher } from './PrototypeSwitcher'
 import { VariantA1 } from './VariantA1'
-import { VariantL1, VariantL2, VariantL3, VariantL4, VariantT1, VariantT2, VariantT3, VariantT4, VariantD1, VariantC1, VariantC2, VariantC3, VariantC4, VariantF, VariantM1, VariantM2, VariantM3, VariantP1, VariantP2, VariantP3, VariantP4 } from './VariantMotion'
+import { VariantK1, VariantK2, VariantK3, VariantK4, VariantL1, VariantL2, VariantL3, VariantL4, VariantT1, VariantT2, VariantT3, VariantT4, VariantD1, VariantC1, VariantC2, VariantC3, VariantC4, VariantF, VariantM1, VariantM2, VariantM3, VariantP1, VariantP2, VariantP3, VariantP4 } from './VariantMotion'
 import './styles.css'
 import './modern.css'
 import './motion.css'
@@ -16,7 +16,11 @@ import './audit.css'
 export type VariantProps = { user: User; plugin: boolean }
 
 const VARIANTS = [
-  { key: 'L1', name: '第 8 轮 · 审计：检索表', C: VariantL1 },
+  { key: 'K1', name: '第 9 轮 · 审计：L1 + 精确时间范围', C: VariantK1 },
+  { key: 'K2', name: '第 9 轮 · 审计：时间泳道', C: VariantK2 },
+  { key: 'K3', name: '第 9 轮 · 审计：追溯链 + 证据', C: VariantK3 },
+  { key: 'K4', name: '第 9 轮 · 审计：查询语句 + 按登录分组', C: VariantK4 },
+  { key: 'L1', name: '第 8 轮选定 · 审计：检索表', C: VariantL1 },
   { key: 'L2', name: '第 8 轮 · 审计：从问题出发', C: VariantL2 },
   { key: 'L3', name: '第 8 轮 · 审计：就地动态（文件旁）', C: VariantL3 },
   { key: 'L4', name: '第 8 轮 · 审计：动态流 + 异常提示', C: VariantL4 },

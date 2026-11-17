@@ -31,6 +31,7 @@ import { T as TX, batchOf, download as txDownload, enqueue, zip as txZip, type I
 import { Simulator, T1, T2, T3, T4, type TransferCtx, type TransferUI } from './VariantTransfer'
 import { AdminOnlyAudit, AuditFeed, AuditInvestigate, AuditTable, ItemActivity, type AuditInspProps, type AuditPageProps } from './VariantAudit'
 import { auditRoots, signIn } from './audit'
+import { TraceChain, TraceLanes, TraceQuery, TraceSearch } from './VariantTrace'
 import { ScrollText } from 'lucide-react'
 
 type Flavor = 'spring' | 'calm' | 'glass'
@@ -66,6 +67,12 @@ export const VariantL1 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} au
 export const VariantL2 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={{ page: { label: '审计调查', C: AuditInvestigate } }} />
 export const VariantL3 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={{ insp: ItemActivity, page: { label: '账户与登录审计', C: AdminOnlyAudit, adminOnly: true } }} />
 export const VariantL4 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={{ page: { label: '动态', C: AuditFeed } }} />
+// Round 9: L1 won; audit is Administrator-only and built for tracing an incident. Four directions.
+const ADMIN_AUDIT = (label: string, C: React.ComponentType<AuditPageProps>): AuditUI => ({ page: { label, C, adminOnly: true } })
+export const VariantK1 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计日志', TraceSearch)} />
+export const VariantK2 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计', TraceLanes)} />
+export const VariantK3 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计追溯', TraceChain)} />
+export const VariantK4 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计', TraceQuery)} />
 // Round 5: Confluence-inspired, at ~200 people.
 export const VariantC1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: SpacePermissions, page: '空间权限' }} />
 export const VariantC2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'modal', C: RestrictDialog }} />

@@ -140,3 +140,26 @@ Open questions this round raises:
 - Should delegated managers see Grant changes made inside their own folders? Story 73 says Administrators only.
 - Should exporting audit be an Audit Event (auditing the auditors)? Prototype: yes, Administrator-only.
 - Are previews worth recording at all, or only downloads? (Story 68 lists preview.)
+
+Verdict of round 8 (2026-11-17): **L1's search table** is the base. Two changes from the user: audit is **Administrator-only**
+(no delegated view for Grant-Right holders, so story 72 goes), and it needs a real **time range filter**. Its purpose:
+when something goes wrong, find fast who did what, when.
+
+Round 9 (`K1`–`K4`, default `K1`): four directions on L1, all Administrator-only (other identities get no audit entry),
+all sharing one time range control (`RangeBar` in `src/VariantTrace.tsx`): presets (最近 1 小时 … 近 180 天), exact
+from/to to the minute, a histogram whose bucket adapts to the span (5 min … 1 day; red = failures), drag across it to
+zoom into that stretch, zoom out ×2, and undo back through earlier ranges. Exports are named after the range.
+
+- `K1` **L1 + 精确时间范围**: L1's filters and table under the RangeBar. Detail drawer adds "前后 15 分钟所有人在做什么".
+- `K2` **时间泳道**: one lane per person over the range (busiest first, but failures, deletes and off-hours activity float
+  to the top), dots coloured by category, red for failures, grey bands for off-hours. Drag across the lanes to zoom;
+  click a name to filter the table; "以此为中心 ±15 分钟" from any event.
+- `K3` **追溯链 + 证据**: start from a symptom — a file or folder (search every path ever recorded, deleted and purged
+  included), a person, an IP, or a moment (±30 min). Each click on an event offers a pivot (这次登录做的所有事, 此人前后
+  2 小时, 这个文件的全部历史, 这个 IP, 同一时间所有人), which becomes a breadcrumb step. Pin events as evidence; pinned ones
+  sorted by time read as the story of what happened, and export together.
+- `K4` **查询语句**: one line, `人:孙七 操作:下载,删除 路径:/研发部 IP:… 结果:失败` plus free keywords, with key
+  suggestions and plain-language example questions. Results grouped by sign-in session (who, IP, signed in at, signed
+  out / expired after 2 h idle), sessions with failures, off-hours or outside addresses highlighted.
+
+Sessions (`sessionOf` in `src/audit.ts`): same person and IP, from a sign-in until a sign-out, a new sign-in or 2 hours idle.

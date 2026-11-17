@@ -41,7 +41,7 @@ const rangeFrom = (k: string) => {
 }
 const CAT_TONE: Record<Category, string> = { read: 'read', write: 'write', delete: 'del', grant: 'grant', session: 'sess', account: 'grant' }
 
-function ActionTag({ e }: { e: Ev }) {
+export function ActionTag({ e }: { e: Ev }) {
   return <span className={`au-act ${CAT_TONE[ACTION[e.action].cat]} ${e.ok ? '' : 'fail'}`}>{ACTION[e.action].label}{e.ok ? '' : ' · 失败'}</span>
 }
 
@@ -64,7 +64,7 @@ function Retention() {
   )
 }
 
-function WhoPicker({ value, onChange, placeholder = '任何人' }: { value?: string; onChange: (id?: string) => void; placeholder?: string }) {
+export function WhoPicker({ value, onChange, placeholder = '任何人' }: { value?: string; onChange: (id?: string) => void; placeholder?: string }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
   const cur = PEOPLE.find((u) => u.id === value)
@@ -101,7 +101,7 @@ function scopeNodes(user: User, files = false): { n: Node; depth: number }[] {
   for (const r of auditRoots(user)) walk(r, 0)
   return out
 }
-function WherePicker({ user, value, onChange, files = false }: { user: User; value?: Node; onChange: (n?: Node) => void; files?: boolean }) {
+export function WherePicker({ user, value, onChange, files = false }: { user: User; value?: Node; onChange: (n?: Node) => void; files?: boolean }) {
   const opts = scopeNodes(user, files)
   return (
     <select className="au-select" value={value?.id ?? ''} onChange={(e) => onChange(opts.find((o) => o.n.id === e.target.value)?.n)}>
@@ -113,7 +113,7 @@ function WherePicker({ user, value, onChange, files = false }: { user: User; val
   )
 }
 
-function Detail({ e, close, pivot }: { e: Ev; close: () => void; pivot?: (f: Q) => void }) {
+export function Detail({ e, close, pivot, actions }: { e: Ev; close: () => void; pivot?: (f: Q) => void; actions?: React.ReactNode }) {
   const where = nowAt(e)
   return (
     <aside className="au-detail">
@@ -141,6 +141,7 @@ function Detail({ e, close, pivot }: { e: Ev; close: () => void; pivot?: (f: Q) 
           {e.ip !== '—' && <button className="m-btn sm" onClick={() => pivot({ ip: e.ip })}>只看 IP {e.ip}</button>}
         </div>
       )}
+      {actions && <div className="au-pivots">{actions}</div>}
       <div className="au-faint small" style={{ marginTop: 16 }}><Lock size={11} /> 审计记录不可修改、不可删除</div>
     </aside>
   )
@@ -430,7 +431,7 @@ export function AuditInvestigate({ user }: AuditPageProps) {
   )
 }
 
-function Timeline({ evs, onOpen, byDay = false, limit = 200 }: { evs: Ev[]; onOpen: (e: Ev) => void; byDay?: boolean; limit?: number }) {
+export function Timeline({ evs, onOpen, byDay = false, limit = 200 }: { evs: Ev[]; onOpen: (e: Ev) => void; byDay?: boolean; limit?: number }) {
   const [more, setMore] = useState(false)
   const shown = more ? evs : evs.slice(0, limit)
   let lastDay = ''

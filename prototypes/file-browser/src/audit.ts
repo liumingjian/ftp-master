@@ -237,10 +237,12 @@ function seedIncidents() {
   push({ t: moveAt, ...by('周八'), action: 'move', ok: true, node: art, path: '/公共资料/设计稿.zip', detail: '→ /研发部/前端组' })
 
   // 5. a delete spree in 前端组 (later purged), and the two items now in the Recycle Bin
+  push({ t: at(11, 13, 17, 41), ...by('周八'), action: 'signin', ok: true, path: '' })
+  push({ t: at(11, 16, 8, 48), ...admin, action: 'signin', ok: true, path: '' })
   for (let i = 1; i <= 12; i++) {
     const g = ghost(`旧稿-${pad(i)}.psd`, '/研发部/前端组', 40_000_000)
     push({ t: at(11, 13, 17, 55, i * 3), ...by('周八'), action: 'delete', ok: true, node: g, path: `/研发部/前端组/${g.name}`, size: g.size })
-    push({ t: at(11, 16, 3, 0, i), ...sys, action: 'purge', ok: true, node: g, path: `/研发部/前端组/${g.name}`, detail: '回收站手动清空' })
+    push({ t: at(11, 16, 8, 50, i), ...admin, action: 'purge', ok: true, node: g, path: `/研发部/前端组/${g.name}`, detail: '清空回收站' })
   }
   push({ t: at(11, 12, 10, 0), ...by('张三'), action: 'delete', ok: true, node: ghost('旧版接口规范.docx', '/研发部/后端组/设计文档'), path: '/研发部/后端组/设计文档/旧版接口规范.docx' })
   push({ t: at(11, 1, 18, 0), ...by('张三'), action: 'delete', ok: true, node: ghost('临时', '/项目/2026-智慧园区'), path: '/项目/2026-智慧园区/临时', detail: '文件夹，含 6 个文件' })
@@ -331,6 +333,9 @@ export type Filter = {
   failedOnly?: boolean
   ip?: string
   text?: string
+  /** round 9 */
+  actions?: Action[]
+  pathLike?: string
 }
 export function query(u: User, f: Filter = {}): Ev[] {
   const roots = auditRoots(u)
@@ -344,6 +349,8 @@ export function query(u: User, f: Filter = {}): Ev[] {
     if (f.cats?.length && !f.cats.includes(ACTION[e.action].cat)) continue
     if (f.failedOnly && e.ok) continue
     if (f.ip && e.ip !== f.ip) continue
+    if (f.actions?.length && !f.actions.includes(e.action)) continue
+    if (f.pathLike && !e.path.includes(f.pathLike)) continue
     if (f.where && f.where !== ROOT) {
       const hit = f.where.type === 'file' ? e.node === f.where : under(e.node, f.where) || e.path === wp || e.path.startsWith(wp + '/')
       if (!hit) continue
@@ -431,3 +438,38 @@ export function signals(u: User, from: number): Signal[] {
 
 export const oldest = () => LOG[0]?.t ?? BASE
 export const RETENTION_DAYS = 180
+
+// ---------------------------------------------------------------- sessions (round 9)
+/** A sign-in session: same person and IP, from a sign-in until sign-out, a new sign-in, or 2 hours idle (spec: sliding 2-hour expiry). */
+export type Session = { key: string; who: string; whoId: string; ip: string; start: number; end: number; signin?: Ev; signout?: Ev; expired: boolean; events: Ev[] }
+let sessCache: { n: number; byEv: Map<number, Session>; all: Session[] } = { n: -1, byEv: new Map(), all: [] }
+function buildSessions() {
+  if (sessCache.n === LOG.length) return sessCache
+  const byEv = new Map<number, Session>()
+  const all: Session[] = []
+  const open = new Map<string, Session>()
+  for (const e of [...LOG].sort((a, b) => a.t - b.t)) {
+    if (e.whoId === 'system' || e.action === 'signin_fail') continue
+    let s = open.get(e.whoId)
+    if (s && (e.action === 'signin' || e.ip !== s.ip || e.t - s.end > 2 * 3600_000)) {
+      s.expired = !s.signout
+      open.delete(e.whoId)
+      s = undefined
+    }
+    if (!s) {
+      s = { key: `s${e.id}`, who: e.who, whoId: e.whoId, ip: e.ip, start: e.t, end: e.t, expired: false, events: [] }
+      if (e.action === 'signin') s.signin = e
+      all.push(s)
+      open.set(e.whoId, s)
+    }
+    s.events.push(e)
+    s.end = e.t
+    byEv.set(e.id, s)
+    if (e.action === 'signout') (s.signout = e), open.delete(e.whoId)
+  }
+  for (const s of open.values()) s.expired = now() - s.end > 2 * 3600_000
+  sessCache = { n: LOG.length, byEv, all }
+  return sessCache
+}
+export const sessionOf = (e: Ev) => buildSessions().byEv.get(e.id)
+export const allSessions = () => buildSessions().all
