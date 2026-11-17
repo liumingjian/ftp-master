@@ -72,3 +72,9 @@ Round 6 (`D1`, default) takes C1's table to every level and swaps the four level
   Without 授权 on the folder, a creator can share only with people who can already see the folder.
 - Try: 王管理 on 研发部/后端组/发布包; 张三 on 项目/2026-智慧园区/合同/付款计划.xlsx (⋯ → 授权), search 赵六;
   公共资料/资料投递 is a 投递箱 for 全公司 at 仅本层.
+
+Verdict (2026-11-17): **D1 is the Grant design.** Rights replace Permission Levels (浏览 下载 上传 修改 删除 授权,
+with presets including 投递箱), every Grant on a folder has a scope (本层及以下 / 仅本层), still no deny, a file's
+uploader gets an automatic Creator Grant with every right and can share only within the folder's audience, and one
+left-tree / right-table page serves every level with drafted changes and an impact preview. Recorded in GLOSSARY.md,
+ADR 0006 and issue #1. Open: 等保 level (三员分立), whether Creator Grants also apply to folders (prototype: files only).
