@@ -43,3 +43,18 @@ and whether the Office Plugin is present (`?plugin=1`).
 Data is in memory (`src/data.ts`, mutated by `src/store.ts`); reload to reset. Open/edit/download are stubs.
 
     pnpm install && pnpm dev
+
+Round 5 asks the same question at real scale (~200 people, 13 Organizations, 5 User Groups, one folder with 23 stray
+individual Grants under 研发部/后端组/发布包), borrowing from Confluence's permission management:
+
+- `C1` **空间权限表** (Confluence Space permissions): top-level folders are spaces; principals × levels checkbox table,
+  tabs 组织与用户组 / 个人 / 子文件夹例外, filter, paging, bulk set, and edit-then-"保存全部" (batched, not instant).
+- `C2` **访问限制弹窗** (Confluence Restrictions): 沿用上级 / 在上级基础上追加 / 仅限指定的人, with an impact preview
+  ("保存后 N 人失去访问"). The third mode stops inheritance, which contradicts "Grants only ever allow" and is out of
+  spec scope; it is here to decide whether that is worth changing. Implemented via `Node.isolated` + `scopePath()`.
+- `C3` **权限检查** (Confluence Inspect permissions): person + location → verdict, capability checklist, identity chain ×
+  folder chain; reverse tab "谁能访问这里" with counts per level and people grouped by the Grant that gives them access.
+- `C4` **用户组优先** (Confluence's "grant to groups"): inspector shows group cards with reach, folds individual Grants away,
+  warns when they pile up, merges them into a new User Group in one click, and nudges toward a group when picking a person.
+
+The principal picker now caps results per kind and asks you to keep typing, since 200 rows is not browsable.

@@ -1,6 +1,6 @@
 // PROTOTYPE in-memory mutations over the mock Shared Tree. Reload the page to reset.
 import { useEffect, useState } from 'react'
-import { Node, RECYCLE_BIN, ROOT } from './data'
+import { GROUPS, Node, RECYCLE_BIN, ROOT } from './data'
 
 export type BinItem = { name: string; from: string; by: string; at: string; purgeIn: string; node?: Node; parent?: Node }
 
@@ -138,3 +138,22 @@ export function setGrant(n: Node, g: Node['grants'][number]): () => void {
   return () => ((n.grants = before), changed())
 }
 export const grantLog: { at: string; what: string; where: string }[] = []
+
+/** C2: replace all direct Grants on n at once, optionally stopping inheritance (Confluence-style restriction). */
+export function replaceGrants(n: Node, grants: Node['grants'], isolated: boolean): () => void {
+  const before = { grants: n.grants, isolated: n.isolated }
+  n.grants = grants.map((g) => ({ ...g }))
+  n.isolated = isolated || undefined
+  grantLog.unshift({ at: now(), what: `${isolated ? '限制为仅指定的人' : '更新授权'}（${grants.length} 条）`, where: pathString(n) })
+  changed()
+  return () => ((n.grants = before.grants), (n.isolated = before.isolated), changed())
+}
+
+/** C4: create a User Group from a set of people. */
+export function makeGroup(name: string, people: import('./data').User[]) {
+  const id = `g${seq++}`
+  GROUPS.push({ id, name })
+  people.forEach((u) => u.groups.push(id))
+  changed()
+  return id
+}

@@ -19,11 +19,19 @@ function matches(u: User, g: Grant) {
   return (g.kind === 'user' && g.id === u.id) || (g.kind === 'org' && u.orgs.includes(g.id)) || (g.kind === 'group' && u.groups.includes(g.id))
 }
 
+/** Path that Grants are inherited along: stops at the nearest isolated (C2 restricted) ancestor-or-self. */
+export function scopePath(n: Node): Node[] {
+  const p = pathOf(n)
+  let i = p.length - 1
+  while (i > 0 && !p[i].isolated) i--
+  return p.slice(i)
+}
+
 export function level(u: User, n: Node): number {
   if (u.inactive) return 0
   if (u.admin) return 4
   let m = 0
-  for (const x of pathOf(n)) for (const g of x.grants) if (matches(u, g)) m = Math.max(m, g.level)
+  for (const x of scopePath(n)) for (const g of x.grants) if (matches(u, g)) m = Math.max(m, g.level)
   return m
 }
 
@@ -42,7 +50,7 @@ export function kids(u: User, n: Node): Node[] {
 
 /** Grants that apply to n, with the item they are inherited from. */
 export function grantSources(n: Node): { grant: Grant; from: Node }[] {
-  return pathOf(n).flatMap((x) => x.grants.map((grant) => ({ grant, from: x })))
+  return scopePath(n).flatMap((x) => x.grants.map((grant) => ({ grant, from: x })))
 }
 
 /** Topmost items the user holds a real Permission Level on: their natural entry points. */

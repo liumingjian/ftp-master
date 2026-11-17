@@ -1,11 +1,11 @@
-// PROTOTYPE: file-browser variants on one page, switchable via ?variant=P1|P2|P3|P4|F|A1|M1|M2|M3 (P1–P4: round 4 Grant UIs on F).
+// PROTOTYPE: file-browser variants on one page, switchable via ?variant=C1–C4|P1–P4|F|A1|M1–M3 (C: round 5 Confluence-style Grant UIs; P: round 4).
 // Earlier rounds (A, B, C, A2–A4) are in this branch's git history.
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { USERS, User } from './data'
 import { PrototypeSwitcher } from './PrototypeSwitcher'
 import { VariantA1 } from './VariantA1'
-import { VariantF, VariantM1, VariantM2, VariantM3, VariantP1, VariantP2, VariantP3, VariantP4 } from './VariantMotion'
+import { VariantC1, VariantC2, VariantC3, VariantC4, VariantF, VariantM1, VariantM2, VariantM3, VariantP1, VariantP2, VariantP3, VariantP4 } from './VariantMotion'
 import './styles.css'
 import './modern.css'
 import './motion.css'
@@ -14,6 +14,10 @@ import './grant.css'
 export type VariantProps = { user: User; plugin: boolean }
 
 const VARIANTS = [
+  { key: 'C1', name: 'Confluence · 空间权限表', C: VariantC1 },
+  { key: 'C2', name: 'Confluence · 访问限制弹窗', C: VariantC2 },
+  { key: 'C3', name: 'Confluence · 权限检查', C: VariantC3 },
+  { key: 'C4', name: 'Confluence · 用户组优先', C: VariantC4 },
   { key: 'P1', name: '授权 · 共享弹窗', C: VariantP1 },
   { key: 'P2', name: '授权 · 侧栏刻度条', C: VariantP2 },
   { key: 'P3', name: '授权 · 权限矩阵', C: VariantP3 },

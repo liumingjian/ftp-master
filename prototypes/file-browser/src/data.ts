@@ -17,6 +17,8 @@ export type Node = {
   parent?: Node
   versions?: Version[]
   audit?: AuditEvent[]
+  /** PROTOTYPE C2 only: Confluence-style restriction that stops inheritance here. Not in the current model (no deny). */
+  isolated?: boolean
 }
 
 export type User = {
@@ -54,13 +56,48 @@ export const ORGS: Org[] = [
   { id: 'fin', name: '财务部', parent: 'company' },
   { id: 'mkt', name: '市场部', parent: 'company' },
   { id: 'it', name: '信息中心', parent: 'company' },
+  { id: 'rd-qa', name: '测试组', parent: 'rd' },
+  { id: 'rd-ops', name: '运维组', parent: 'rd' },
+  { id: 'sales', name: '销售部', parent: 'company' },
+  { id: 'sales-n', name: '华北区', parent: 'sales' },
+  { id: 'sales-s', name: '华南区', parent: 'sales' },
+  { id: 'hr', name: '人力资源部', parent: 'company' },
 ]
 
 export type Group = { id: string; name: string }
 export const GROUPS: Group[] = [
   { id: 'park', name: '智慧园区项目组' },
   { id: 'dmp', name: '数据中台项目组' },
+  { id: 'release', name: '发布评审组' },
+  { id: 'budget', name: '预算编制小组' },
+  { id: 'newbie', name: '2026 届新员工' },
 ]
+
+// ~200 generated people so pickers, lists and matrices are tested at real company scale.
+const SUR = '王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾肖田董袁潘蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤'
+const GIV = ['伟', '芳', '娜', '敏', '静', '强', '磊', '洋', '艳', '勇', '军', '杰', '娟', '涛', '明', '超', '秀英', '霞', '平', '刚', '桂英', '文', '辉', '鹏', '华', '红', '玉兰', '飞', '建华', '丹', '晨', '宇', '浩然', '子涵', '欣怡', '梓轩', '思远', '雨桐', '一鸣', '嘉怡']
+const SLOTS: [string, number][] = [['rd-be', 26], ['rd-fe', 22], ['rd-qa', 16], ['rd-ops', 10], ['rd', 4], ['fin', 12], ['mkt', 18], ['sales-n', 24], ['sales-s', 22], ['hr', 9], ['it', 8], ['company', 3]]
+function chain(id: string): string[] {
+  const out: string[] = []
+  for (let o = ORGS.find((x) => x.id === id); o; o = ORGS.find((x) => x.id === o!.parent)) out.unshift(o.id)
+  return out
+}
+const taken = new Set(['张三', '李四', '赵六', '王管理', '孙七', '周八', '吴九', '钱十'])
+let k = 0
+for (const [org, count] of SLOTS)
+  for (let i = 0; i < count; i++, k++) {
+    let name = ''
+    for (let j = 0; !name || taken.has(name); j++) name = SUR[(k * 7 + j * 13) % SUR.length] + GIV[(k * 11 + j * 3) % GIV.length]
+    taken.add(name)
+    const orgs = chain(org)
+    const groups = [k % 9 === 0 && 'park', k % 13 === 0 && 'dmp', org.startsWith('rd') && k % 4 === 0 && 'release', (org === 'fin' || k % 17 === 0) && 'budget', k % 11 === 3 && 'newbie'].filter(Boolean) as string[]
+    PEOPLE.push({
+      id: `p${k}`, name, orgs, groups, admin: false, inactive: k % 37 === 5,
+      orgLabel: orgs.slice(1).map((o) => ORGS.find((x) => x.id === o)!.name).join(' / ') || '全公司',
+    })
+  }
+/** Lots of one-off individual Grants, the thing Confluence warns about at scale. */
+const SPRAWL = PEOPLE.filter((u) => u.orgs.includes('sales')).slice(0, 23)
 
 const G = {
   company: (level: number): Grant => ({ kind: 'org', id: 'company', label: '全公司', level }),
@@ -72,6 +109,7 @@ const G = {
   sunqi: (level: number): Grant => ({ kind: 'user', id: 'sunqi', label: '孙七', level }),
   mkt: (level: number): Grant => ({ kind: 'org', id: 'mkt', label: '市场部', level }),
   qianshi: (level: number): Grant => ({ kind: 'user', id: 'qianshi', label: '钱十', level }),
+  release: (level: number): Grant => ({ kind: 'group', id: 'release', label: '发布评审组', level }),
 }
 
 let seq = 0
@@ -104,7 +142,7 @@ export const ROOT: Node = d('全部文件', [], [
         f('数据库设计.xlsx', 0.86 * MB, '2026-11-08 11:20', '孙七'),
         f('架构图.png', 4.2 * MB, '2026-11-01 09:00', '张三'),
       ], '2026-11-15 18:02', '张三'),
-      d('发布包', [], [f('ftp-master-1.4.2.tar.gz', 180 * MB, '2026-11-13 22:10', 'CI')], '2026-11-13 22:10', 'CI'),
+      d('发布包', [G.release(2), ...SPRAWL.map((u): Grant => ({ kind: 'user', id: u.id, label: u.name, level: 1 }))], [f('ftp-master-1.4.2.tar.gz', 180 * MB, '2026-11-13 22:10', 'CI')], '2026-11-13 22:10', 'CI'),
     ], '2026-11-15 18:02', '张三'),
     d('前端组', [], [
       f('组件库说明.md', 0.04 * MB, '2026-11-09 15:00', '周八'),

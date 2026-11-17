@@ -33,9 +33,9 @@ export function PIcon({ p, size = 26 }: { p: Principal; size?: number }) {
   )
 }
 
-const kindLabel = { user: '人员', org: '组织', group: '用户组' }
+export const kindLabel = { user: '人员', org: '组织', group: '用户组' }
 
-function PrincipalPicker({ onPick, placeholder = '添加人员、组织或用户组', autoFocus, annotate }: {
+export function PrincipalPicker({ onPick, placeholder = '添加人员、组织或用户组', autoFocus, annotate }: {
   onPick: (p: Principal) => void
   placeholder?: string
   autoFocus?: boolean
@@ -55,7 +55,9 @@ function PrincipalPicker({ onPick, placeholder = '添加人员、组织或用户
         {open && (
           <motion.div className="g-picker-list" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
             {(['user', 'org', 'group'] as const).map((k) => {
-              const list = hits.filter((p) => p.kind === k)
+              const all = hits.filter((p) => p.kind === k)
+              const cap = q ? 8 : 4
+              const list = all.slice(0, cap)
               if (!list.length) return null
               return (
                 <div key={k}>
@@ -70,6 +72,7 @@ function PrincipalPicker({ onPick, placeholder = '添加人员、组织或用户
                       {annotate?.(p)}
                     </button>
                   ))}
+                  {all.length > cap && <div className="g-picker-more">还有 {all.length - cap} 个{kindLabel[k]}，继续输入姓名、拼音首字母或部门缩小范围</div>}
                 </div>
               )
             })}
@@ -81,7 +84,7 @@ function PrincipalPicker({ onPick, placeholder = '添加人员、组织或用户
   )
 }
 
-function LevelSelect({ value, onChange, floor = 0, none = '移除', disabled }: { value: number; onChange: (l: number) => void; floor?: number; none?: string; disabled?: boolean }) {
+export function LevelSelect({ value, onChange, floor = 0, none = '移除', disabled }: { value: number; onChange: (l: number) => void; floor?: number; none?: string; disabled?: boolean }) {
   return (
     <select className="g-select" value={value} disabled={disabled} onChange={(e) => onChange(+e.target.value)}>
       {[1, 2, 3, 4].map((l) => (
@@ -95,7 +98,7 @@ function LevelSelect({ value, onChange, floor = 0, none = '移除', disabled }: 
   )
 }
 
-function reachNote(p: Principal) {
+export function reachNote(p: Principal) {
   const u = personOf(p)
   if (u?.inactive) return '账号已停用，授权保留但不生效'
   if (u) return u.orgLabel
@@ -103,7 +106,7 @@ function reachNote(p: Principal) {
 }
 
 /** Apply a direct-Grant change with the two guards every variant needs: self lock-out and the no-deny floor. */
-function useApply(n: Node, user: User) {
+export function useApply(n: Node, user: User) {
   const [confirm, setConfirm] = useState<{ p: Principal; next: number } | null>(null)
   const apply = (p: Principal, next: number, force = false) => {
     const g = direct(n, p)
@@ -134,12 +137,12 @@ function ScopeNote({ n, user }: { n: Node; user: User }) {
   const scope = entryPoints(user).find((e) => level(user, e) >= 4 && (e === n || isUnder(n, e)))
   return <span>你在“{scope?.name ?? n.name}”内有管理权限，可在其中授予最高“管理”。</span>
 }
-const isUnder = (n: Node, a: Node) => {
+export const isUnder = (n: Node, a: Node) => {
   for (let p = n.parent; p; p = p.parent) if (p === a) return true
   return false
 }
 
-function ExplainCard({ p, n, onGo }: { p: Principal; n: Node; onGo?: (n: Node) => void }) {
+export function ExplainCard({ p, n, onGo }: { p: Principal; n: Node; onGo?: (n: Node) => void }) {
   useStore()
   const e = explain(p, n)
   return (

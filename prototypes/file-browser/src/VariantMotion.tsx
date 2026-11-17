@@ -20,6 +20,7 @@ import { bin, mkdir, move, nextSample, remove, restore, upload, useStore, type B
 import { Avatar, FakeDoc, FileIcon, Toaster, primaryAction, toast } from './ui'
 import { InlineRename } from './VariantA1'
 import { GrantDialog, GrantInspector, GrantMatrix, GrantPeople, type GrantProps } from './VariantGrant'
+import { GroupFirstPanel, InspectPermissions, RestrictDialog, SpacePermissions } from './VariantConfluence'
 import { canManage } from './grants'
 import { entryPoints } from './perm'
 import { ShieldCheck } from 'lucide-react'
@@ -42,6 +43,11 @@ type GrantUI = { mount: 'modal' | 'inspector' | 'page'; C: React.ComponentType<G
 export const VariantP1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'modal', C: GrantDialog }} />
 export const VariantP2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'inspector', C: GrantInspector }} />
 export const VariantP3 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: GrantMatrix, page: '权限总览' }} />
+// Round 5: Confluence-inspired, at ~200 people.
+export const VariantC1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: SpacePermissions, page: '空间权限' }} />
+export const VariantC2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'modal', C: RestrictDialog }} />
+export const VariantC3 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: InspectPermissions, page: '权限检查' }} />
+export const VariantC4 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'inspector', C: GroupFirstPanel }} />
 export const VariantP4 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: GrantPeople, page: '按人查看权限' }} />
 
 type Uploading = { id: number; name: string; size: number; pct: number; dir: Node }
