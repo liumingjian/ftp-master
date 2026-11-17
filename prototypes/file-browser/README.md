@@ -105,5 +105,5 @@ conflicts, refused files and "pick the file again after a reload" are asked on t
 pill lists uploads landing in other folders and the offline / reload banners sit above the table. There is no transfer
 panel or page. Single-file and zip downloads go straight to the browser's download manager with no in-app progress or
 toast; the only in-app message is the up-front refusal of a zip over 10 GB. Recorded in issue #1.
-Open: Drop Box clashes with a file the uploader cannot see (prototype: silent rename); a "uploads still running" warning
-before closing the page (not prototyped).
+Also decided: in a Drop Box, a clash with a file the uploader cannot see is renamed silently, so the other file's name
+never leaks; closing or reloading the page while uploads are still running asks first (the browser's own beforeunload prompt).

@@ -384,3 +384,11 @@ export const SCENARIOS: { key: string; label: string; run: (dir: Node) => Incomi
   { key: 'bad', label: '上传 .exe 和 25 GB 文件', run: () => [{ name: '安装包-setup.exe', size: 46 * MB }, { name: '整机备份.img', size: 25 * GB }, { name: '安装说明.pdf', size: 1.2 * MB }] },
   { key: 'zip', label: '打包下载 12 GB', run: () => 'zip' },
 ]
+
+// Round 7 verdict: closing or reloading the page while uploads are still running asks first.
+// Browsers show their own generic wording; the page cannot customise it.
+window.addEventListener('beforeunload', (e) => {
+  if (!T.jobs.some((j) => j.kind === 'upload' && ['queued', 'running', 'paused', 'offline'].includes(j.status))) return
+  e.preventDefault()
+  e.returnValue = ''
+})
