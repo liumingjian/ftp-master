@@ -27,11 +27,20 @@ export function scopePath(n: Node): Node[] {
   return p.slice(i)
 }
 
+/** Does Grant g, made on `from`, reach n? "仅本层" Grants reach the folder itself and the files directly in it. */
+export function applies(g: Grant, from: Node, n: Node): boolean {
+  return from === n || g.scope !== 'here' || (from === n.parent && n.type === 'file')
+}
+
+export function matchesUser(u: User, g: Grant) {
+  return matches(u, g)
+}
+
 export function level(u: User, n: Node): number {
   if (u.inactive) return 0
   if (u.admin) return 4
   let m = 0
-  for (const x of scopePath(n)) for (const g of x.grants) if (matches(u, g)) m = Math.max(m, g.level)
+  for (const x of scopePath(n)) for (const g of x.grants) if (matches(u, g) && applies(g, x, n)) m = Math.max(m, g.level)
   return m
 }
 

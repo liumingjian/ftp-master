@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { USERS, User } from './data'
 import { PrototypeSwitcher } from './PrototypeSwitcher'
 import { VariantA1 } from './VariantA1'
-import { VariantC1, VariantC2, VariantC3, VariantC4, VariantF, VariantM1, VariantM2, VariantM3, VariantP1, VariantP2, VariantP3, VariantP4 } from './VariantMotion'
+import { VariantD1, VariantC1, VariantC2, VariantC3, VariantC4, VariantF, VariantM1, VariantM2, VariantM3, VariantP1, VariantP2, VariantP3, VariantP4 } from './VariantMotion'
 import './styles.css'
 import './modern.css'
 import './motion.css'
@@ -14,6 +14,7 @@ import './grant.css'
 export type VariantProps = { user: User; plugin: boolean }
 
 const VARIANTS = [
+  { key: 'D1', name: '第 6 轮 · 多级权限管理（FTP 权限项 + C1 表格）', C: VariantD1 },
   { key: 'C1', name: 'Confluence · 空间权限表', C: VariantC1 },
   { key: 'C2', name: 'Confluence · 访问限制弹窗', C: VariantC2 },
   { key: 'C3', name: 'Confluence · 权限检查', C: VariantC3 },

@@ -1,6 +1,6 @@
 // PROTOTYPE in-memory mutations over the mock Shared Tree. Reload the page to reset.
 import { useEffect, useState } from 'react'
-import { GROUPS, Node, RECYCLE_BIN, ROOT } from './data'
+import { GROUPS, Node, PEOPLE, RECYCLE_BIN, ROOT } from './data'
 
 export type BinItem = { name: string; from: string; by: string; at: string; purgeIn: string; node?: Node; parent?: Node }
 
@@ -83,7 +83,9 @@ export function upload(dir: Node, name: string, size: number, by: string): { nod
     return { node: existing, newVersion: true }
   }
   const node: Node = {
-    id: `u${seq++}`, name, type: 'file', size, modified: now(), modifiedBy: by, grants: [], parent: dir,
+    id: `u${seq++}`, name, type: 'file', size, modified: now(), modifiedBy: by, parent: dir,
+    // the uploader becomes the file's creator: a real Grant with every right, marked so the UI can pin and lock it
+    grants: PEOPLE.filter((u) => u.name === by).map((u) => ({ kind: 'user' as const, id: u.id, label: u.name, level: 4, origin: 'creator' as const })),
     versions: [{ v: 1, at: now(), by, size }], audit: [{ at: now(), who: by, what: '上传', ok: true, ip: '10.2.3.14' }],
   }
   dir.children!.push(node)

@@ -21,6 +21,7 @@ import { Avatar, FakeDoc, FileIcon, Toaster, primaryAction, toast } from './ui'
 import { InlineRename } from './VariantA1'
 import { GrantDialog, GrantInspector, GrantMatrix, GrantPeople, type GrantProps } from './VariantGrant'
 import { GroupFirstPanel, InspectPermissions, RestrictDialog, SpacePermissions } from './VariantConfluence'
+import { PermissionManager } from './VariantFtp'
 import { canManage } from './grants'
 import { entryPoints } from './perm'
 import { ShieldCheck } from 'lucide-react'
@@ -43,6 +44,8 @@ type GrantUI = { mount: 'modal' | 'inspector' | 'page'; C: React.ComponentType<G
 export const VariantP1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'modal', C: GrantDialog }} />
 export const VariantP2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'inspector', C: GrantInspector }} />
 export const VariantP3 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: GrantMatrix, page: '权限总览' }} />
+// Round 6: C1's table at every level, FTP-convention rights, creator ownership.
+export const VariantD1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: PermissionManager, page: '权限管理' }} />
 // Round 5: Confluence-inspired, at ~200 people.
 export const VariantC1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: SpacePermissions, page: '空间权限' }} />
 export const VariantC2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'modal', C: RestrictDialog }} />

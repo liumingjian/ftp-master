@@ -1,7 +1,7 @@
 // PROTOTYPE Grants logic shared by the P1–P4 grant UIs: principals, explanations, scope checks.
 // Naive on purpose. The real thing is the Effective Permission module; this only has to feel right.
 import { GROUPS, Grant, Node, ORGS, PEOPLE, PrincipalKind, ROOT, User } from './data'
-import { LEVELS, level, scopePath } from './perm'
+import { LEVELS, applies, level, scopePath } from './perm'
 import { pathString } from './store'
 
 export type Principal = { kind: PrincipalKind; id: string; label: string }
@@ -60,7 +60,7 @@ function why(g: Grant, p: Principal): string {
 export function sources(p: Principal, n: Node): Source[] {
   return scopePath(n)
     .flatMap((from) => from.grants.map((grant) => ({ grant, from })))
-    .filter(({ grant }) => reaches(grant, p))
+    .filter(({ grant, from }) => reaches(grant, p) && applies(grant, from, n))
     .map(({ grant, from }) => ({ grant, from, why: why(grant, p) }))
     .sort((a, b) => b.grant.level - a.grant.level)
 }

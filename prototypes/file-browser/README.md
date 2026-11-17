@@ -58,3 +58,17 @@ individual Grants under 研发部/后端组/发布包), borrowing from Confluenc
   warns when they pile up, merges them into a new User Group in one click, and nudges toward a group when picking a person.
 
 The principal picker now caps results per kind and asks you to keep typing, since 200 rows is not browsable.
+
+Round 6 (`D1`, default) takes C1's table to every level and swaps the four levels for FTP-convention rights:
+
+- Left tree of the space (folders, plus files carrying Grants; badges = Grants made there, orange = many individual),
+  right a C1-style table for the selected folder or file, drafted and saved together with an impact preview.
+- Columns 浏览 / 下载 / 上传 / 修改 / 删除 / 授权 (Serv-U, FileZilla Server and NTFS split rights this way), with a
+  preset per row: 仅浏览, 只读, 读写, 读写删, 完全控制, 投递箱. Dependencies are kept coherent (授权 ⇒ all; no 浏览 ⇒ no
+  下载/修改/删除). You can only hand out rights you hold.
+- Scope per folder Grant: 本层及以下 / 仅本层 (Serv-U "inherit", NTFS "applies to"); granting a big Organization
+  tree-wide over a large subtree warns and suggests 仅本层. Still no deny: inherited rights are grey and locked.
+- A file's creator gets a pinned, locked "创建者" row with every right (an automatic Grant, `origin: 'creator'`).
+  Without 授权 on the folder, a creator can share only with people who can already see the folder.
+- Try: 王管理 on 研发部/后端组/发布包; 张三 on 项目/2026-智慧园区/合同/付款计划.xlsx (⋯ → 授权), search 赵六;
+  公共资料/资料投递 is a 投递箱 for 全公司 at 仅本层.

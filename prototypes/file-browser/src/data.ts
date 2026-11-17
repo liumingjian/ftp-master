@@ -1,7 +1,12 @@
 // PROTOTYPE mock data: an in-memory Shared Tree, Users and Grants. Wipe freely.
 
 export type PrincipalKind = 'user' | 'org' | 'group'
-export type Grant = { kind: PrincipalKind; id: string; label: string; level: number }
+export type Right = 'list' | 'read' | 'write' | 'modify' | 'delete' | 'grant'
+/**
+ * level is kept for the older variants (derived from rights when rights exist).
+ * Round 6 adds FTP-style rights, a scope (Serv-U "inherit" / NTFS "applies to"), and the creator origin.
+ */
+export type Grant = { kind: PrincipalKind; id: string; label: string; level: number; rights?: Right[]; scope?: 'tree' | 'here'; origin?: 'creator' }
 export type Version = { v: number; at: string; by: string; size: number; stale?: boolean }
 export type AuditEvent = { at: string; who: string; what: string; ok: boolean; ip: string }
 
@@ -119,6 +124,8 @@ function d(name: string, grants: Grant[], children: Node[], modified = '2026-11-
   return { id: `n${seq++}`, name, type: 'dir', size: 0, modified, modifiedBy: by, grants, children }
 }
 
+const creator = (id: string, label: string): Grant => ({ kind: 'user', id, label, level: 4, origin: 'creator' })
+
 function f(name: string, size: number, modified: string, by: string, extra: Partial<Node> = {}): Node {
   const versions: Version[] = extra.versions ?? [{ v: 1, at: modified, by, size }]
   const audit: AuditEvent[] = extra.audit ?? [
@@ -133,6 +140,7 @@ export const ROOT: Node = d('全部文件', [], [
     d('后端组', [], [
       d('设计文档', [G.sunqi(1)], [
         f('接口规范 v3.docx', 2.1 * MB, '2026-11-15 18:02', '张三', {
+          grants: [creator('zhangsan', '张三')],
           versions: [
             { v: 3, at: '2026-11-15 18:02', by: '张三', size: 2.1 * MB },
             { v: 2, at: '2026-11-12 10:30', by: '孙七', size: 1.9 * MB },
@@ -140,7 +148,7 @@ export const ROOT: Node = d('全部文件', [], [
           ],
         }),
         f('数据库设计.xlsx', 0.86 * MB, '2026-11-08 11:20', '孙七'),
-        f('架构图.png', 4.2 * MB, '2026-11-01 09:00', '张三'),
+        f('架构图.png', 4.2 * MB, '2026-11-01 09:00', '张三', { grants: [creator('zhangsan', '张三'), { kind: 'group', id: 'release', label: '发布评审组', level: 2, rights: ['list', 'read'] }] }),
       ], '2026-11-15 18:02', '张三'),
       d('发布包', [G.release(2), ...SPRAWL.map((u): Grant => ({ kind: 'user', id: u.id, label: u.name, level: 1 }))], [f('ftp-master-1.4.2.tar.gz', 180 * MB, '2026-11-13 22:10', 'CI')], '2026-11-13 22:10', 'CI'),
     ], '2026-11-15 18:02', '张三'),
@@ -159,6 +167,7 @@ export const ROOT: Node = d('全部文件', [], [
       d('合同', [G.lisi(1)], [
         f('总包合同.pdf', 8.8 * MB, '2026-09-20 10:00', '张三'),
         f('补充协议一.docx', 0.4 * MB, '2026-11-16 09:40', '孙七', {
+          grants: [creator('sunqi', '孙七')],
           versions: [
             { v: 4, at: '2026-11-16 09:40', by: '孙七', size: 0.4 * MB, stale: true },
             { v: 3, at: '2026-11-16 09:31', by: '张三', size: 0.41 * MB },
@@ -172,7 +181,7 @@ export const ROOT: Node = d('全部文件', [], [
             { at: '2026-11-15 19:02', who: '李四', what: '下载', ok: false, ip: '10.2.5.7' },
           ],
         }),
-        f('付款计划.xlsx', 0.2 * MB, '2026-11-02 14:00', '张三'),
+        f('付款计划.xlsx', 0.2 * MB, '2026-11-02 14:00', '张三', { grants: [creator('zhangsan', '张三')] }),
       ], '2026-11-16 09:40', '孙七'),
       d('方案', [], [
         f('实施方案.docx', 31 * MB, '2026-10-28 18:00', '张三'),
@@ -186,7 +195,11 @@ export const ROOT: Node = d('全部文件', [], [
   ]),
   d('公共资料', [G.company(1)], [
     f('员工手册.pdf', 6.1 * MB, '2026-03-01 09:00', '王管理'),
-    d('模板', [G.mkt(3)], [f('周报模板.docx', 0.05 * MB, '2026-01-05 09:00', '王管理')]),
+    d('模板', [G.mkt(3)], [
+      f('周报模板.docx', 0.05 * MB, '2026-01-05 09:00', '王管理'),
+      f('市场活动方案.docx', 0.6 * MB, '2026-11-12 16:20', '赵六', { grants: [creator('zhaoliu', '赵六')] }),
+    ]),
+    d('资料投递', [{ kind: 'org', id: 'company', label: '全公司', level: 1, rights: ['write'], scope: 'here' }], [], '2026-11-01 09:00'),
   ]),
 ])
 
