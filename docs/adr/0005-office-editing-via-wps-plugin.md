@@ -6,7 +6,7 @@ Office documents (doc, docx, wps, xls, xlsx) are edited with our own browser ext
 - **Authentication is the session cookie only** (HttpOnly). WPS makes its own HTTP requests and cannot attach a bearer token.
 - **Saves are full-file multipart uploads** in two different shapes (Writer and ET); the save endpoint accepts both. Each manual save creates one File Version and one Audit Event; opening for edit is also audited.
 - **No locking; last save wins.** The plugin cannot surface a lock to the user and has no save-as, so rejecting a save would strand the user's edits. The base version is carried in the edit URL; a save based on a stale version is accepted, creates a new File Version, and is flagged in its Audit Event. Nothing is lost because earlier File Versions remain restorable.
-- Edit entry points require the Edit Permission Level and are shown only in Qaxbrowser with the plugin present and for files within the size limit.
+- Edit entry points require the Modify Right and are shown only in Qaxbrowser with the plugin present and for files within the size limit.
 
 ## Consequences
 
