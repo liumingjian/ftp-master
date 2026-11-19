@@ -2,7 +2,8 @@
 //
 // Every piece of time-dependent code reads the current time through a Clock
 // instead of calling the time package directly, so tests can advance time
-// deterministically rather than sleeping. clock_usage_test.go enforces this.
+// deterministically rather than sleeping. clock_usage_test.go enforces this
+// for the backend and web/scripts/check-clock.mjs for the web app.
 package clock
 
 import (

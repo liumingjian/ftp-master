@@ -3,11 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "pnpm check:api && vite",
     "generate": "openapi-typescript ../api/openapi.yaml -o src/api/schema.gen.ts",
     "check:api": "node scripts/check-api-types.mjs",
-    "typecheck": "tsc -b",
-    "build": "pnpm check:api && tsc -b && vite build",
+    "check:clock": "node scripts/check-clock.mjs",
+    "typecheck": "tsc -b && pnpm check:clock",
+    "build": "pnpm check:api && pnpm typecheck && vite build",
     "preview": "vite preview",
     "test:e2e": "playwright test"
   },

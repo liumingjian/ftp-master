@@ -1,13 +1,13 @@
 # Build context: the repository root (the contract lives in api/).
-FROM golang:1.26-alpine AS build
+# Debian, not alpine: sqlc's PostgreSQL parser needs cgo for the drift check.
+FROM golang:1.26-bookworm AS build
 WORKDIR /src/backend
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY api/ /src/api/
 COPY backend/ ./
-# A contract changed without regenerating fails the image build. (sqlc needs
-# cgo, which this image lacks; `sqlc diff` runs in CI and `make check-generated`.)
-RUN go test ./internal/api/
+# A contract or query changed without regenerating fails the image build.
+RUN go test ./internal/api/ && go tool sqlc diff
 RUN CGO_ENABLED=0 go build -trimpath -o /out/ftp-master ./cmd/ftp-master
 
 FROM alpine:3.22

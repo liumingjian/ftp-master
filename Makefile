@@ -2,7 +2,7 @@ COMPOSE := docker compose -f deploy/local/docker-compose.yml
 # Host port of the web shell; the compose file reads the same variable.
 export FTP_MASTER_WEB_PORT ?= 8088
 
-.PHONY: up down logs generate check-generated build test test-unit test-integration test-e2e run-backend
+.PHONY: up down logs generate check-generated check-generated-backend check-generated-web build test test-unit test-integration test-e2e run-backend
 
 ## up: build and start the whole local stack; the web shell is at http://localhost:$FTP_MASTER_WEB_PORT
 up:
@@ -22,8 +22,12 @@ generate:
 	cd web && pnpm generate
 
 ## check-generated: fail if generated code is stale against the contract or the SQL
-check-generated:
+check-generated: check-generated-backend check-generated-web
+
+check-generated-backend:
 	cd backend && go test -count=1 ./internal/api/ && go tool sqlc diff
+
+check-generated-web:
 	cd web && pnpm check:api
 
 ## build: drift check, then build the service binary and the web shell
@@ -46,6 +50,6 @@ test-integration:
 test-e2e:
 	cd web && E2E_BASE_URL=$${E2E_BASE_URL:-http://localhost:$(FTP_MASTER_WEB_PORT)} pnpm test:e2e
 
-## run-backend: run the service on the host against the stores of the local stack
-run-backend:
+## run-backend: drift check, then run the service on the host against the stores of the local stack
+run-backend: check-generated-backend
 	cd backend && go run ./cmd/ftp-master

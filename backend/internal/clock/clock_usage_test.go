@@ -11,13 +11,25 @@ import (
 	"testing"
 )
 
-// Functions of the time package that read or wait on the wall clock. Code
-// outside package clock must go through a clock.Clock instead, and tests must
-// advance a clock.Fake instead of sleeping.
-var wallClockFuncs = map[string]bool{
-	"Now": true, "Since": true, "Until": true, "Sleep": true,
-	"After": true, "AfterFunc": true, "Tick": true, "NewTimer": true, "NewTicker": true,
+// Functions that read or wait on the wall clock, by import path. Code outside
+// package clock must go through a clock.Clock instead, and tests must advance a
+// clock.Fake instead of sleeping. context deadlines count: they are measured
+// against the wall clock.
+var wallClockFuncs = map[string]map[string]bool{
+	"time": {
+		"Now": true, "Since": true, "Until": true, "Sleep": true,
+		"After": true, "AfterFunc": true, "Tick": true, "NewTimer": true, "NewTicker": true,
+	},
+	"context": {
+		"WithTimeout": true, "WithTimeoutCause": true,
+		"WithDeadline": true, "WithDeadlineCause": true,
+	},
 }
+
+// wallClockDirective exempts one use, on the same line or the line above, for
+// waits that are about the outside world rather than domain time (for example
+// a shutdown grace period). A reason must follow the directive.
+const wallClockDirective = "//clock:wallclock "
 
 func TestTimeIsOnlyReadThroughTheClock(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -33,34 +45,18 @@ func TestTimeIsOnlyReadThroughTheClock(t *testing.T) {
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || path == clockFile {
 			return nil
 		}
-		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly|parser.ParseComments)
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 		if err != nil {
 			return err
 		}
 		if ast.IsGenerated(file) {
 			return nil
 		}
-		timeName := importName(file, "time")
-		if timeName == "" {
-			return nil
+		rel, _ := filepath.Rel(root, path)
+		for _, finding := range wallClockUses(fset, file) {
+			t.Errorf("%s:%s; read time through clock.Clock instead", rel, finding)
 		}
-		fset := token.NewFileSet()
-		file, err = parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			return err
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == timeName && wallClockFuncs[sel.Sel.Name] {
-				rel, _ := filepath.Rel(root, path)
-				t.Errorf("%s:%d uses time.%s; read time through clock.Clock instead",
-					rel, fset.Position(sel.Pos()).Line, sel.Sel.Name)
-			}
-			return true
-		})
 		return nil
 	})
 	if err != nil {
@@ -68,16 +64,58 @@ func TestTimeIsOnlyReadThroughTheClock(t *testing.T) {
 	}
 }
 
-func importName(file *ast.File, path string) string {
+// wallClockUses lists "line: problem" for every unexempted wall-clock use in file.
+func wallClockUses(fset *token.FileSet, file *ast.File) []string {
+	var findings []string
+	banned := map[string]map[string]bool{} // local package name -> banned funcs
 	for _, imp := range file.Imports {
-		p, _ := strconv.Unquote(imp.Path.Value)
-		if p != path {
+		path, _ := strconv.Unquote(imp.Path.Value)
+		funcs, ok := wallClockFuncs[path]
+		if !ok {
 			continue
 		}
+		name := filepath.Base(path)
 		if imp.Name != nil {
-			return imp.Name.Name
+			name = imp.Name.Name
 		}
-		return filepath.Base(path)
+		if name == "." {
+			// Calls would be bare identifiers that cannot be told apart from
+			// local functions, so the import itself is not allowed.
+			findings = append(findings, strconv.Itoa(fset.Position(imp.Pos()).Line)+
+				" dot-imports "+strconv.Quote(path))
+			continue
+		}
+		banned[name] = funcs
 	}
-	return ""
+	if len(banned) == 0 {
+		return findings
+	}
+
+	exempt := map[int]bool{}
+	for _, group := range file.Comments {
+		for _, c := range group.List {
+			if strings.HasPrefix(c.Text, wallClockDirective) &&
+				strings.TrimSpace(strings.TrimPrefix(c.Text, wallClockDirective)) != "" {
+				line := fset.Position(c.Pos()).Line
+				exempt[line], exempt[line+1] = true, true
+			}
+		}
+	}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok || !banned[pkg.Name][sel.Sel.Name] {
+			return true
+		}
+		line := fset.Position(sel.Pos()).Line
+		if !exempt[line] {
+			findings = append(findings, strconv.Itoa(line)+" uses "+pkg.Name+"."+sel.Sel.Name)
+		}
+		return true
+	})
+	return findings
 }

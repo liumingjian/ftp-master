@@ -62,6 +62,7 @@ func run() error {
 		}
 		return nil
 	case <-ctx.Done():
+		//clock:wallclock grace period for in-flight requests, measured in real time
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		return server.Shutdown(shutdownCtx)

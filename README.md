@@ -35,15 +35,19 @@ make test-e2e          # Playwright against the running stack (`make up` first)
 - **Contract first.** Change `api/openapi.yaml`, run `make generate`, then implement the new
   method of `api.StrictServerInterface` in `backend/internal/httpapi`. Never edit `*.gen.go`
   or `schema.gen.ts` by hand. Stale generated code is caught by a regenerate-and-compare
-  check, not by the compiler alone: on the backend `go test ./internal/api` (run by
-  `make build`, the service image build and CI); on the frontend `pnpm build`. A bare
-  `go build` does not detect drift.
+  check, not by the compiler alone: on the backend `go test ./internal/api` and
+  `sqlc diff` (run by `make build`, `make run-backend`, the service image build and CI); on
+  the frontend `pnpm build` and `pnpm dev`. A bare `go build` does not detect drift.
 - **Migrations** take a PostgreSQL advisory lock, so instances starting together apply each
   one exactly once.
 - **Migrations** live in `backend/internal/db/migrations` as `NNNNN_name.sql` (goose format) and
   run forward on every service start and in every integration test. Queries live in
   `backend/internal/db/queries` and are compiled by sqlc into `internal/db/sqlcdb`.
 - **Time** is read only through `clock.Clock`; tests advance a `clock.Fake` instead of sleeping.
-  `backend/internal/clock/clock_usage_test.go` fails on any direct `time.Now`, `time.Sleep` etc.
+  `backend/internal/clock/clock_usage_test.go` fails on any direct `time.Now`, `time.Sleep`,
+  `context.WithTimeout` etc., and on dot-imports of `time`. A wait on the outside world (such
+  as the shutdown grace period) is exempted line by line with `//clock:wallclock <reason>`.
+  On the web, `pnpm typecheck` runs `scripts/check-clock.mjs`, which bans `Date.now()`,
+  `new Date()`, timers and the like under `src/`.
 - **Tests** sit at three seams: the HTTP API (integration, build tag `integration`, real stores via
   testcontainers), the browser (Playwright in `web/e2e`), and pure units (plain `go test`).
