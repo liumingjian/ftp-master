@@ -1,5 +1,6 @@
 # Build context: the repository root (the contract lives in api/).
-FROM node:24-alpine AS build
+# glibc, not alpine: rollup's native parser overflows musl's small thread stack.
+FROM node:24-slim AS build
 RUN npm install -g pnpm@12.11.2
 WORKDIR /src/web
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
