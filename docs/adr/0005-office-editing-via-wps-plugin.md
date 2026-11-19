@@ -13,6 +13,6 @@ Target-machine evidence from the plugin (wps-plugin#38, #39, #41) shapes the hos
 
 ## Consequences
 
-The plugin needs four changes before integration: a per-origin save-path template instead of the hard-coded `/RoadFlow/uploadfiles/OfficeSave`; a list of trusted origins, each with its own Gateway template, so ftp-master and RoadFlow can coexist; a page-visible presence marker; and passing the per-handoff key on the authenticated source read so the application can issue the Edit Permit. Its forced revision tracking, same-tab navigation and Single-Editor Assumption are kept.
+The plugin is adapted for this system on a dedicated `ftp-master` branch of `liumingjian/wps-plugin`, so its RoadFlow route stays untouched. It needs four changes before integration: a per-origin save-path template instead of the hard-coded `/RoadFlow/uploadfiles/OfficeSave`; a list of trusted origins, each with its own Gateway template, so ftp-master and RoadFlow can coexist; a page-visible presence marker; and passing the per-handoff key on the authenticated source read so the application can issue the Edit Permit. Its forced revision tracking, same-tab navigation and Single-Editor Assumption are kept.
 
 Manual acceptance on the target machine (Kylin, Qaxbrowser, WPS) replaces the old cookie check. It opens, edits and saves a docx and a doc. It shows that a missing, expired or reused Edit Permit keeps the editor locked and issues no save. It also shows that a Stale Save is accepted and flagged.
