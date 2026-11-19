@@ -19,7 +19,7 @@ import (
 const (
 	postgresImage = "postgres:17-alpine"
 	redisImage    = "redis:7-alpine"
-	minioImage    = "minio/minio:RELEASE.2025-04-22T22-12-26Z"
+	minioImage    = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
 )
 
 // stores are real, empty PostgreSQL, MinIO and Redis instances for one test.

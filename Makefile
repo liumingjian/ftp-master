@@ -1,11 +1,13 @@
 COMPOSE := docker compose -f deploy/local/docker-compose.yml
+# Host port of the web shell; the compose file reads the same variable.
+export FTP_MASTER_WEB_PORT ?= 8088
 
 .PHONY: up down logs generate check-generated build test test-unit test-integration test-e2e run-backend
 
-## up: build and start the whole local stack; the web shell is at http://localhost:8088
+## up: build and start the whole local stack; the web shell is at http://localhost:$FTP_MASTER_WEB_PORT
 up:
 	$(COMPOSE) up --build --detach --wait
-	@echo "ftp-master is up: http://localhost:8088"
+	@echo "ftp-master is up: http://localhost:$(FTP_MASTER_WEB_PORT)"
 
 ## down: stop the local stack (keeps data volumes; add -v to the compose command to drop them)
 down:
@@ -42,7 +44,7 @@ test-integration:
 
 ## test-e2e: Playwright against the running local stack (run `make up` first)
 test-e2e:
-	cd web && pnpm test:e2e
+	cd web && E2E_BASE_URL=$${E2E_BASE_URL:-http://localhost:$(FTP_MASTER_WEB_PORT)} pnpm test:e2e
 
 ## run-backend: run the service on the host against the stores of the local stack
 run-backend:

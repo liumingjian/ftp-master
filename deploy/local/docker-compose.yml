@@ -1,4 +1,5 @@
 # Local development stack: `make up`, then open http://localhost:8088.
+# Host ports default as below; override any with FTP_MASTER_*_PORT when one is taken.
 # Image versions match the testcontainers images in
 # backend/internal/app/stores_integration_test.go.
 name: ftp-master
@@ -10,7 +11,7 @@ services:
       POSTGRES_DB: ftpmaster
       POSTGRES_USER: ftpmaster
       POSTGRES_PASSWORD: ftpmaster
-    ports: ["5432:5432"]
+    ports: ["${FTP_MASTER_POSTGRES_PORT:-5432}:5432"]
     volumes: [postgres:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ftpmaster -d ftpmaster"]
@@ -20,7 +21,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["${FTP_MASTER_REDIS_PORT:-6379}:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
@@ -28,12 +29,12 @@ services:
       retries: 30
 
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     command: server /data --console-address :9001
     environment:
       MINIO_ROOT_USER: ftpmaster
       MINIO_ROOT_PASSWORD: ftpmaster-secret
-    ports: ["9000:9000", "9001:9001"]
+    ports: ["${FTP_MASTER_MINIO_PORT:-9000}:9000", "${FTP_MASTER_MINIO_CONSOLE_PORT:-9001}:9001"]
     volumes: [minio:/data]
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
@@ -53,7 +54,7 @@ services:
       MINIO_SECRET_KEY: ftpmaster-secret
       MINIO_BUCKET: ftp-master
       LISTEN_ADDR: :8080
-    ports: ["8080:8080"]
+    ports: ["${FTP_MASTER_APP_PORT:-8080}:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -68,7 +69,7 @@ services:
     build:
       context: ../..
       dockerfile: web/Dockerfile
-    ports: ["8088:80"]
+    ports: ["${FTP_MASTER_WEB_PORT:-8088}:80"]
     depends_on:
       app: { condition: service_healthy }
 

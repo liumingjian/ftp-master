@@ -19,6 +19,8 @@ Requires Go (see `backend/go.mod`), Node 24 with pnpm, and Docker.
 make up                # build and start PostgreSQL, MinIO, Redis, the service and the web shell
                        # then open http://localhost:8088
 make down              # stop the stack
+                       # port taken? e.g. FTP_MASTER_WEB_PORT=18088 FTP_MASTER_REDIS_PORT=16379 make up
+                       # (also FTP_MASTER_POSTGRES_PORT, _MINIO_PORT, _MINIO_CONSOLE_PORT, _APP_PORT)
 
 make generate          # after editing api/openapi.yaml or backend/internal/db/queries/*.sql
 make check-generated   # fails if generated code is stale (also part of `make build` and CI)
