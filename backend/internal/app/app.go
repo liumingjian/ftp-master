@@ -16,6 +16,7 @@ import (
 
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
 	"github.com/liumingjian/ftp-master/backend/internal/db"
+	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/health"
 	"github.com/liumingjian/ftp-master/backend/internal/httpapi"
 )
@@ -43,35 +44,36 @@ type App struct {
 
 // New connects to the backing stores, applies pending migrations, ensures the
 // content bucket exists and builds the HTTP handler.
-func New(ctx context.Context, cfg Config, clk clock.Clock) (*App, error) {
+func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("connect to PostgreSQL: %w", err)
 	}
+	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+	defer func() {
+		if err != nil {
+			pool.Close()
+			_ = redisClient.Close()
+		}
+	}()
+
 	if err := db.Migrate(ctx, pool); err != nil {
-		pool.Close()
 		return nil, err
 	}
-
-	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
 
 	minioClient, err := minio.New(cfg.MinIOEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
 		Secure: cfg.MinIOUseSSL,
 	})
 	if err != nil {
-		pool.Close()
-		_ = redisClient.Close()
 		return nil, fmt.Errorf("configure MinIO client: %w", err)
 	}
 	if err := ensureBucket(ctx, minioClient, cfg.MinIOBucket); err != nil {
-		pool.Close()
-		_ = redisClient.Close()
 		return nil, err
 	}
 
 	checker := health.NewChecker(clk,
-		db.NewHealth(pool),
+		sqlcdb.New(pool),
 		bucketPinger{client: minioClient, bucket: cfg.MinIOBucket},
 		redisPinger{client: redisClient},
 	)
