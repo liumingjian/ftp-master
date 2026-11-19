@@ -1,0 +1,30 @@
+{
+  "name": "ftp-master-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm check:api && vite",
+    "generate": "openapi-typescript ../api/openapi.yaml -o src/api/schema.gen.ts",
+    "check:api": "node scripts/check-api-types.mjs",
+    "check:clock": "node scripts/check-clock.mjs",
+    "typecheck": "tsc -b && pnpm check:clock",
+    "build": "pnpm check:api && pnpm typecheck && vite build",
+    "preview": "vite preview",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.14.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "openapi-typescript": "^7.9.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0"
+  }
+}

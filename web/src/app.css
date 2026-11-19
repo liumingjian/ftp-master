@@ -1,0 +1,61 @@
+:root {
+  font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: #1f2328;
+  background: #f6f8fa;
+}
+
+body {
+  margin: 0;
+}
+
+.shell-header {
+  padding: 12px 24px;
+  background: #fff;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.shell-header h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.shell-main {
+  padding: 24px;
+}
+
+.health {
+  max-width: 480px;
+  padding: 16px 24px;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+}
+
+.health h2 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.health dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+}
+
+.health dt {
+  color: #59636e;
+}
+
+.health dd {
+  margin: 0;
+}
+
+.good {
+  color: #1a7f37;
+  font-weight: 600;
+}
+
+.bad {
+  color: #d1242f;
+  font-weight: 600;
+}

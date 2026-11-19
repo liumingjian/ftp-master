@@ -1,0 +1,78 @@
+# Local development stack: `make up`, then open http://localhost:8088.
+# Host ports default as below; override any with FTP_MASTER_*_PORT when one is taken.
+# Image versions match the testcontainers images in
+# backend/internal/app/stores_integration_test.go.
+name: ftp-master
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ftpmaster
+      POSTGRES_USER: ftpmaster
+      POSTGRES_PASSWORD: ftpmaster
+    ports: ["${FTP_MASTER_POSTGRES_PORT:-5432}:5432"]
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ftpmaster -d ftpmaster"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports: ["${FTP_MASTER_REDIS_PORT:-6379}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ftpmaster
+      MINIO_ROOT_PASSWORD: ftpmaster-secret
+    ports: ["${FTP_MASTER_MINIO_PORT:-9000}:9000", "${FTP_MASTER_MINIO_CONSOLE_PORT:-9001}:9001"]
+    volumes: [minio:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgres://ftpmaster:ftpmaster@postgres:5432/ftpmaster?sslmode=disable
+      REDIS_ADDR: redis:6379
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ftpmaster
+      MINIO_SECRET_KEY: ftpmaster-secret
+      MINIO_BUCKET: ftp-master
+      LISTEN_ADDR: :8080
+    ports: ["${FTP_MASTER_APP_PORT:-8080}:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build:
+      context: ../..
+      dockerfile: web/Dockerfile
+    ports: ["${FTP_MASTER_WEB_PORT:-8088}:80"]
+    depends_on:
+      app: { condition: service_healthy }
+
+volumes:
+  postgres:
+  minio:

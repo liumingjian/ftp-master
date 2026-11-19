@@ -1,0 +1,18 @@
+# Build context: the repository root (the contract lives in api/).
+# Debian, not alpine: sqlc's PostgreSQL parser needs cgo for the drift check.
+FROM golang:1.26-bookworm AS build
+WORKDIR /src/backend
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY api/ /src/api/
+COPY backend/ ./
+# A contract or query changed without regenerating fails the image build.
+RUN go test ./internal/api/ && go tool sqlc diff
+RUN CGO_ENABLED=0 go build -trimpath -o /out/ftp-master ./cmd/ftp-master
+
+FROM alpine:3.22
+RUN adduser -D -H ftpmaster
+USER ftpmaster
+COPY --from=build /out/ftp-master /usr/local/bin/ftp-master
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/ftp-master"]
