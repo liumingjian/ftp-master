@@ -1,0 +1,71 @@
+openapi: 3.0.3
+info:
+  title: ftp-master API
+  version: 0.1.0
+  description: >-
+    The single source of truth for the ftp-master HTTP API. Backend handlers
+    and frontend client types are generated from this file (ADR 0004).
+servers:
+  - url: /api
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Report whether the service and its backing stores are reachable.
+      responses:
+        "200":
+          description: Every backing store is reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: At least one backing store is unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status, database, objectStorage, cache, checkedAt, uptimeSeconds]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        database:
+          $ref: "#/components/schemas/DatabaseHealth"
+        objectStorage:
+          $ref: "#/components/schemas/DependencyHealth"
+        cache:
+          $ref: "#/components/schemas/DependencyHealth"
+        checkedAt:
+          type: string
+          format: date-time
+          description: When the service performed this check, by its Clock.
+        uptimeSeconds:
+          type: integer
+          format: int64
+          description: Whole seconds since the service instance started, by its Clock.
+    HealthStatus:
+      type: string
+      enum: [ok, degraded]
+    DependencyHealth:
+      type: object
+      description: >-
+        Whether a backing store answered. Failure details are logged by the
+        service, never returned, since this endpoint needs no sign-in.
+      required: [up]
+      properties:
+        up:
+          type: boolean
+    DatabaseHealth:
+      type: object
+      required: [up, schemaVersion]
+      properties:
+        up:
+          type: boolean
+        schemaVersion:
+          type: integer
+          format: int64
+          description: Latest migration version applied, as read from PostgreSQL; 0 when down.
