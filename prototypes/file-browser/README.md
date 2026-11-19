@@ -163,3 +163,34 @@ zoom into that stretch, zoom out ×2, and undo back through earlier ranges. Expo
   out / expired after 2 h idle), sessions with failures, off-hours or outside addresses highlighted.
 
 Sessions (`sessionOf` in `src/audit.ts`): same person and IP, from a sign-in until a sign-out, a new sign-in or 2 hours idle.
+
+Verdict of round 9 (2026-11-19): **none of K1–K4.** The user wants audit kept simple: a plain event log an Administrator
+can filter, not an investigation tool. No histogram, lanes, trace chains, query language or sign-in sessions. Decided:
+- previews are **not** recorded; a zip download is **one** event listing its files; exporting is **not** recorded;
+- the directory filter matches the **path at the time** (prefix; "include subdirectories" on by default), so after a
+  directory is renamed or moved its older events are found under the old path; a zip matches if any file it packed was there;
+- no 三员分立 audit-administrator role for now.
+
+Round 10 (`S1`–`S3`, default `S1`) asks only: **what should that simple page look like?** All three are Administrator-only
+(switch to 王管理), share the logic in `src/audit.ts` (`querySimple`, `zipEvent`, `knownDirs`) and offer the same filters:
+time (今天 / 近 7 天 / 近 30 天 / 自定义 to the minute, at most 180 days), people (several, or an Organization and everyone
+beneath it), directory (type any path, old ones included; suggestions mark paths that no longer exist) + 包含子目录,
+action categories, 只看失败, CSV export. Every detail offers 只看此人 / 只看此目录 / 此文件全部历史 (by stable item id,
+across renames and moves).
+
+- `S1` **顶部筛选栏**: all filters in one bar above a dense paged table; details in a right-hand drawer.
+- `S2` **左侧筛选面板**: a faceted panel (time radios, people with counts, a directory tree plus a path box, actions with
+  counts); active filters as removable chips over the table; rows expand in place; "load more".
+- `S3` **一句话条件**: one sentence, 查看 [近 7 天] 内 [所有人] 在 [所有目录] 的 [所有操作], each part a popover;
+  results grouped by day with per-day counts and failures; details in a modal.
+
+Things to try: directory `/研发部/后端组/设计文档` (renamed from `设计资料` on 11-05: only the newer events show; pick the
+old path, marked 现已不在此路径, for the rest); directory `/研发部/后端组` catches 孙七's `研发部.zip` on 11-16 through
+the files inside it (tag 包内文件在此目录); 此文件全部历史 on 接口规范 v3.docx joins its v2 name and both directory names;
+Organization 研发部 (含下级); 只看失败 for 李四's password burst on 11-15.
+
+Verdict of round 10 (2026-11-19): **S1 is the audit design.** One Administrator-only page, 审计日志: a single filter bar
+(time presets 今天 / 近 7 天 / 近 30 天 / 自定义 to the minute, at most 180 days; people, several or an Organization with
+everyone beneath it; directory by path at the time with 包含子目录; action categories; 只看失败; 重置), a dense paged
+table (时间, 用户, 来源 IP, 操作, 对象（当时路径）), and a right-hand detail drawer listing every field, a zip's files,
+and the pivots 只看此人 / 只看此目录 / 此文件全部历史. CSV export of the current result, not itself audited.

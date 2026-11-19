@@ -11,7 +11,7 @@ import type { Node, User } from './data'
 import { ROOT } from './data'
 import { ensureDir, pathString, uniqueName, upload } from './store'
 import { userRights } from './rights'
-import { record } from './audit'
+import { record, zipEvent } from './audit'
 
 const MB = 1024 ** 2
 const GB = 1024 ** 3
@@ -163,15 +163,10 @@ export function zip(nodes: Node[], fake?: { label: string; size: number; count: 
   const j: Job = { id: id(), batch: b.id, kind: 'zip', name: label, rel: '', size, sent: 0, speed: 0, status: 'preparing', count, skipped, at: Date.now() }
   if (size > ZIP_MAX) Object.assign(j, { status: 'blocked', reason: `打包内容共 ${(size / GB).toFixed(1)} GB，超过 10 GB 上限。请分批选择，或单独下载大文件` })
   T.jobs.push(j)
-  // one Audit Event per file inside the zip (story 68); skipped files are recorded as refused
+  // round 10: ONE Audit Event per zip, listing the files packed and the ones left out
   if (!fake && j.status !== 'blocked') {
-    const each = (n: Node) => {
-      if (n.type === 'dir') return n.children!.forEach(each)
-      if (!userRights(u, n).has('list')) return
-      const ok = userRights(u, n).has('read')
-      record('download', n, { via: label, ok, reason: ok ? undefined : '无下载权限，已从压缩包中略去' })
-    }
-    nodes.forEach(each)
+    const ev = zipEvent(u, nodes, label)
+    record('download', ev.node, ev)
   }
   emit()
   return j

@@ -32,6 +32,7 @@ import { Simulator, T1, T2, T3, T4, type TransferCtx, type TransferUI } from './
 import { AdminOnlyAudit, AuditFeed, AuditInvestigate, AuditTable, ItemActivity, type AuditInspProps, type AuditPageProps } from './VariantAudit'
 import { auditRoots, signIn } from './audit'
 import { TraceChain, TraceLanes, TraceQuery, TraceSearch } from './VariantTrace'
+import { SimpleBar, SimpleFacets, SimpleSentence } from './VariantSimple'
 import { ScrollText } from 'lucide-react'
 
 type Flavor = 'spring' | 'calm' | 'glass'
@@ -73,6 +74,10 @@ export const VariantK1 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} au
 export const VariantK2 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计', TraceLanes)} />
 export const VariantK3 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计追溯', TraceChain)} />
 export const VariantK4 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计', TraceQuery)} />
+// Round 10: the simple audit log (decided scope), three layouts.
+export const VariantS1 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计日志', SimpleBar)} />
+export const VariantS2 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计日志', SimpleFacets)} />
+export const VariantS3 = (p: VariantProps) => <MotionExplorer {...p} {...T3P} auditUI={ADMIN_AUDIT('审计日志', SimpleSentence)} />
 // Round 5: Confluence-inspired, at ~200 people.
 export const VariantC1 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'page', C: SpacePermissions, page: '空间权限' }} />
 export const VariantC2 = (p: VariantProps) => <MotionExplorer {...p} flavor="calm" flyToBin grantUI={{ mount: 'modal', C: RestrictDialog }} />

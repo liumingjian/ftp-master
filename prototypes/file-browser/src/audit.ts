@@ -69,6 +69,8 @@ export type Ev = {
   detail?: string
   /** downloads inside a zip carry the zip's name */
   via?: string
+  /** round 10: a zip download is one event; these are the files it packed, by path at the time */
+  files?: { path: string; ok: boolean }[]
   stale?: boolean
   size?: number
   live?: boolean
@@ -176,14 +178,14 @@ function seedHistory() {
         const r = userRights(u, f)
         const roll = rnd()
         const base = { t, who: u.name, whoId: u.id, ip, ok: true, node: f, path: pathOfNode(f), size: f.size }
-        if (roll < 0.42 || !r.has('read')) push({ ...base, action: 'preview' })
+        // round 10: previews are no longer recorded, so a "preview" roll leaves nothing behind
+        if (roll < 0.42 || !r.has('read')) continue
         else if (roll < 0.75) push({ ...base, action: 'download' })
         else if (roll < 0.9 && r.has('modify') && ['docx', 'xlsx', 'doc', 'xls'].includes(ext(f))) {
           push({ ...base, action: 'edit_open' })
           push({ ...base, t: t + (5 + rnd() * 40) * 60_000, action: 'edit_save', detail: '新版本' })
           t += 45 * 60_000
         } else if (r.has('write')) push({ ...base, action: 'upload', detail: '同名上传 → 新版本' })
-        else push({ ...base, action: 'preview' })
       }
       if (rnd() < 0.55) push({ t: t + (20 + rnd() * 90) * 60_000, who: u.name, whoId: u.id, ip, action: 'signout', ok: true, path: '' })
     }
@@ -197,23 +199,42 @@ function seedHistory() {
   }
 }
 
+/**
+ * Round 10: a zip download is ONE event. Its path is the selected item's (or the selection's common parent),
+ * and `files` lists every file packed or left out (no Download right), by path at the time.
+ */
+export function zipEvent(u: User, nodes: Node[], label: string): Pick<Ev, 'action' | 'ok' | 'node' | 'path' | 'via' | 'files' | 'size' | 'detail'> {
+  const files: { path: string; ok: boolean }[] = []
+  let size = 0
+  const each = (n: Node) => {
+    if (n.type === 'dir') return n.children?.forEach(each)
+    const r = userRights(u, n)
+    if (!r.has('list')) return
+    files.push({ path: pathOfNode(n), ok: r.has('read') })
+    if (r.has('read')) size += n.size
+  }
+  nodes.forEach(each)
+  const node = nodes.length === 1 ? nodes[0] : nodes[0]?.parent
+  const skipped = files.filter((f) => !f.ok).length
+  return {
+    action: 'download', ok: true, node, path: node ? pathOfNode(node) : '', via: label, files, size,
+    detail: `打包 ${files.length - skipped} 个文件${skipped ? `，略去 ${skipped} 个无下载权限的文件` : ''}${nodes.length > 1 ? `（选中 ${nodes.length} 项）` : ''}`,
+  }
+}
+
 function seedIncidents() {
   const at = (m: number, d: number, h: number, mi: number, s = 0) => new Date(2026, m - 1, d, h, mi, s).getTime()
   const sys = { who: '系统', whoId: 'system', ip: '—' }
   const admin = { who: '王管理', whoId: 'admin', ip: '10.2.1.8' }
   const by = (name: string, ip?: string) => ({ who: name, whoId: person(name).id, ip: ip ?? ipOf(person(name)) })
 
-  // 1. late-night bulk zip by 孙七 (one event per file, story 68)
+  // 1. late-night bulk zip by 孙七. Round 10: ONE event per zip, the file list in `files`.
   const rd = byPath('/研发部')
   push({ t: at(11, 16, 22, 31), ...by('孙七'), action: 'signin', ok: true, path: '' })
   let t = at(11, 16, 22, 38)
-  for (const [label, dir] of [['研发部.zip', rd], ['研发部.zip', rd], ['项目.zip', byPath('/项目/2026-智慧园区')]] as const) {
-    for (const f of walk(dir).filter((x) => x.type === 'file')) {
-      const okRead = userRights(person('孙七'), f).has('read')
-      if (!userRights(person('孙七'), f).has('list')) continue
-      push({ t: (t += 900), ...by('孙七'), action: 'download', ok: okRead, reason: okRead ? undefined : '无下载权限，已从压缩包中略去', node: f, path: pathOfNode(f), via: label, size: f.size })
-    }
-    t += 4 * 60_000
+  for (const [label, dir] of [['研发部.zip', rd], ['研发部.zip', rd], ['2026-智慧园区.zip', byPath('/项目/2026-智慧园区')]] as const) {
+    push({ t, ...by('孙七'), ...zipEvent(person('孙七'), [dir], label) })
+    t += 6 * 60_000
   }
 
   // 2. a password-guessing burst against 李四 from an unknown address, then a success and a budget download
@@ -235,6 +256,17 @@ function seedIncidents() {
   const moveAt = at(11, 3, 10, 5)
   for (const e of LOG) if (e.node === art && e.t < moveAt) e.path = '/公共资料/设计稿.zip'
   push({ t: moveAt, ...by('周八'), action: 'move', ok: true, node: art, path: '/公共资料/设计稿.zip', detail: '→ /研发部/前端组' })
+
+  // 4b. round 10: a DIRECTORY rename. Filtering by path at the time means /研发部/后端组/设计文档 finds only what
+  // happened after 11-05; the earlier history is under its old name, /研发部/后端组/设计资料.
+  const docs = byPath('/研发部/后端组/设计文档')
+  const dirRenameAt = at(11, 5, 9, 40)
+  for (const e of LOG) {
+    if (e.t >= dirRenameAt) continue
+    if (e.path.startsWith('/研发部/后端组/设计文档')) e.path = e.path.replace('/研发部/后端组/设计文档', '/研发部/后端组/设计资料')
+    e.files?.forEach((f) => (f.path = f.path.replace('/研发部/后端组/设计文档', '/研发部/后端组/设计资料')))
+  }
+  push({ t: dirRenameAt, ...by('张三'), action: 'rename', ok: true, node: docs, path: '/研发部/后端组/设计资料', detail: '→ 设计文档' })
 
   // 5. a delete spree in 前端组 (later purged), and the two items now in the Recycle Bin
   push({ t: at(11, 13, 17, 41), ...by('周八'), action: 'signin', ok: true, path: '' })
@@ -383,17 +415,16 @@ export function describe(e: Ev): string {
   return `${a} ${e.path.split('/').pop()}${e.detail ? ` ${e.detail}` : ''}`
 }
 
-/** CSV with a BOM so Excel opens Chinese correctly. The export itself is recorded (auditing the auditors). */
+/** CSV with a BOM so Excel opens Chinese correctly. Round 10: exporting is NOT an Audit Event. */
 export function exportCsv(rows: Ev[], name: string) {
   const esc = (s: string) => `"${s.replace(/"/g, '""')}"`
-  const head = ['时间', '用户', '来源 IP', '操作', '对象（当时路径）', '结果', '说明', '所属压缩包']
-  const lines = rows.map((e) => [fmtFull(e.t), e.who, e.ip, ACTION[e.action].label, e.path, e.ok ? '成功' : '失败', [e.detail, e.reason].filter(Boolean).join('；'), e.via ?? ''].map(esc).join(','))
+  const head = ['时间', '用户', '来源 IP', '操作', '对象（当时路径）', '结果', '说明', '压缩包', '压缩包内文件']
+  const lines = rows.map((e) => [fmtFull(e.t), e.who, e.ip, ACTION[e.action].label, e.path, e.ok ? '成功' : '失败', [e.detail, e.reason].filter(Boolean).join('；'), e.via ?? '', (e.files ?? []).map((f) => f.path + (f.ok ? '' : '（略去）')).join('\n')].map(esc).join(','))
   const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = name
   a.click()
-  record('export', undefined, { detail: `导出 ${rows.length} 条` })
 }
 
 // ---------------------------------------------------------------- aggregation for the feed (L4)
@@ -473,3 +504,67 @@ function buildSessions() {
 }
 export const sessionOf = (e: Ev) => buildSessions().byEv.get(e.id)
 export const allSessions = () => buildSessions().all
+
+// ---------------------------------------------------------------- round 10: the simple log
+/**
+ * Round 10 decisions: Administrator-only, one flat log. Filters: time range, people (or an Organization and everyone
+ * beneath it), a directory matched by PATH AT THE TIME (prefix; "include subdirectories" on by default), categories,
+ * failures only, and "this item's whole history" by stable item id. A zip matches a directory if any file it packed
+ * was under it at the time.
+ */
+export type Simple = {
+  from: number
+  to: number
+  who: string[]
+  org?: string
+  dir?: string
+  sub: boolean
+  cats: Category[]
+  failedOnly: boolean
+  item?: Node
+}
+const parentOf = (p: string) => p.slice(0, p.lastIndexOf('/')) || '/'
+export function dirMatch(e: Ev, dir: string, sub: boolean): 'path' | 'zip' | null {
+  const hit = (p: string) => p === dir || (sub ? p.startsWith(dir + '/') : parentOf(p) === dir)
+  if (e.path && hit(e.path)) return 'path'
+  if (e.files?.some((f) => hit(f.path))) return 'zip'
+  return null
+}
+export function querySimple(f: Simple): Ev[] {
+  const orgPeople = f.org ? new Set(PEOPLE.filter((u) => u.orgs.includes(f.org!)).map((u) => u.id)) : null
+  const dir = f.dir && f.dir !== '/' ? f.dir.replace(/\/+$/, '') : undefined
+  const out: Ev[] = []
+  for (let i = LOG.length - 1; i >= 0; i--) {
+    const e = LOG[i]
+    if (e.t < f.from || e.t >= f.to) continue
+    if (f.who.length && !f.who.includes(e.whoId)) continue
+    if (orgPeople && !orgPeople.has(e.whoId)) continue
+    if (f.cats.length && !f.cats.includes(ACTION[e.action].cat)) continue
+    if (f.failedOnly && e.ok) continue
+    if (f.item && e.node !== f.item) continue
+    if (dir && !dirMatch(e, dir, f.sub)) continue
+    out.push(e)
+  }
+  return out
+}
+
+/** Every directory path ever seen in the log or in the tree, with whether it still exists under that name. */
+export function knownDirs(): { path: string; now: boolean }[] {
+  const cur = new Set<string>()
+  const go = (n: Node) => {
+    if (n !== ROOT) cur.add(pathOfNode(n))
+    for (const c of n.children ?? []) if (c.type === 'dir') go(c)
+  }
+  go(ROOT)
+  const seen = new Set<string>(cur)
+  const addParents = (p: string) => {
+    for (let q = parentOf(p); q !== '/'; q = parentOf(q)) seen.add(q)
+  }
+  for (const e of LOG) {
+    if (!e.path) continue
+    if (e.node?.type === 'dir') seen.add(e.path)
+    addParents(e.path)
+    e.files?.forEach((x) => addParents(x.path))
+  }
+  return [...seen].sort().map((path) => ({ path, now: cur.has(path) }))
+}
