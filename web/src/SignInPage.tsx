@@ -14,12 +14,12 @@ export function SignInPage() {
     setSubmitting(true)
     setError(null)
     try {
-      const { data, response } = await api.POST('/session', { body: { username, password } })
+      const { data, response, error: apiError } = await api.POST('/session', { body: { username, password } })
       if (data) {
         window.location.replace(pathAfterSignIn(window.location.search))
         return
       }
-      setError(response.status === 401 ? '用户名或密码错误' : `登录失败（HTTP ${response.status}）`)
+      setError(response.status === 403 && apiError?.code === 'registration_pending' ? '注册等待管理员审批' : response.status === 401 ? '用户名或密码错误' : `登录失败（HTTP ${response.status}）`)
     } catch (err: unknown) {
       setError(unreachableText(String(err)))
     }
@@ -63,6 +63,7 @@ export function SignInPage() {
         <button type="submit" disabled={submitting}>
           登录
         </button>
+      <a href="/register">注册新用户</a>
       </form>
     </div>
   )

@@ -55,14 +55,16 @@ type TreeNode struct {
 }
 
 type User struct {
-	ID              int64
-	Username        string
-	DisplayName     string
-	PasswordHash    string
-	IsAdministrator bool
-	Status          string
-	CreatedAt       pgtype.Timestamptz
-	OrganizationID  int64
+	ID               int64
+	Username         string
+	DisplayName      string
+	PasswordHash     string
+	IsAdministrator  bool
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	OrganizationID   int64
+	OrganizationHint string
+	SessionEpoch     int64
 }
 
 type UserGroup struct {
