@@ -123,7 +123,7 @@ func (q *Queries) ListRecycleEntries(ctx context.Context) ([]RecycleEntry, error
 }
 
 const listStorageGarbage = `-- name: ListStorageGarbage :many
-SELECT object_key,upload_id FROM storage_gc WHERE NOT EXISTS(SELECT 1 FROM file_versions f WHERE f.object_key=storage_gc.object_key) AND NOT EXISTS(SELECT 1 FROM upload_sessions u WHERE u.object_key=storage_gc.object_key AND u.state<>'complete')
+SELECT object_key,upload_id FROM storage_gc WHERE NOT EXISTS(SELECT 1 FROM file_versions f WHERE f.object_key=storage_gc.object_key) AND NOT EXISTS(SELECT 1 FROM upload_sessions u WHERE u.object_key=storage_gc.object_key AND u.state<>'complete') AND NOT EXISTS(SELECT 1 FROM office_edit_permits p WHERE p.object_key=storage_gc.object_key AND p.delivered_at IS NULL)
 `
 
 func (q *Queries) ListStorageGarbage(ctx context.Context) ([]StorageGc, error) {

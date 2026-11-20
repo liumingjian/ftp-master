@@ -2,6 +2,11 @@
 -- Completed upload receipts outlive their retained versions.
 ALTER TABLE upload_sessions DROP CONSTRAINT upload_sessions_version_id_fkey;
 ALTER TABLE upload_batches ADD COLUMN created_at timestamptz;
+-- Edit authority outlives retained version metadata. Snapshot the immutable
+-- source for pending delivery and preserve format/base ID for delivered saves.
+ALTER TABLE office_edit_permits ADD COLUMN object_key text NOT NULL DEFAULT '', ADD COLUMN size bigint NOT NULL DEFAULT 0, ADD COLUMN format text NOT NULL DEFAULT '';
+UPDATE office_edit_permits p SET object_key=v.object_key,size=v.size,format=v.format FROM file_versions v WHERE v.id=p.version_id;
+ALTER TABLE office_edit_permits DROP CONSTRAINT office_edit_permits_version_id_fkey;
 -- Existing batches inherit their earliest intent; interrupted empty reservations
 -- are conservatively aged from the first scheduler execution.
 UPDATE upload_batches b SET created_at=(SELECT min(created_at) FROM upload_sessions u WHERE u.batch_id=b.id);
@@ -43,4 +48,5 @@ GRANT EXECUTE ON FUNCTION audit_retire_partitions(timestamptz) TO ftp_master_app
 -- +goose Down
 DROP FUNCTION audit_retire_partitions(timestamptz);
 ALTER TABLE upload_batches DROP COLUMN created_at;
+ALTER TABLE office_edit_permits DROP COLUMN object_key,DROP COLUMN size,DROP COLUMN format;
 -- Receipts may already refer to pruned versions; do not recreate that FK.

@@ -217,11 +217,14 @@ publication, restore and purge. Failures roll back metadata; durable storage GC
 is retried on the next pass.
 
 Recycle Entries expire at 30 days and each automatic purge records an
-`automatic_purge` Audit Event. Each file retains its latest 20 version IDs;
-an older version with an unexpired Office edit permit remains pinned until the
-permit expires. Completed upload receipts retain historical version IDs after
+`automatic_purge` Audit Event. Each file retains its latest 20 version IDs.
+Office permits snapshot their base ID, format and immutable source independently
+of retained version metadata. Pending delivery pins the source bytes until expiry;
+delivered edits preserve save authority even after the base version is pruned.
+Completed upload receipts retain historical version IDs after
 pruning, without pinning their original object bytes. Shared immutable references
-remain protected by the GC check against retained versions and unfinished uploads.
+remain protected by the GC check against retained versions, unfinished uploads
+and pending Office deliveries.
 
 Unfinished uploads and hidden folder batches expire 24 hours after creation.
 This is an absolute lifetime, including a transfer left open in a browser.

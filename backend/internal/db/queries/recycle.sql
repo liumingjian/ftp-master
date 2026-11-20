@@ -22,7 +22,7 @@ DELETE FROM file_versions WHERE file_id IN (SELECT n.id FROM tree_nodes n WHERE 
 -- name: PurgeRecycleNodes :exec
 DELETE FROM tree_nodes WHERE recycle_root_id= @root_id;
 -- name: ListStorageGarbage :many
-SELECT object_key,upload_id FROM storage_gc WHERE NOT EXISTS(SELECT 1 FROM file_versions f WHERE f.object_key=storage_gc.object_key) AND NOT EXISTS(SELECT 1 FROM upload_sessions u WHERE u.object_key=storage_gc.object_key AND u.state<>'complete');
+SELECT object_key,upload_id FROM storage_gc WHERE NOT EXISTS(SELECT 1 FROM file_versions f WHERE f.object_key=storage_gc.object_key) AND NOT EXISTS(SELECT 1 FROM upload_sessions u WHERE u.object_key=storage_gc.object_key AND u.state<>'complete') AND NOT EXISTS(SELECT 1 FROM office_edit_permits p WHERE p.object_key=storage_gc.object_key AND p.delivered_at IS NULL);
 -- name: DeleteStorageGarbage :exec
 DELETE FROM storage_gc WHERE object_key= @object_key;
 

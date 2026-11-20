@@ -58,6 +58,9 @@ type OfficeEditPermit struct {
 	CreatedAt   pgtype.Timestamptz
 	ExpiresAt   pgtype.Timestamptz
 	DeliveredAt pgtype.Timestamptz
+	ObjectKey   string
+	Size        int64
+	Format      string
 }
 
 type Organization struct {

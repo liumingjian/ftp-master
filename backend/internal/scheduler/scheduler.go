@@ -3,14 +3,15 @@ package scheduler
 
 import (
 	"context"
+	"strings"
+	"time"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/recycle"
 	"github.com/minio/minio-go/v7"
-	"strings"
-	"time"
 )
 
 type Jobs struct {
@@ -51,11 +52,11 @@ func (j *Jobs) Run(ctx context.Context) error {
 			}
 		}
 	}
-	// Expired edit permits no longer pin source versions. Active edits keep their
-	// immutable source until their permit expires, then the next run prunes it.
+	// Expired unused permits no longer pin source bytes. Delivered permits
+	// retain base metadata for saving without pinning the source version.
 	statements := []string{
-		`DELETE FROM office_edit_permits WHERE expires_at <= $1`,
-		`WITH ranked AS (SELECT id,object_key,row_number() OVER(PARTITION BY file_id ORDER BY id DESC) n FROM file_versions), removed AS (DELETE FROM file_versions f USING ranked r WHERE f.id=r.id AND r.n>20 AND NOT EXISTS(SELECT 1 FROM office_edit_permits p WHERE p.version_id=f.id) RETURNING f.object_key) INSERT INTO storage_gc(object_key) SELECT object_key FROM removed ON CONFLICT DO NOTHING`,
+		`DELETE FROM office_edit_permits WHERE delivered_at IS NULL AND expires_at <= $1`,
+		`WITH ranked AS (SELECT id,object_key,row_number() OVER(PARTITION BY file_id ORDER BY id DESC) n FROM file_versions), removed AS (DELETE FROM file_versions f USING ranked r WHERE f.id=r.id AND r.n>20 RETURNING f.object_key) INSERT INTO storage_gc(object_key) SELECT object_key FROM removed ON CONFLICT DO NOTHING`,
 		`UPDATE upload_batches SET created_at=$1 WHERE created_at IS NULL`,
 		// Mark every old hidden batch as one expired unit, including complete children.
 		`INSERT INTO storage_gc(object_key,upload_id) SELECT u.object_key,u.storage_upload_id FROM upload_sessions u LEFT JOIN upload_batches b ON b.id=u.batch_id WHERE (u.state<>'complete' AND u.created_at <= $1::timestamptz-interval '24 hours') OR b.created_at <= $1::timestamptz-interval '24 hours' ON CONFLICT DO NOTHING`,

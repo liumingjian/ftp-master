@@ -12,7 +12,7 @@ import (
 )
 
 const createOfficePermit = `-- name: CreateOfficePermit :exec
-INSERT INTO office_edit_permits(id,user_id,file_id,version_id,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6)
+INSERT INTO office_edit_permits(id,user_id,file_id,version_id,created_at,expires_at,object_key,size,format) SELECT $1,$2,$3,$4,$5,$6,v.object_key,v.size,v.format FROM file_versions v WHERE v.id=$4
 `
 
 type CreateOfficePermitParams struct {
@@ -37,7 +37,7 @@ func (q *Queries) CreateOfficePermit(ctx context.Context, arg CreateOfficePermit
 }
 
 const getOfficePermit = `-- name: GetOfficePermit :one
-SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at,v.object_key,v.size,v.format,n.name FROM office_edit_permits p JOIN file_versions v ON v.id=p.version_id JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL
+SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at, p.object_key, p.size, p.format,n.name FROM office_edit_permits p JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL
 `
 
 type GetOfficePermitRow struct {
@@ -74,7 +74,7 @@ func (q *Queries) GetOfficePermit(ctx context.Context, id string) (GetOfficePerm
 }
 
 const lockOfficePermit = `-- name: LockOfficePermit :one
-SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at,v.object_key,v.size,v.format,n.name FROM office_edit_permits p JOIN file_versions v ON v.id=p.version_id JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL FOR UPDATE OF p
+SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at, p.object_key, p.size, p.format,n.name FROM office_edit_permits p JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL FOR UPDATE OF p
 `
 
 type LockOfficePermitRow struct {
