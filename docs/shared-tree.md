@@ -189,3 +189,19 @@ replacement with `creator: true`; preview, audit and rollback use the ordinary
 atomic draft path. The Chinese permission editor exposes Creator markers,
 removal and transfer controls and the parent-audience restriction. Existing
 self-Grant-loss and broad-subtree warnings retain their original meanings.
+## File Versions
+
+`GET /api/tree/{id}/versions` requires Browse and lists all retained versions,
+newest first, including their author identity, username and Clock-stamped time.
+Historical bytes use the existing extension-free download route with
+`?versionId=ID`; each issuance requires current Download and records `download`.
+`POST /api/tree/{id}/versions/{versionId}/restore` requires Modify, appends a new
+latest File Version attributed to the restoring User, and commits its
+`restore_version` Audit Event atomically. Neither earlier version is changed.
+Missing or foreign-file versions return 404 after non-disclosing authorization.
+
+Restoration shares the source's immutable `object_key`; it does not copy bytes.
+The scheduled cleanup seam (#21) must queue removed keys in `storage_gc` and use
+`recycle.Collect` to remove only unreferenced content. Pruning one version must
+never remove bytes still referenced by a restored version. Retention remains the
+scheduler's responsibility; version history itself does not prune on read.
