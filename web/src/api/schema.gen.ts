@@ -59,6 +59,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tree/{id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["downloadFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit/query": {
         parameters: {
             query?: never;
@@ -833,6 +851,31 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OfficeEdit"];
                 };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    downloadFile: {
+        parameters: {
+            query?: {
+                versionId?: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized short-lived capability for immutable file bytes. Audit records issuance. */
+            302: {
+                headers: {
+                    Location: string;
+                    "Cache-Control": string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Unauthorized"];
         };
