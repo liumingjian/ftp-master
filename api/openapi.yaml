@@ -163,6 +163,34 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/UploadReceipt'}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/search:
+    get:
+      operationId: searchTree
+      parameters:
+        - {in: query, name: q, required: true, schema: {type: string, minLength: 1, maxLength: 255}}
+      responses:
+        "200":
+          description: Files matching the literal case-insensitive name query with current Browse.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: "#/components/schemas/TreeNode"}}
+        default: {$ref: "#/components/responses/Unauthorized"}
+  /tree/{id}/preview:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: previewFile
+      parameters:
+        - {in: header, name: Range, schema: {type: string}}
+      responses:
+        "200":
+          description: Safe inline immutable content, requires Browse and produces no Audit Event.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        "206":
+          description: Partial media content.
+        default: {$ref: "#/components/responses/Unauthorized"}
   /tree/{id}/download:
     parameters:
       - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
