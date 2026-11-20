@@ -4,6 +4,74 @@
  */
 
 export interface paths {
+    "/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["initiateUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/uploads/{id}/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["issueUploadParts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/uploads/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/upload-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getUploadPolicy"];
+        put: operations["setUploadPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree": {
         parameters: {
             query?: never;
@@ -558,6 +626,35 @@ export interface components {
             displayName: string;
             organizationHint: string;
         };
+        UploadInput: {
+            /** Format: int64 */
+            parentId: number;
+            name: string;
+            /** Format: int64 */
+            size: number;
+        };
+        UploadSession: {
+            id: string;
+            /** Format: int64 */
+            partSize: number;
+            partCount: number;
+        };
+        PartInput: {
+            numbers: number[];
+        };
+        PartURLs: {
+            number: number;
+            url: string;
+        }[];
+        UploadReceipt: {
+            /** Format: int64 */
+            fileId: number;
+            /** Format: int64 */
+            versionId: number;
+        };
+        UploadPolicy: {
+            blockedExtensions: string[];
+        };
     };
     responses: {
         /** @description There is no valid session for an active User. */
@@ -577,6 +674,127 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    initiateUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadInput"];
+            };
+        };
+        responses: {
+            /** @description Successful transfer operation. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadSession"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    issueUploadParts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartInput"];
+            };
+        };
+        responses: {
+            /** @description Successful transfer operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartURLs"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    completeUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful transfer operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadReceipt"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getUploadPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful transfer operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadPolicy"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    setUploadPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadPolicy"];
+            };
+        };
+        responses: {
+            /** @description Successful transfer operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadPolicy"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     listTree: {
         parameters: {
             query?: {
