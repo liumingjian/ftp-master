@@ -215,6 +215,17 @@ type OrganizationInput struct {
 // Organizations defines model for Organizations.
 type Organizations = []Organization
 
+// PartInput defines model for PartInput.
+type PartInput struct {
+	Numbers []int `json:"numbers"`
+}
+
+// PartURLs defines model for PartURLs.
+type PartURLs = []struct {
+	Number int    `json:"number"`
+	Url    string `json:"url"`
+}
+
 // Registration defines model for Registration.
 type Registration struct {
 	DisplayName      string `json:"displayName"`
@@ -283,6 +294,31 @@ type TreeNode struct {
 	ParentId    *int64 `json:"parentId,omitempty"`
 	Rights      int    `json:"rights"`
 	Traversable bool   `json:"traversable"`
+}
+
+// UploadInput defines model for UploadInput.
+type UploadInput struct {
+	Name     string `json:"name"`
+	ParentId int64  `json:"parentId"`
+	Size     int64  `json:"size"`
+}
+
+// UploadPolicy defines model for UploadPolicy.
+type UploadPolicy struct {
+	BlockedExtensions []string `json:"blockedExtensions"`
+}
+
+// UploadReceipt defines model for UploadReceipt.
+type UploadReceipt struct {
+	FileId    int64 `json:"fileId"`
+	VersionId int64 `json:"versionId"`
+}
+
+// UploadSession defines model for UploadSession.
+type UploadSession struct {
+	Id        string `json:"id"`
+	PartCount int    `json:"partCount"`
+	PartSize  int64  `json:"partSize"`
 }
 
 // UserGroup defines model for UserGroup.
@@ -397,6 +433,15 @@ type MoveTreeNodeJSONRequestBody MoveTreeNodeJSONBody
 // RenameTreeNodeJSONRequestBody defines body for RenameTreeNode for application/json ContentType.
 type RenameTreeNodeJSONRequestBody RenameTreeNodeJSONBody
 
+// SetUploadPolicyJSONRequestBody defines body for SetUploadPolicy for application/json ContentType.
+type SetUploadPolicyJSONRequestBody = UploadPolicy
+
+// InitiateUploadJSONRequestBody defines body for InitiateUpload for application/json ContentType.
+type InitiateUploadJSONRequestBody = UploadInput
+
+// IssueUploadPartsJSONRequestBody defines body for IssueUploadParts for application/json ContentType.
+type IssueUploadPartsJSONRequestBody = PartInput
+
 // CreateUserGroupJSONRequestBody defines body for CreateUserGroup for application/json ContentType.
 type CreateUserGroupJSONRequestBody = UserGroupInput
 
@@ -489,6 +534,21 @@ type ServerInterface interface {
 
 	// (POST /tree/{id}/rename)
 	RenameTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /upload-policy)
+	GetUploadPolicy(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /upload-policy)
+	SetUploadPolicy(w http.ResponseWriter, r *http.Request)
+
+	// (POST /uploads)
+	InitiateUpload(w http.ResponseWriter, r *http.Request)
+
+	// (POST /uploads/{id}/complete)
+	CompleteUpload(w http.ResponseWriter, r *http.Request, id string)
+
+	// (POST /uploads/{id}/parts)
+	IssueUploadParts(w http.ResponseWriter, r *http.Request, id string)
 
 	// (GET /user-groups)
 	ListUserGroups(w http.ResponseWriter, r *http.Request)
@@ -1029,6 +1089,100 @@ func (siw *ServerInterfaceWrapper) RenameTreeNode(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetUploadPolicy operation middleware
+func (siw *ServerInterfaceWrapper) GetUploadPolicy(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUploadPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetUploadPolicy operation middleware
+func (siw *ServerInterfaceWrapper) SetUploadPolicy(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetUploadPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InitiateUpload operation middleware
+func (siw *ServerInterfaceWrapper) InitiateUpload(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InitiateUpload(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteUpload operation middleware
+func (siw *ServerInterfaceWrapper) CompleteUpload(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteUpload(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// IssueUploadParts operation middleware
+func (siw *ServerInterfaceWrapper) IssueUploadParts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IssueUploadParts(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListUserGroups operation middleware
 func (siw *ServerInterfaceWrapper) ListUserGroups(w http.ResponseWriter, r *http.Request) {
 
@@ -1295,6 +1449,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads", wrapper.InitiateUpload)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads/{id}/parts", wrapper.IssueUploadParts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads/{id}/complete", wrapper.CompleteUpload)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/upload-policy", wrapper.GetUploadPolicy)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/upload-policy", wrapper.SetUploadPolicy)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree", wrapper.ListTree)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree", wrapper.CreateDirectory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}", wrapper.GetTreeNode)
@@ -2473,6 +2632,201 @@ func (response RenameTreeNodedefaultJSONResponse) VisitRenameTreeNodeResponse(w 
 	return err
 }
 
+type GetUploadPolicyRequestObject struct {
+}
+
+type GetUploadPolicyResponseObject interface {
+	VisitGetUploadPolicyResponse(w http.ResponseWriter) error
+}
+
+type GetUploadPolicy200JSONResponse UploadPolicy
+
+func (response GetUploadPolicy200JSONResponse) VisitGetUploadPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUploadPolicydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetUploadPolicydefaultJSONResponse) VisitGetUploadPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUploadPolicyRequestObject struct {
+	Body *SetUploadPolicyJSONRequestBody
+}
+
+type SetUploadPolicyResponseObject interface {
+	VisitSetUploadPolicyResponse(w http.ResponseWriter) error
+}
+
+type SetUploadPolicy200JSONResponse UploadPolicy
+
+func (response SetUploadPolicy200JSONResponse) VisitSetUploadPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUploadPolicydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetUploadPolicydefaultJSONResponse) VisitSetUploadPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InitiateUploadRequestObject struct {
+	Body *InitiateUploadJSONRequestBody
+}
+
+type InitiateUploadResponseObject interface {
+	VisitInitiateUploadResponse(w http.ResponseWriter) error
+}
+
+type InitiateUpload201JSONResponse UploadSession
+
+func (response InitiateUpload201JSONResponse) VisitInitiateUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InitiateUploaddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response InitiateUploaddefaultJSONResponse) VisitInitiateUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteUploadRequestObject struct {
+	Id string `json:"id"`
+}
+
+type CompleteUploadResponseObject interface {
+	VisitCompleteUploadResponse(w http.ResponseWriter) error
+}
+
+type CompleteUpload200JSONResponse UploadReceipt
+
+func (response CompleteUpload200JSONResponse) VisitCompleteUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteUploaddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CompleteUploaddefaultJSONResponse) VisitCompleteUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueUploadPartsRequestObject struct {
+	Id   string `json:"id"`
+	Body *IssueUploadPartsJSONRequestBody
+}
+
+type IssueUploadPartsResponseObject interface {
+	VisitIssueUploadPartsResponse(w http.ResponseWriter) error
+}
+
+type IssueUploadParts200JSONResponse PartURLs
+
+func (response IssueUploadParts200JSONResponse) VisitIssueUploadPartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueUploadPartsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response IssueUploadPartsdefaultJSONResponse) VisitIssueUploadPartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListUserGroupsRequestObject struct {
 }
 
@@ -2979,6 +3333,21 @@ type StrictServerInterface interface {
 
 	// (POST /tree/{id}/rename)
 	RenameTreeNode(ctx context.Context, request RenameTreeNodeRequestObject) (RenameTreeNodeResponseObject, error)
+
+	// (GET /upload-policy)
+	GetUploadPolicy(ctx context.Context, request GetUploadPolicyRequestObject) (GetUploadPolicyResponseObject, error)
+
+	// (PUT /upload-policy)
+	SetUploadPolicy(ctx context.Context, request SetUploadPolicyRequestObject) (SetUploadPolicyResponseObject, error)
+
+	// (POST /uploads)
+	InitiateUpload(ctx context.Context, request InitiateUploadRequestObject) (InitiateUploadResponseObject, error)
+
+	// (POST /uploads/{id}/complete)
+	CompleteUpload(ctx context.Context, request CompleteUploadRequestObject) (CompleteUploadResponseObject, error)
+
+	// (POST /uploads/{id}/parts)
+	IssueUploadParts(ctx context.Context, request IssueUploadPartsRequestObject) (IssueUploadPartsResponseObject, error)
 
 	// (GET /user-groups)
 	ListUserGroups(ctx context.Context, request ListUserGroupsRequestObject) (ListUserGroupsResponseObject, error)
@@ -3721,6 +4090,151 @@ func (sh *strictHandler) RenameTreeNode(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// GetUploadPolicy operation middleware
+func (sh *strictHandler) GetUploadPolicy(w http.ResponseWriter, r *http.Request) {
+	var request GetUploadPolicyRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetUploadPolicy(ctx, request.(GetUploadPolicyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetUploadPolicy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetUploadPolicyResponseObject); ok {
+		if err := validResponse.VisitGetUploadPolicyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetUploadPolicy operation middleware
+func (sh *strictHandler) SetUploadPolicy(w http.ResponseWriter, r *http.Request) {
+	var request SetUploadPolicyRequestObject
+
+	var body SetUploadPolicyJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetUploadPolicy(ctx, request.(SetUploadPolicyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetUploadPolicy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetUploadPolicyResponseObject); ok {
+		if err := validResponse.VisitSetUploadPolicyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// InitiateUpload operation middleware
+func (sh *strictHandler) InitiateUpload(w http.ResponseWriter, r *http.Request) {
+	var request InitiateUploadRequestObject
+
+	var body InitiateUploadJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.InitiateUpload(ctx, request.(InitiateUploadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "InitiateUpload")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(InitiateUploadResponseObject); ok {
+		if err := validResponse.VisitInitiateUploadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CompleteUpload operation middleware
+func (sh *strictHandler) CompleteUpload(w http.ResponseWriter, r *http.Request, id string) {
+	var request CompleteUploadRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CompleteUpload(ctx, request.(CompleteUploadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CompleteUpload")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CompleteUploadResponseObject); ok {
+		if err := validResponse.VisitCompleteUploadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// IssueUploadParts operation middleware
+func (sh *strictHandler) IssueUploadParts(w http.ResponseWriter, r *http.Request, id string) {
+	var request IssueUploadPartsRequestObject
+
+	request.Id = id
+
+	var body IssueUploadPartsJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.IssueUploadParts(ctx, request.(IssueUploadPartsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "IssueUploadParts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(IssueUploadPartsResponseObject); ok {
+		if err := validResponse.VisitIssueUploadPartsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListUserGroups operation middleware
 func (sh *strictHandler) ListUserGroups(w http.ResponseWriter, r *http.Request) {
 	var request ListUserGroupsRequestObject
@@ -3944,61 +4458,66 @@ func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, u
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"JbtymQRnwZBkLFh8XPw3AAD//w==",
+	"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",
+	"AP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

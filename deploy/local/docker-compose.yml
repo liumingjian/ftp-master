@@ -36,6 +36,7 @@ services:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     command: server /data --console-address :9001
     environment:
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:${FTP_MASTER_WEB_PORT:-8088}"
       MINIO_ROOT_USER: ftpmaster
       MINIO_ROOT_PASSWORD: ftpmaster-secret
     ports: ["${FTP_MASTER_MINIO_PORT:-9000}:9000", "${FTP_MASTER_MINIO_CONSOLE_PORT:-9001}:9001"]
@@ -58,9 +59,11 @@ services:
       INITIAL_ADMINISTRATOR_PASSWORD: admin-local-only
       # The web container's Nginx; its X-Forwarded-For names the client.
       # Requests to the app's own published port are recorded by peer address.
-      TRUSTED_PROXIES: 172.30.88.80
+      TRUSTED_PROXIES: ${FTP_MASTER_WEB_IP:-172.30.88.80}
       REDIS_ADDR: redis:6379
       MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:${FTP_MASTER_MINIO_PORT:-9000}
+      MINIO_REGION: us-east-1
       MINIO_ACCESS_KEY: ftpmaster
       MINIO_SECRET_KEY: ftpmaster-secret
       MINIO_BUCKET: ftp-master
@@ -83,7 +86,7 @@ services:
     ports: ["${FTP_MASTER_WEB_PORT:-8088}:80"]
     networks:
       default:
-        ipv4_address: 172.30.88.80
+        ipv4_address: ${FTP_MASTER_WEB_IP:-172.30.88.80}
     depends_on:
       app: { condition: service_healthy }
 
@@ -91,7 +94,7 @@ networks:
   default:
     ipam:
       config:
-        - subnet: 172.30.88.0/24
+        - subnet: ${FTP_MASTER_SUBNET:-172.30.88.0/24}
 
 volumes:
   postgres:

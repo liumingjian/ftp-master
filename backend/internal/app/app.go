@@ -43,11 +43,14 @@ type Config struct {
 	RedisAddr     string
 	RedisPassword string
 
-	MinIOEndpoint  string
-	MinIOAccessKey string
-	MinIOSecretKey string
-	MinIOUseSSL    bool
-	MinIOBucket    string
+	MinIOPublicEndpoint string
+	MinIOPublicUseSSL   bool
+	MinIORegion         string
+	MinIOEndpoint       string
+	MinIOAccessKey      string
+	MinIOSecretKey      string
+	MinIOUseSSL         bool
+	MinIOBucket         string
 }
 
 // InitialAdministrator are the credentials of the first Administrator.
@@ -82,9 +85,12 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 		}
 	}()
 
+	if cfg.MinIORegion == "" {
+		cfg.MinIORegion = "us-east-1"
+	}
 	minioClient, err := minio.New(cfg.MinIOEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
-		Secure: cfg.MinIOUseSSL,
+		Secure: cfg.MinIOUseSSL, Region: cfg.MinIORegion, BucketLookup: minio.BucketLookupPath,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("configure MinIO client: %w", err)
@@ -93,6 +99,15 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 		return nil, err
 	}
 
+	publicEndpoint := cfg.MinIOPublicEndpoint
+	if publicEndpoint == "" {
+		publicEndpoint = cfg.MinIOEndpoint
+		cfg.MinIOPublicUseSSL = cfg.MinIOUseSSL
+	}
+	signer, err := minio.New(publicEndpoint, &minio.Options{Creds: credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""), Secure: cfg.MinIOPublicUseSSL, Region: cfg.MinIORegion, BucketLookup: minio.BucketLookupPath})
+	if err != nil {
+		return nil, err
+	}
 	queries := sqlcdb.New(pool)
 	recorder := audit.NewRecorder(queries, clk)
 	// This month's and next month's partitions, so the first events of a
@@ -117,7 +132,7 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 		bucketPinger{client: minioClient, bucket: cfg.MinIOBucket},
 		redisPinger{client: redisClient},
 	)
-	handler, err := httpapi.NewHandler(checker, identityService, cfg.HTTP, httpapi.MembershipDependencies{Pool: pool, Clock: clk})
+	handler, err := httpapi.NewHandler(checker, identityService, cfg.HTTP, httpapi.MembershipDependencies{Pool: pool, Clock: clk}, httpapi.TransferDependencies{Client: minioClient, Signer: signer, Bucket: cfg.MinIOBucket})
 	if err != nil {
 		return nil, err
 	}

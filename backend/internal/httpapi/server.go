@@ -30,6 +30,7 @@ type Options struct {
 
 // Server implements api.StrictServerInterface.
 type Server struct {
+	transfer   TransferDependencies
 	membership MembershipDependencies
 	health     *health.Checker
 	identity   *identity.Service
@@ -42,12 +43,15 @@ var _ api.StrictServerInterface = (*Server)(nil)
 // NewHandler returns the HTTP handler serving the whole API under BasePath.
 // Every operation requires a signed-in, active User unless the contract marks
 // it `security: []`.
-func NewHandler(checker *health.Checker, identityService *identity.Service, options Options, membership MembershipDependencies) (http.Handler, error) {
+func NewHandler(checker *health.Checker, identityService *identity.Service, options Options, membership MembershipDependencies, transfers ...TransferDependencies) (http.Handler, error) {
 	contract, err := readContract()
 	if err != nil {
 		return nil, err
 	}
 	server := &Server{membership: membership, health: checker, identity: identityService, options: options, contract: contract}
+	if len(transfers) > 0 {
+		server.transfer = transfers[0]
+	}
 	strict := api.NewStrictHandlerWithOptions(server,
 		[]api.StrictMiddlewareFunc{server.guard()},
 		api.StrictHTTPServerOptions{

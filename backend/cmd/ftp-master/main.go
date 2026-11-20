@@ -46,13 +46,16 @@ func run() error {
 			TrustedProxies:        trustedProxies,
 			InsecureSessionCookie: envBool("INSECURE_SESSION_COOKIE"),
 		},
-		RedisAddr:      env("REDIS_ADDR", "localhost:6379"),
-		RedisPassword:  os.Getenv("REDIS_PASSWORD"),
-		MinIOEndpoint:  env("MINIO_ENDPOINT", "localhost:9000"),
-		MinIOAccessKey: env("MINIO_ACCESS_KEY", "ftpmaster"),
-		MinIOSecretKey: env("MINIO_SECRET_KEY", "ftpmaster-secret"),
-		MinIOUseSSL:    envBool("MINIO_USE_SSL"),
-		MinIOBucket:    env("MINIO_BUCKET", "ftp-master"),
+		RedisAddr:           env("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:       os.Getenv("REDIS_PASSWORD"),
+		MinIOPublicEndpoint: os.Getenv("MINIO_PUBLIC_ENDPOINT"),
+		MinIOPublicUseSSL:   envBool("MINIO_PUBLIC_USE_SSL"),
+		MinIORegion:         env("MINIO_REGION", "us-east-1"),
+		MinIOEndpoint:       env("MINIO_ENDPOINT", "localhost:9000"),
+		MinIOAccessKey:      env("MINIO_ACCESS_KEY", "ftpmaster"),
+		MinIOSecretKey:      env("MINIO_SECRET_KEY", "ftpmaster-secret"),
+		MinIOUseSSL:         envBool("MINIO_USE_SSL"),
+		MinIOBucket:         env("MINIO_BUCKET", "ftp-master"),
 	}
 
 	service, err := app.New(ctx, cfg, clock.System{})

@@ -1,3 +1,4 @@
+import { UploadRow, UploadPolicyEditor } from "./UploadRow";
 import { useEffect, useState } from "react";
 import { GrantsPanel } from "./GrantsPanel";
 import { api } from "./api/client";
@@ -79,6 +80,8 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
           {current && !(current.rights & 1) && (
             <p>此目录内容不可浏览；仅显示可访问的路径。</p>
           )}
+          {current && (current.rights & 4) !== 0 && <UploadRow key={current.id} parentId={current.id} completed={() => setRevision(v => v + 1)} />}
+          {administrator && <UploadPolicyEditor />}
           <ul>
             {nodes.map((n) => (
               <li key={n.id}>
