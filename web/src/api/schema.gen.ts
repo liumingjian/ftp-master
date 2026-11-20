@@ -773,6 +773,14 @@ export interface components {
             isFile: boolean;
             rights: number;
             traversable: boolean;
+            /** @description Latest immutable content metadata, included for browsable files in tree listings. */
+            latestVersion?: {
+                /** Format: int64 */
+                id: number;
+                /** Format: int64 */
+                size: number;
+                format: string;
+            };
         };
         GrantImpact: {
             changedUsers: number;
