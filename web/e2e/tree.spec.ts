@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { execFileSync } from "node:child_process";
 import {
   ADMINISTRATOR_USERNAME,
   ADMINISTRATOR_PASSWORD,
@@ -12,29 +11,34 @@ test("Administrator grants a directory and another User can browse it", async ({
 }) => {
   const suffix = Date.now().toString();
   const username = `tree-${suffix}`;
-  // Fixture only: this ticket precedes the Registration API. Clone the local
-  // Administrator's password hash into an ordinary, active User.
-  const container =
-    process.env.E2E_POSTGRES_CONTAINER ?? "ftp-ticket10-postgres-1";
-  const userId = execFileSync(
-    "docker",
-    [
-      "exec",
-      container,
-      "psql",
-      "-U",
-      "ftpmaster",
-      "-d",
-      "ftpmaster",
-      "-Atc",
-      `INSERT INTO users(username,display_name,password_hash,is_administrator,status,created_at) SELECT '${username}','Reader',password_hash,false,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`,
-    ],
-    { encoding: "utf8" },
-  )
-    .trim()
-    .split("\n")[0];
+  expect(
+    (
+      await page.request.post("/api/registrations", {
+        data: {
+          username,
+          displayName: "Reader",
+          organizationHint: "Default",
+          password: ADMINISTRATOR_PASSWORD,
+        },
+      })
+    ).status(),
+  ).toBe(201);
   await page.goto("/sign-in");
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD);
+  await expect(page.getByTestId("current-user")).toBeVisible();
+  const registrations = await (
+    await page.request.get("/api/registrations")
+  ).json();
+  const userId = String(
+    registrations.find((r: { username: string }) => r.username === username).id,
+  );
+  expect(
+    (
+      await page.request.post("/api/registrations/" + userId + "/activate", {
+        data: { organizationId: 1 },
+      })
+    ).status(),
+  ).toBe(204);
   const panel = page.getByRole("region", { name: "共享目录" });
   const name = `Granted-${suffix}`;
   await panel.getByLabel("目录名称").fill(name);

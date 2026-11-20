@@ -30,11 +30,10 @@ with their Audit Event under the Shared Tree mutation advisory lock (725010).
 The real-store HTTP tests cover create/list, deep traversal, hidden siblings,
 Drop Box listing suppression and creation, Right unions, Organization ancestors,
 User Group membership, refusal statuses, and Grant Audit Events. The browser
-Grant test currently fixtures an ordinary User through PostgreSQL because the
-Registration API is delivered separately; set `E2E_POSTGRES_CONTAINER` when the
-Compose project name differs from `ftp-ticket10`. Run it with:
+Grant test registers and activates another User via HTTP before exercising the
+Grant form and visibility in a separate browser context. Run it with:
 
 ```sh
 cd web
-E2E_BASE_URL=http://localhost:8088 E2E_POSTGRES_CONTAINER=ftp-master-postgres-1 pnpm test:e2e tree.spec.ts
+E2E_BASE_URL=http://localhost:8088 pnpm test:e2e tree.spec.ts
 ```
