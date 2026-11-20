@@ -46,7 +46,7 @@ make test-e2e          # Playwright against the running stack (`make up` first)
   integration tests. It runs only on an empty data directory, so a stack created before it
   existed needs `docker compose -f deploy/local/docker-compose.yml down -v`.
 - **Sign-in.** Every operation requires a signed-in, active User unless the contract marks it
-  `security: []`; only sign-in, Registration and health checks may. While no Administrator
+  `security: []`; sign-in, Registration, health checks and the permit-gated Document Gateway may. While no Administrator
   exists, the service creates one from `INITIAL_ADMINISTRATOR_USERNAME` / `INITIAL_ADMINISTRATOR_PASSWORD`.
   Set `TRUSTED_PROXIES` (addresses or CIDRs of the reverse proxies) so Audit Events record
   the client's address from their `X-Forwarded-For`; the session cookie is `Secure` unless `INSECURE_SESSION_COOKIE=true`.

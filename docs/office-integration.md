@@ -19,3 +19,23 @@ Errors use the ordinary API error envelope: 400 invalid input; 401 missing/inval
 These URLs contain the opaque permit identifier, never session cookies, passwords or other account credentials. Treat document URLs as temporary capabilities.
 
 The storage contract for the Gateway/save handlers is `office_edit_permits`: `id`, `user_id`, `file_id`, `version_id`, `created_at`, `expires_at`, nullable `delivered_at`. The generated `GetOfficePermit` query joins immutable content metadata and the current filename. Consumers must check ownership for session-authenticated routes, delivery state, and the injected Clock for initial retrieval.
+
+## Gateway delivery
+
+`GET documentUrl` returns HTTP 200 with `application/octet-stream`, an exact
+`Content-Length`, and `Cache-Control: no-store`. It never redirects, applies
+ranges or transforms the selected immutable version. Missing/unknown permits
+return 404; expired or delivered permits return 410. Error bodies contain no
+document bytes. Filenames are presentation-only; the permit selects the version.
+Concurrent requests serialize on the permit row through the transfer and its
+commit, so only one complete transfer consumes it. A failed write, canceled
+request, failed flush or failed transaction leaves delivery unconfirmed. Network
+completion means every byte was accepted and flushed by the HTTP server; it
+cannot prove that WPS parsed or displayed those bytes.
+
+`GET deliveryCheckUrl` returns `{ "delivered": false }` or
+`{ "delivered": true }`. It waits for an in-flight transfer to finish before
+reporting. Missing sessions receive 401, and unknown permits or permits issued
+to another User receive 404. Expiry prevents initial retrieval, but does not
+hide the delivery state or undo a previously completed delivery. No Audit Event
+is added for retrieval or delivery checks; edit start already records the open.
