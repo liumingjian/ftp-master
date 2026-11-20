@@ -1,5 +1,5 @@
 -- name: ListTreeNodes :many
-SELECT * FROM tree_nodes WHERE deleted_at IS NULL ORDER BY id;
+SELECT * FROM tree_nodes WHERE deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM upload_batch_nodes b WHERE b.node_id=tree_nodes.id) ORDER BY id;
 -- name: CreateTreeNode :one
 INSERT INTO tree_nodes(parent_id,name,is_file) VALUES (sqlc.narg(parent_id), @name, @is_file) RETURNING *;
 -- name: ListGrants :many

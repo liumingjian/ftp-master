@@ -87,6 +87,19 @@ type TreeNode struct {
 	RecycleRootID pgtype.Int8
 }
 
+type UploadBatch struct {
+	ID       string
+	OwnerID  int64
+	ParentID int64
+	RootID   int64
+	Expected int32
+}
+
+type UploadBatchNode struct {
+	NodeID  int64
+	BatchID string
+}
+
 type UploadPolicy struct {
 	ID                bool
 	BlockedExtensions []string
@@ -107,6 +120,8 @@ type UploadSession struct {
 	VersionID       pgtype.Int8
 	CreatedAt       pgtype.Timestamptz
 	Collision       string
+	BatchID         pgtype.Text
+	RelativePath    string
 }
 
 type User struct {

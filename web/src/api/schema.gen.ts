@@ -145,6 +145,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/upload-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["initiateUploadBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/uploads": {
         parameters: {
             query?: never;
@@ -170,7 +186,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        get: operations["listUploadParts"];
         put?: never;
         post: operations["issueUploadParts"];
         delete?: never;
@@ -1080,6 +1096,40 @@ export interface operations {
             default: components["responses"]["Unauthorized"];
         };
     };
+    initiateUploadBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    parentId: number;
+                    name: string;
+                    files: {
+                        path: string;
+                        /** Format: int64 */
+                        size: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Sessions in the same order as the input manifest. Publication is atomic. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadSession"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     initiateUpload: {
         parameters: {
             query?: never;
@@ -1100,6 +1150,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadSession"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    listUploadParts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authoritative stored multipart part numbers, read from object storage. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        number: number;
+                    }[];
                 };
             };
             default: components["responses"]["Unauthorized"];
