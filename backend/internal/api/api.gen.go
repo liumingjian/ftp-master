@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -113,6 +114,54 @@ func (e TreeGrantInputScope) Valid() bool {
 	case TreeGrantInputScopeSubtree:
 		return true
 	case TreeGrantInputScopeThisLevelOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QueryAuditJSONBodyCategory.
+const (
+	Account QueryAuditJSONBodyCategory = "account"
+	Delete  QueryAuditJSONBodyCategory = "delete"
+	Grant   QueryAuditJSONBodyCategory = "grant"
+	Read    QueryAuditJSONBodyCategory = "read"
+	Session QueryAuditJSONBodyCategory = "session"
+	Write   QueryAuditJSONBodyCategory = "write"
+)
+
+// Valid indicates whether the value is a known member of the QueryAuditJSONBodyCategory enum.
+func (e QueryAuditJSONBodyCategory) Valid() bool {
+	switch e {
+	case Account:
+		return true
+	case Delete:
+		return true
+	case Grant:
+		return true
+	case Read:
+		return true
+	case Session:
+		return true
+	case Write:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QueryAudit200JSONResponseBodyEventsOutcome.
+const (
+	Failure QueryAudit200JSONResponseBodyEventsOutcome = "failure"
+	Success QueryAudit200JSONResponseBodyEventsOutcome = "success"
+)
+
+// Valid indicates whether the value is a known member of the QueryAudit200JSONResponseBodyEventsOutcome enum.
+func (e QueryAudit200JSONResponseBodyEventsOutcome) Valid() bool {
+	switch e {
+	case Failure:
+		return true
+	case Success:
 		return true
 	default:
 		return false
@@ -295,6 +344,28 @@ type UserGroups = []UserGroup
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
+// QueryAuditJSONBody defines parameters for QueryAudit.
+type QueryAuditJSONBody struct {
+	Action                *string                     `json:"action,omitempty"`
+	Category              *QueryAuditJSONBodyCategory `json:"category,omitempty"`
+	Directory             *string                     `json:"directory,omitempty"`
+	Export                *bool                       `json:"export,omitempty"`
+	FailuresOnly          *bool                       `json:"failuresOnly,omitempty"`
+	From                  time.Time                   `json:"from"`
+	IncludeSubdirectories *bool                       `json:"includeSubdirectories,omitempty"`
+	ItemId                *int64                      `json:"itemId,omitempty"`
+	OrganizationId        *int64                      `json:"organizationId,omitempty"`
+	Page                  *int                        `json:"page,omitempty"`
+	To                    time.Time                   `json:"to"`
+	UserIds               *[]int64                    `json:"userIds,omitempty"`
+}
+
+// QueryAuditJSONBodyCategory defines parameters for QueryAudit.
+type QueryAuditJSONBodyCategory string
+
+// QueryAudit200JSONResponseBodyEventsOutcome defines parameters for QueryAudit.
+type QueryAudit200JSONResponseBodyEventsOutcome string
+
 // ChangePasswordJSONBody defines parameters for ChangePassword.
 type ChangePasswordJSONBody struct {
 	CurrentPassword string `json:"currentPassword"`
@@ -350,6 +421,9 @@ type SetUserStatusJSONBody struct {
 // SetUserStatusJSONBodyStatus defines parameters for SetUserStatus.
 type SetUserStatusJSONBodyStatus string
 
+// QueryAuditJSONRequestBody defines body for QueryAudit for application/json ContentType.
+type QueryAuditJSONRequestBody QueryAuditJSONBody
+
 // CreateOrganizationJSONRequestBody defines body for CreateOrganization for application/json ContentType.
 type CreateOrganizationJSONRequestBody = OrganizationInput
 
@@ -400,6 +474,9 @@ type SetUserStatusJSONRequestBody SetUserStatusJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+
+	// (POST /audit/query)
+	QueryAudit(w http.ResponseWriter, r *http.Request)
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -497,6 +574,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// QueryAudit operation middleware
+func (siw *ServerInterfaceWrapper) QueryAudit(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryAudit(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
@@ -1220,6 +1311,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/audit/query", wrapper.QueryAudit)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree", wrapper.ListTree)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree", wrapper.CreateDirectory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}", wrapper.GetTreeNode)
@@ -1254,6 +1346,84 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 }
 
 type UnauthorizedJSONResponse Error
+
+type QueryAuditRequestObject struct {
+	Body *QueryAuditJSONRequestBody
+}
+
+type QueryAuditResponseObject interface {
+	VisitQueryAuditResponse(w http.ResponseWriter) error
+}
+
+type QueryAudit200JSONResponse struct {
+	Directories []struct {
+		Exists bool   `json:"exists"`
+		Path   string `json:"path"`
+	} `json:"directories"`
+	Events []struct {
+		Action   string                                     `json:"action"`
+		Detail   map[string]interface{}                     `json:"detail"`
+		Id       int64                                      `json:"id"`
+		ItemId   *int64                                     `json:"itemId"`
+		Outcome  QueryAudit200JSONResponseBodyEventsOutcome `json:"outcome"`
+		Path     string                                     `json:"path"`
+		SourceIp string                                     `json:"sourceIp"`
+		Time     time.Time                                  `json:"time"`
+		UserId   *int64                                     `json:"userId"`
+		Username string                                     `json:"username"`
+	} `json:"events"`
+	Page  int `json:"page"`
+	Total int `json:"total"`
+}
+
+func (response QueryAudit200JSONResponse) VisitQueryAuditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type QueryAudit200TextcsvResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response QueryAudit200TextcsvResponse) VisitQueryAuditResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/csv")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type QueryAuditdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response QueryAuditdefaultJSONResponse) VisitQueryAuditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type GetHealthRequestObject struct {
 }
@@ -2757,6 +2927,9 @@ func (response SetUserStatusdefaultJSONResponse) VisitSetUserStatusResponse(w ht
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+
+	// (POST /audit/query)
+	QueryAudit(ctx context.Context, request QueryAuditRequestObject) (QueryAuditResponseObject, error)
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
@@ -2883,6 +3056,37 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// QueryAudit operation middleware
+func (sh *strictHandler) QueryAudit(w http.ResponseWriter, r *http.Request) {
+	var request QueryAuditRequestObject
+
+	var body QueryAuditJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.QueryAudit(ctx, request.(QueryAuditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "QueryAudit")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(QueryAuditResponseObject); ok {
+		if err := validResponse.VisitQueryAuditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // GetHealth operation middleware
@@ -3729,58 +3933,64 @@ func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, u
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

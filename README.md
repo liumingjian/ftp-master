@@ -92,3 +92,19 @@ parsing where recovery is ambiguous. Any validation or storage failure creates n
 Users or import Audit Events. Each successful User creation and its `account_import`
 Audit Event commit in the same transaction. Passwords are hashed with the sign-in
 policy and never included in Audit Events or validation responses.
+
+## Audit queries
+
+The Administrator workspace includes a minute-precision UTC range (start inclusive,
+end exclusive, at most 180 days), User selection or Organization subtree, historical
+directory, action category, exact action and failure filters. Results have 50 rows
+per page. The detail drawer pivots by User, historical directory, or stable item ID;
+item history clears the other scope filters so renames and moves remain visible.
+Historical directory suggestions mark paths absent from the current Shared Tree.
+
+`POST /api/audit/query` applies the same filter body to table results and CSV
+(`export: true`). Exports include every matching row, independent of pagination,
+and neither reads nor exports create Audit Events. CSV values are escaped for
+spreadsheet formula safety. ZIP events store `detail.files` as an array of
+`{id, path}` objects, one per packed file; both directory and stable-ID filters
+include these entries. No Audit Event update/delete privilege is added.

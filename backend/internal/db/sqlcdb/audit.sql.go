@@ -12,6 +12,119 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const auditCurrentDirectories = `-- name: AuditCurrentDirectories :many
+WITH RECURSIVE dirs AS (
+ SELECT id, ('/' || name)::text AS path FROM tree_nodes WHERE parent_id IS NULL AND NOT is_file AND deleted_at IS NULL
+ UNION ALL SELECT n.id,(d.path || '/' || n.name)::text FROM tree_nodes n JOIN dirs d ON n.parent_id=d.id WHERE NOT n.is_file AND n.deleted_at IS NULL
+) SELECT path FROM dirs ORDER BY path
+`
+
+func (q *Queries) AuditCurrentDirectories(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, auditCurrentDirectories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		items = append(items, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const auditHistoricalPaths = `-- name: AuditHistoricalPaths :many
+SELECT DISTINCT path::text FROM (
+ SELECT item_path AS path FROM audit_events WHERE item_path IS NOT NULL
+ UNION SELECT item_path || '/' FROM audit_events WHERE item_path IS NOT NULL AND (action='create_directory' OR detail->'result'->>'isFile'='false' OR item_id IN (SELECT id FROM tree_nodes WHERE NOT is_file))
+ UNION SELECT f->>'path' FROM audit_events CROSS JOIN LATERAL jsonb_array_elements(COALESCE(detail->'files','[]'::jsonb)) f
+) paths WHERE path IS NOT NULL ORDER BY path
+`
+
+func (q *Queries) AuditHistoricalPaths(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, auditHistoricalPaths)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		items = append(items, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countAuditEvents = `-- name: CountAuditEvents :one
+WITH RECURSIVE orgs AS (
+ SELECT id FROM organizations WHERE id = $4::bigint
+ UNION ALL SELECT o.id FROM organizations o JOIN orgs ON o.parent_id=orgs.id
+)
+SELECT count(*) FROM audit_events a
+WHERE occurred_at >= $1::timestamptz AND occurred_at < $2::timestamptz
+AND (cardinality($3::bigint[])=0 OR user_id=ANY($3::bigint[]))
+AND ($4::bigint=0 OR user_id IN (SELECT id FROM users WHERE organization_id IN (SELECT id FROM orgs)))
+AND ($5::text='' OR a.action=$5)
+AND ($6::text='' OR CASE
+ WHEN a.action IN ('sign_in','sign_out') THEN 'session'
+ WHEN a.action IN ('download','zip_download') THEN 'read'
+ WHEN a.action IN ('delete','restore','purge') THEN 'delete'
+ WHEN starts_with(a.action,'grant') THEN 'grant'
+ WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') THEN 'account'
+ ELSE 'write' END=$6)
+AND (NOT $7::boolean OR outcome='failure')
+AND ($8::bigint=0 OR item_id=$8 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(detail->'files','[]'::jsonb)) f WHERE f->>'id'=$8::text))
+AND ($9::text='' OR EXISTS (
+ SELECT 1 FROM (SELECT unnest(array_append(ARRAY(SELECT f->>'path' FROM jsonb_array_elements(COALESCE(a.detail->'files','[]'::jsonb)) f), a.item_path)) AS path) paths
+ WHERE path=$9 OR
+ (starts_with(path, CASE WHEN $9='/' THEN '/' ELSE rtrim($9,'/') || '/' END)
+ AND ($10::boolean OR strpos(substring(path FROM length(CASE WHEN $9='/' THEN '/' ELSE rtrim($9,'/') || '/' END)+1),'/')=0))
+))
+`
+
+type CountAuditEventsParams struct {
+	FromTime       pgtype.Timestamptz
+	ToTime         pgtype.Timestamptz
+	UserIds        []int64
+	OrganizationID int64
+	Action         string
+	Category       string
+	FailuresOnly   bool
+	ItemID         int64
+	Directory      string
+	Recursive      bool
+}
+
+func (q *Queries) CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAuditEvents,
+		arg.FromTime,
+		arg.ToTime,
+		arg.UserIds,
+		arg.OrganizationID,
+		arg.Action,
+		arg.Category,
+		arg.FailuresOnly,
+		arg.ItemID,
+		arg.Directory,
+		arg.Recursive,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const ensureAuditPartition = `-- name: EnsureAuditPartition :exec
 SELECT audit_ensure_partition($1::timestamptz)
 `
@@ -51,4 +164,92 @@ func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventPara
 		arg.Detail,
 	)
 	return err
+}
+
+const queryAuditEvents = `-- name: QueryAuditEvents :many
+WITH RECURSIVE orgs AS (
+ SELECT id FROM organizations WHERE id = $4::bigint
+ UNION ALL SELECT o.id FROM organizations o JOIN orgs ON o.parent_id=orgs.id
+)
+SELECT a.id, a.occurred_at, a.user_id, a.username, a.source_ip, a.action, a.outcome, a.item_id, a.item_path, a.detail FROM audit_events a
+WHERE occurred_at >= $1::timestamptz AND occurred_at < $2::timestamptz
+AND (cardinality($3::bigint[])=0 OR user_id=ANY($3::bigint[]))
+AND ($4::bigint=0 OR user_id IN (SELECT id FROM users WHERE organization_id IN (SELECT id FROM orgs)))
+AND ($5::text='' OR a.action=$5)
+AND ($6::text='' OR CASE
+ WHEN a.action IN ('sign_in','sign_out') THEN 'session'
+ WHEN a.action IN ('download','zip_download') THEN 'read'
+ WHEN a.action IN ('delete','restore','purge') THEN 'delete'
+ WHEN starts_with(a.action,'grant') THEN 'grant'
+ WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') THEN 'account'
+ ELSE 'write' END=$6)
+AND (NOT $7::boolean OR outcome='failure')
+AND ($8::bigint=0 OR item_id=$8 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(detail->'files','[]'::jsonb)) f WHERE f->>'id'=$8::text))
+AND ($9::text='' OR EXISTS (
+ SELECT 1 FROM (SELECT unnest(array_append(ARRAY(SELECT f->>'path' FROM jsonb_array_elements(COALESCE(a.detail->'files','[]'::jsonb)) f), a.item_path)) AS path) paths
+ WHERE path=$9 OR
+ (starts_with(path, CASE WHEN $9='/' THEN '/' ELSE rtrim($9,'/') || '/' END)
+ AND ($10::boolean OR strpos(substring(path FROM length(CASE WHEN $9='/' THEN '/' ELSE rtrim($9,'/') || '/' END)+1),'/')=0))
+))
+ORDER BY occurred_at DESC,id DESC
+LIMIT NULLIF($12::integer,0) OFFSET $11::bigint
+`
+
+type QueryAuditEventsParams struct {
+	FromTime       pgtype.Timestamptz
+	ToTime         pgtype.Timestamptz
+	UserIds        []int64
+	OrganizationID int64
+	Action         string
+	Category       string
+	FailuresOnly   bool
+	ItemID         int64
+	Directory      string
+	Recursive      bool
+	PageOffset     int64
+	PageLimit      int32
+}
+
+func (q *Queries) QueryAuditEvents(ctx context.Context, arg QueryAuditEventsParams) ([]AuditEvent, error) {
+	rows, err := q.db.Query(ctx, queryAuditEvents,
+		arg.FromTime,
+		arg.ToTime,
+		arg.UserIds,
+		arg.OrganizationID,
+		arg.Action,
+		arg.Category,
+		arg.FailuresOnly,
+		arg.ItemID,
+		arg.Directory,
+		arg.Recursive,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditEvent
+	for rows.Next() {
+		var i AuditEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.UserID,
+			&i.Username,
+			&i.SourceIp,
+			&i.Action,
+			&i.Outcome,
+			&i.ItemID,
+			&i.ItemPath,
+			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
