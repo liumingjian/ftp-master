@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/audit/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryAudit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/uploads": {
         parameters: {
             query?: never;
@@ -674,6 +690,78 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    queryAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: date-time */
+                    from: string;
+                    /** Format: date-time */
+                    to: string;
+                    userIds?: number[];
+                    /** Format: int64 */
+                    organizationId?: number;
+                    directory?: string;
+                    /** @default true */
+                    includeSubdirectories?: boolean;
+                    action?: string;
+                    /** @enum {string} */
+                    category?: "session" | "read" | "write" | "delete" | "grant" | "account";
+                    failuresOnly?: boolean;
+                    /** Format: int64 */
+                    itemId?: number;
+                    /** @default 1 */
+                    page?: number;
+                    export?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Paged events and historical directory suggestions, or all filtered events as CSV. No Audit Event is recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        total: number;
+                        page: number;
+                        directories: {
+                            path: string;
+                            exists: boolean;
+                        }[];
+                        events: {
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: date-time */
+                            time: string;
+                            /** Format: int64 */
+                            userId: number | null;
+                            username: string;
+                            sourceIp: string;
+                            action: string;
+                            /** @enum {string} */
+                            outcome: "success" | "failure";
+                            /** Format: int64 */
+                            itemId: number | null;
+                            path: string;
+                            detail: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                    "text/csv": string;
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     initiateUpload: {
         parameters: {
             query?: never;
