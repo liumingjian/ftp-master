@@ -3,7 +3,9 @@
 package app_test
 
 import (
+	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
 	"strings"
 	"testing"
@@ -49,5 +51,56 @@ func TestBulkImportValidatesWholeFileAndCreatesActiveUsers(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("import events: %d", count)
+	}
+}
+
+func TestBulkImportReportsRepeatedUsernamesAndMissingFields(t *testing.T) {
+	stores := startStores(t)
+	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
+	admin := newBrowser(t, server)
+	actor := signInAsAdministrator(t, admin)
+	csv := fmt.Sprintf("username,display_name,password,organization_id\nduplicate,First,password,%d\nDUPLICATE,Second,password,%d\nno-password,Name,,%d\n", actor.OrganizationId, actor.OrganizationId, actor.OrganizationId)
+	status, data := admin.do("POST", "/api/users/import", map[string]string{"csv": csv})
+	if status != 422 {
+		t.Fatalf("validation: %d %s", status, data)
+	}
+	for _, row := range []string{`"row":2`, `"row":3`, `"row":4`} {
+		if !strings.Contains(string(data), row) {
+			t.Fatalf("missing row %s: %s", row, data)
+		}
+	}
+	status, data = admin.do("GET", "/api/managed-users", nil)
+	if status != 200 || strings.Contains(string(data), "duplicate") || strings.Contains(string(data), "no-password") {
+		t.Fatalf("partial import: %d %s", status, data)
+	}
+	for _, e := range readAuditEvents(t, stores.config.DatabaseURL) {
+		if e.Action == "account_import" {
+			t.Fatalf("failed import audited as creation: %+v", e)
+		}
+	}
+}
+
+func TestBulkImportRollsBackUsersWhenAuditCannotBeRecorded(t *testing.T) {
+	stores := startStores(t)
+	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
+	admin := newBrowser(t, server)
+	actor := signInAsAdministrator(t, admin)
+	ctx := context.Background()
+	owner, err := pgx.Connect(ctx, stores.config.MigrationDatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close(ctx)
+	if _, err := owner.Exec(ctx, "REVOKE INSERT ON audit_events FROM ftp_master_app"); err != nil {
+		t.Fatal(err)
+	}
+	csv := fmt.Sprintf("username,display_name,password,organization_id\nrollback,Rollback,password,%d\n", actor.OrganizationId)
+	status, data := admin.do("POST", "/api/users/import", map[string]string{"csv": csv})
+	if status != 500 {
+		t.Fatalf("audit failure: %d %s", status, data)
+	}
+	status, data = admin.do("GET", "/api/managed-users", nil)
+	if status != 200 || strings.Contains(string(data), "rollback") {
+		t.Fatalf("unrecorded User created: %d %s", status, data)
 	}
 }

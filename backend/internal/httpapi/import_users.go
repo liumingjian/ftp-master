@@ -37,7 +37,7 @@ func (s *Server) ImportUsers(ctx context.Context, r api.ImportUsersRequestObject
 	reader := csv.NewReader(strings.NewReader(strings.TrimPrefix(r.Body.Csv, "\ufeff")))
 	reader.FieldsPerRecord = -1
 	header, err := reader.Read()
-	if err != nil || strings.Join(header, ",") != "username,display_name,password,organization_id" {
+	if err != nil || len(header) != 4 || strings.Join(header, ",") != "username,display_name,password,organization_id" {
 		problem(1, "expected header: username,display_name,password,organization_id")
 		return report, nil
 	}
