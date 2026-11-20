@@ -152,6 +152,42 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/OfficeEdit'}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/text:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: openText
+      responses:
+        '200':
+          description: Open UTF-8 plain text under 10 MB with Modify; audited.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versionId, content]
+                properties:
+                  versionId: {type: integer, format: int64}
+                  content: {type: string}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    put:
+      operationId: saveText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseVersionId, content]
+              properties:
+                baseVersionId: {type: integer, format: int64, minimum: 1}
+                content: {type: string}
+      responses:
+        '201':
+          description: New immutable File Version and Audit Event; outdated base returns 409 without change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadReceipt'}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /tree/{id}/versions:
     parameters:
       - {in: path, name: id, required: true, schema: {type: integer, format: int64}}

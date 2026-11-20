@@ -1,3 +1,4 @@
+import { TextEditor } from "./TextEditor";
 import { BrowseTools, CopyItemLink, PreviewButton } from "./BrowseTools";
 import { ZipDownload } from "./ZipDownload";
 import { VersionsPanel } from "./VersionsPanel";
@@ -127,6 +128,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
                 </button>
                 <CopyItemLink node={n}/>
                 {n.isFile && !!(n.rights & 1) && <PreviewButton node={n}/>}
+                {n.isFile && <TextEditor node={n}/>}
                 {n.isFile && !!(n.rights & 1) && <button onClick={()=>setVersionNode(n)}>文件版本</button>}
                 {officePlugin && n.isFile && !!(n.rights & 8) && n.latestVersion &&
                   ["doc", "docx", "wps", "xls", "xlsx"].includes(n.latestVersion.format) &&
