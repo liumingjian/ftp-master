@@ -1,3 +1,4 @@
+import { MembershipPanel } from './MembershipPanel'
 import { PasswordPanel } from "./PasswordPanel"
 
 import { api, type CurrentUser } from './api/client'
@@ -35,6 +36,7 @@ export function SignedInShell() {
       </header>
       <main className="shell-main">
         <HealthPanel />
+        {state.user.isAdministrator && <MembershipPanel />}
         <PasswordPanel administrator={state.user.isAdministrator} />
       </main>
     </div>

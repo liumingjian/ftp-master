@@ -1,0 +1,42 @@
+import { expect, test } from '@playwright/test'
+import { ADMINISTRATOR_PASSWORD, ADMINISTRATOR_USERNAME, signIn } from './signin'
+
+test('Administrator builds and reshapes an Organization hierarchy and manages User Groups', async ({ page }) => {
+  await page.goto('/sign-in')
+  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  const panel = page.getByRole('region', { name: '组织与用户组管理' })
+  await expect(panel).toBeVisible()
+  const suffix = Date.now().toString()
+  const parent = `Engineering-${suffix}`
+  const child = `Platform-${suffix}`
+  await panel.getByLabel('组织名称', { exact: true }).fill(parent)
+  await panel.getByRole('button', { name: '保存组织' }).click()
+  await expect(panel.getByRole('listitem').filter({ hasText: parent })).toBeVisible()
+  await panel.getByLabel('组织名称', { exact: true }).fill(child)
+  await panel.getByLabel('上级组织', { exact: true }).selectOption({ label: parent })
+  await panel.getByRole('button', { name: '保存组织' }).click()
+  await expect(panel.getByRole('listitem').filter({ hasText: child })).toContainText(`上级：${parent}`)
+  await panel.getByLabel('编辑组织').selectOption({ label: parent })
+  await panel.getByLabel('上级组织', { exact: true }).selectOption({ label: child })
+  await panel.getByRole('button', { name: '保存组织' }).click()
+  await expect(panel.getByRole('alert')).toBeVisible()
+  await panel.getByLabel('编辑组织').selectOption({ label: child })
+  await panel.getByLabel('上级组织', { exact: true }).selectOption('')
+  await panel.getByLabel('组织名称', { exact: true }).fill(`Infrastructure-${suffix}`)
+  await panel.getByRole('button', { name: '保存组织' }).click()
+  await expect(panel.getByRole('listitem').filter({ hasText: `Infrastructure-${suffix}` })).toContainText('上级：无')
+  await panel.getByLabel('编辑组织').selectOption({ label: parent })
+  await panel.getByRole('button', { name: '删除组织' }).click()
+  await expect(panel.getByRole('listitem').filter({ hasText: parent })).toHaveCount(0)
+  const project = `Project-${suffix}`
+  await panel.getByLabel('用户组名称', { exact: true }).fill(project)
+  await panel.getByRole('button', { name: '新建用户组', exact: true }).click()
+  await expect(panel.getByLabel('选择用户组').getByRole('option', { name: project })).toBeAttached()
+  await panel.getByLabel('选择用户组').selectOption({ label: project })
+  await panel.getByLabel('成员用户编号', { exact: false }).fill('1')
+  await panel.getByRole('button', { name: '保存成员' }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/user-groups')).json()).find((g: { name: string }) => g.name === project).userIds).toEqual([1])
+  await panel.getByLabel('成员用户编号', { exact: false }).fill('')
+  await panel.getByRole('button', { name: '保存成员' }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/user-groups')).json()).find((g: { name: string }) => g.name === project).userIds).toEqual([])
+})

@@ -67,6 +67,11 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// GroupMembers defines model for GroupMembers.
+type GroupMembers struct {
+	UserIds []int64 `json:"userIds"`
+}
+
 // Health defines model for Health.
 type Health struct {
 	// Cache Whether a backing store answered. Failure details are logged by the service, never returned, since this endpoint needs no sign-in.
@@ -87,11 +92,42 @@ type Health struct {
 // HealthStatus defines model for HealthStatus.
 type HealthStatus string
 
+// Organization defines model for Organization.
+type Organization struct {
+	Id       int64  `json:"id"`
+	Name     string `json:"name"`
+	ParentId *int64 `json:"parentId"`
+}
+
+// OrganizationInput defines model for OrganizationInput.
+type OrganizationInput struct {
+	Name     string `json:"name"`
+	ParentId *int64 `json:"parentId,omitempty"`
+}
+
+// Organizations defines model for Organizations.
+type Organizations = []Organization
+
 // SignInRequest defines model for SignInRequest.
 type SignInRequest struct {
 	Password string `json:"password"`
 	Username string `json:"username"`
 }
+
+// UserGroup defines model for UserGroup.
+type UserGroup struct {
+	Id      int64   `json:"id"`
+	Name    string  `json:"name"`
+	UserIds []int64 `json:"userIds"`
+}
+
+// UserGroupInput defines model for UserGroupInput.
+type UserGroupInput struct {
+	Name string `json:"name"`
+}
+
+// UserGroups defines model for UserGroups.
+type UserGroups = []UserGroup
 
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
@@ -107,11 +143,23 @@ type ResetPasswordJSONBody struct {
 	NewPassword string `json:"newPassword"`
 }
 
+// CreateOrganizationJSONRequestBody defines body for CreateOrganization for application/json ContentType.
+type CreateOrganizationJSONRequestBody = OrganizationInput
+
+// UpdateOrganizationJSONRequestBody defines body for UpdateOrganization for application/json ContentType.
+type UpdateOrganizationJSONRequestBody = OrganizationInput
+
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody ChangePasswordJSONBody
 
 // SignInJSONRequestBody defines body for SignIn for application/json ContentType.
 type SignInJSONRequestBody = SignInRequest
+
+// CreateUserGroupJSONRequestBody defines body for CreateUserGroup for application/json ContentType.
+type CreateUserGroupJSONRequestBody = UserGroupInput
+
+// SetUserGroupMembersJSONRequestBody defines body for SetUserGroupMembers for application/json ContentType.
+type SetUserGroupMembersJSONRequestBody = GroupMembers
 
 // ResetPasswordJSONRequestBody defines body for ResetPassword for application/json ContentType.
 type ResetPasswordJSONRequestBody ResetPasswordJSONBody
@@ -121,6 +169,18 @@ type ServerInterface interface {
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+
+	// (GET /organizations)
+	ListOrganizations(w http.ResponseWriter, r *http.Request)
+
+	// (POST /organizations)
+	CreateOrganization(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /organizations/{id})
+	DeleteOrganization(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (PATCH /organizations/{id})
+	UpdateOrganization(w http.ResponseWriter, r *http.Request, id int64)
 	// ChangePassword Change the signed-in User's password.
 	// (PUT /password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
@@ -133,6 +193,15 @@ type ServerInterface interface {
 	// SignIn Sign in with username and password, starting a session.
 	// (POST /session)
 	SignIn(w http.ResponseWriter, r *http.Request)
+
+	// (GET /user-groups)
+	ListUserGroups(w http.ResponseWriter, r *http.Request)
+
+	// (POST /user-groups)
+	CreateUserGroup(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /user-groups/{id}/members)
+	SetUserGroupMembers(w http.ResponseWriter, r *http.Request, id int64)
 	// ResetPassword Reset a User's password as an Administrator.
 	// (PUT /users/{userId}/password)
 	ResetPassword(w http.ResponseWriter, r *http.Request, userId int64)
@@ -152,6 +221,86 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOrganizations operation middleware
+func (siw *ServerInterfaceWrapper) ListOrganizations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOrganizations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateOrganization operation middleware
+func (siw *ServerInterfaceWrapper) CreateOrganization(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateOrganization(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteOrganization operation middleware
+func (siw *ServerInterfaceWrapper) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteOrganization(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateOrganization operation middleware
+func (siw *ServerInterfaceWrapper) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateOrganization(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -208,6 +357,60 @@ func (siw *ServerInterfaceWrapper) SignIn(w http.ResponseWriter, r *http.Request
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SignIn(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUserGroups operation middleware
+func (siw *ServerInterfaceWrapper) ListUserGroups(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUserGroups(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateUserGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateUserGroup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateUserGroup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetUserGroupMembers operation middleware
+func (siw *ServerInterfaceWrapper) SetUserGroupMembers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetUserGroupMembers(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -369,6 +572,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/session", wrapper.SignIn)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/password", wrapper.ChangePassword)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/users/{userId}/password", wrapper.ResetPassword)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/organizations", wrapper.ListOrganizations)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/organizations", wrapper.CreateOrganization)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/organizations/{id}", wrapper.DeleteOrganization)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/organizations/{id}", wrapper.UpdateOrganization)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/user-groups", wrapper.ListUserGroups)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/user-groups", wrapper.CreateUserGroup)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/user-groups/{id}/members", wrapper.SetUserGroupMembers)
 
 	return m
 }
@@ -406,6 +616,368 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizationsRequestObject struct {
+}
+
+type ListOrganizationsResponseObject interface {
+	VisitListOrganizationsResponse(w http.ResponseWriter) error
+}
+
+type ListOrganizations200JSONResponse Organizations
+
+func (response ListOrganizations200JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations400JSONResponse Error
+
+func (response ListOrganizations400JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListOrganizations401JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations403JSONResponse Error
+
+func (response ListOrganizations403JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations404JSONResponse Error
+
+func (response ListOrganizations404JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations409JSONResponse Error
+
+func (response ListOrganizations409JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganizationRequestObject struct {
+	Body *CreateOrganizationJSONRequestBody
+}
+
+type CreateOrganizationResponseObject interface {
+	VisitCreateOrganizationResponse(w http.ResponseWriter) error
+}
+
+type CreateOrganization201JSONResponse Organization
+
+func (response CreateOrganization201JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization400JSONResponse Error
+
+func (response CreateOrganization400JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateOrganization401JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization403JSONResponse Error
+
+func (response CreateOrganization403JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization404JSONResponse Error
+
+func (response CreateOrganization404JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization409JSONResponse Error
+
+func (response CreateOrganization409JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganizationRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type DeleteOrganizationResponseObject interface {
+	VisitDeleteOrganizationResponse(w http.ResponseWriter) error
+}
+
+type DeleteOrganization204Response struct {
+}
+
+func (response DeleteOrganization204Response) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteOrganization400JSONResponse Error
+
+func (response DeleteOrganization400JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteOrganization401JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganization403JSONResponse Error
+
+func (response DeleteOrganization403JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganization404JSONResponse Error
+
+func (response DeleteOrganization404JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganization409JSONResponse Error
+
+func (response DeleteOrganization409JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganizationRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *UpdateOrganizationJSONRequestBody
+}
+
+type UpdateOrganizationResponseObject interface {
+	VisitUpdateOrganizationResponse(w http.ResponseWriter) error
+}
+
+type UpdateOrganization200JSONResponse Organization
+
+func (response UpdateOrganization200JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization400JSONResponse Error
+
+func (response UpdateOrganization400JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateOrganization401JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization403JSONResponse Error
+
+func (response UpdateOrganization403JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization404JSONResponse Error
+
+func (response UpdateOrganization404JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization409JSONResponse Error
+
+func (response UpdateOrganization409JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -561,6 +1133,276 @@ func (response SignIn401JSONResponse) VisitSignInResponse(w http.ResponseWriter)
 	return err
 }
 
+type ListUserGroupsRequestObject struct {
+}
+
+type ListUserGroupsResponseObject interface {
+	VisitListUserGroupsResponse(w http.ResponseWriter) error
+}
+
+type ListUserGroups200JSONResponse UserGroups
+
+func (response ListUserGroups200JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups400JSONResponse Error
+
+func (response ListUserGroups400JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListUserGroups401JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups403JSONResponse Error
+
+func (response ListUserGroups403JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups404JSONResponse Error
+
+func (response ListUserGroups404JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups409JSONResponse Error
+
+func (response ListUserGroups409JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroupRequestObject struct {
+	Body *CreateUserGroupJSONRequestBody
+}
+
+type CreateUserGroupResponseObject interface {
+	VisitCreateUserGroupResponse(w http.ResponseWriter) error
+}
+
+type CreateUserGroup201JSONResponse UserGroup
+
+func (response CreateUserGroup201JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup400JSONResponse Error
+
+func (response CreateUserGroup400JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateUserGroup401JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup403JSONResponse Error
+
+func (response CreateUserGroup403JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup404JSONResponse Error
+
+func (response CreateUserGroup404JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup409JSONResponse Error
+
+func (response CreateUserGroup409JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembersRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *SetUserGroupMembersJSONRequestBody
+}
+
+type SetUserGroupMembersResponseObject interface {
+	VisitSetUserGroupMembersResponse(w http.ResponseWriter) error
+}
+
+type SetUserGroupMembers204Response struct {
+}
+
+func (response SetUserGroupMembers204Response) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SetUserGroupMembers400JSONResponse Error
+
+func (response SetUserGroupMembers400JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembers401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetUserGroupMembers401JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembers403JSONResponse Error
+
+func (response SetUserGroupMembers403JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembers404JSONResponse Error
+
+func (response SetUserGroupMembers404JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembers409JSONResponse Error
+
+func (response SetUserGroupMembers409JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ResetPasswordRequestObject struct {
 	UserId int64 `json:"userId"`
 	Body   *ResetPasswordJSONRequestBody
@@ -600,6 +1442,18 @@ type StrictServerInterface interface {
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+
+	// (GET /organizations)
+	ListOrganizations(ctx context.Context, request ListOrganizationsRequestObject) (ListOrganizationsResponseObject, error)
+
+	// (POST /organizations)
+	CreateOrganization(ctx context.Context, request CreateOrganizationRequestObject) (CreateOrganizationResponseObject, error)
+
+	// (DELETE /organizations/{id})
+	DeleteOrganization(ctx context.Context, request DeleteOrganizationRequestObject) (DeleteOrganizationResponseObject, error)
+
+	// (PATCH /organizations/{id})
+	UpdateOrganization(ctx context.Context, request UpdateOrganizationRequestObject) (UpdateOrganizationResponseObject, error)
 	// ChangePassword Change the signed-in User's password.
 	// (PUT /password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
@@ -612,6 +1466,15 @@ type StrictServerInterface interface {
 	// SignIn Sign in with username and password, starting a session.
 	// (POST /session)
 	SignIn(ctx context.Context, request SignInRequestObject) (SignInResponseObject, error)
+
+	// (GET /user-groups)
+	ListUserGroups(ctx context.Context, request ListUserGroupsRequestObject) (ListUserGroupsResponseObject, error)
+
+	// (POST /user-groups)
+	CreateUserGroup(ctx context.Context, request CreateUserGroupRequestObject) (CreateUserGroupResponseObject, error)
+
+	// (PUT /user-groups/{id}/members)
+	SetUserGroupMembers(ctx context.Context, request SetUserGroupMembersRequestObject) (SetUserGroupMembersResponseObject, error)
 	// ResetPassword Reset a User's password as an Administrator.
 	// (PUT /users/{userId}/password)
 	ResetPassword(ctx context.Context, request ResetPasswordRequestObject) (ResetPasswordResponseObject, error)
@@ -673,6 +1536,120 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
 		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListOrganizations operation middleware
+func (sh *strictHandler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
+	var request ListOrganizationsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListOrganizations(ctx, request.(ListOrganizationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListOrganizations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListOrganizationsResponseObject); ok {
+		if err := validResponse.VisitListOrganizationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateOrganization operation middleware
+func (sh *strictHandler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
+	var request CreateOrganizationRequestObject
+
+	var body CreateOrganizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateOrganization(ctx, request.(CreateOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateOrganization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateOrganizationResponseObject); ok {
+		if err := validResponse.VisitCreateOrganizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteOrganization operation middleware
+func (sh *strictHandler) DeleteOrganization(w http.ResponseWriter, r *http.Request, id int64) {
+	var request DeleteOrganizationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteOrganization(ctx, request.(DeleteOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteOrganization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteOrganizationResponseObject); ok {
+		if err := validResponse.VisitDeleteOrganizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateOrganization operation middleware
+func (sh *strictHandler) UpdateOrganization(w http.ResponseWriter, r *http.Request, id int64) {
+	var request UpdateOrganizationRequestObject
+
+	request.Id = id
+
+	var body UpdateOrganizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateOrganization(ctx, request.(UpdateOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateOrganization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateOrganizationResponseObject); ok {
+		if err := validResponse.VisitUpdateOrganizationResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -790,6 +1767,94 @@ func (sh *strictHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListUserGroups operation middleware
+func (sh *strictHandler) ListUserGroups(w http.ResponseWriter, r *http.Request) {
+	var request ListUserGroupsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListUserGroups(ctx, request.(ListUserGroupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListUserGroups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListUserGroupsResponseObject); ok {
+		if err := validResponse.VisitListUserGroupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateUserGroup operation middleware
+func (sh *strictHandler) CreateUserGroup(w http.ResponseWriter, r *http.Request) {
+	var request CreateUserGroupRequestObject
+
+	var body CreateUserGroupJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateUserGroup(ctx, request.(CreateUserGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateUserGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateUserGroupResponseObject); ok {
+		if err := validResponse.VisitCreateUserGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetUserGroupMembers operation middleware
+func (sh *strictHandler) SetUserGroupMembers(w http.ResponseWriter, r *http.Request, id int64) {
+	var request SetUserGroupMembersRequestObject
+
+	request.Id = id
+
+	var body SetUserGroupMembersJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetUserGroupMembers(ctx, request.(SetUserGroupMembersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetUserGroupMembers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetUserGroupMembersResponseObject); ok {
+		if err := validResponse.VisitSetUserGroupMembersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ResetPassword operation middleware
 func (sh *strictHandler) ResetPassword(w http.ResponseWriter, r *http.Request, userId int64) {
 	var request ResetPasswordRequestObject
@@ -828,32 +1893,39 @@ func (sh *strictHandler) ResetPassword(w http.ResponseWriter, r *http.Request, u
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"z9pQ3vhSzdREtuLV9ep/AQAA//8=",
+	"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",
+	"/wIAAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
