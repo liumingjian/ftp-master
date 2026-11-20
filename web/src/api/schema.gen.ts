@@ -4,6 +4,58 @@
  */
 
 export interface paths {
+    "/recycle-bin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listRecycleBin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restoreTreeNode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["purgeTreeNode"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/office/permits/{permitId}/document/{filename}": {
         parameters: {
             query?: never;
@@ -78,6 +130,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tree/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["listFileVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/versions/{versionId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                versionId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restoreFileVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree/{id}/download": {
         parameters: {
             query?: never;
@@ -112,6 +201,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/upload-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["initiateUploadBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/uploads": {
         parameters: {
             query?: never;
@@ -137,7 +242,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        get: operations["listUploadParts"];
         put?: never;
         post: operations["issueUploadParts"];
         delete?: never;
@@ -208,7 +313,7 @@ export interface paths {
         get: operations["getTreeNode"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["deleteTreeNode"];
         options?: never;
         head?: never;
         patch?: never;
@@ -767,6 +872,18 @@ export interface components {
             number: number;
             url: string;
         }[];
+        FileVersion: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            size: number;
+            format: string;
+            /** Format: int64 */
+            createdBy: number;
+            username: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
         UploadReceipt: {
             /** Format: int64 */
             fileId: number;
@@ -795,6 +912,82 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listRecycleBin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entries restorable by the signed-in User. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: int64 */
+                        id: number;
+                        originalPath: string;
+                        /** Format: date-time */
+                        deletedAt: string;
+                    }[];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    restoreTreeNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    parentId?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Completed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    purgeTreeNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     getOfficeDocument: {
         parameters: {
             query?: never;
@@ -928,6 +1121,53 @@ export interface operations {
             default: components["responses"]["Unauthorized"];
         };
     };
+    listFileVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All retained File Versions, newest first. Requires Browse. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileVersion"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    restoreFileVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                versionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Appended a new File Version sharing the immutable content. Requires Modify. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadReceipt"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     downloadFile: {
         parameters: {
             query?: {
@@ -1025,6 +1265,40 @@ export interface operations {
             default: components["responses"]["Unauthorized"];
         };
     };
+    initiateUploadBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    parentId: number;
+                    name: string;
+                    files: {
+                        path: string;
+                        /** Format: int64 */
+                        size: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Sessions in the same order as the input manifest. Publication is atomic. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadSession"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     initiateUpload: {
         parameters: {
             query?: never;
@@ -1045,6 +1319,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadSession"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    listUploadParts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authoritative stored multipart part numbers, read from object storage. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        number: number;
+                    }[];
                 };
             };
             default: components["responses"]["Unauthorized"];
@@ -1220,6 +1519,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TreeNode"];
                 };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    deleteTreeNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Unauthorized"];
         };

@@ -72,6 +72,15 @@ func TestMultipartPublishesOnceWithCreatorAndExactBytes(t *testing.T) {
 		URL    string `json:"url"`
 	}
 	decode(t, call("POST", "/api/uploads/"+upload.ID+"/parts", map[string]any{"numbers": []int{1, 2}}, 200), &urls)
+	// Resume asks storage which parts survived, rather than trusting browser progress.
+	var resumed []struct {
+		Number int    `json:"number"`
+		URL    string `json:"url"`
+	}
+	decode(t, call("GET", "/api/uploads/"+upload.ID+"/parts", nil, 200), &resumed)
+	if len(resumed) != 0 {
+		t.Fatal("new upload has stored parts")
+	}
 	for _, part := range urls {
 		start := int64(part.Number-1) * upload.PartSize
 		end := min(start+upload.PartSize, int64(len(content)))
@@ -85,6 +94,10 @@ func TestMultipartPublishesOnceWithCreatorAndExactBytes(t *testing.T) {
 		if res.StatusCode != 200 {
 			t.Fatalf("part: %d %s", res.StatusCode, body)
 		}
+	}
+	decode(t, call("GET", "/api/uploads/"+upload.ID+"/parts", nil, 200), &resumed)
+	if len(resumed) != 2 || resumed[0].Number != 1 || resumed[1].Number != 2 {
+		t.Fatalf("stored parts: %v", resumed)
 	}
 	// Force metadata rollback after storage completion; retry must recover the
 	// completed immutable object and publish exactly once.
@@ -323,4 +336,52 @@ func TestUploadOwnershipAuthorizationAndPolicyConfiguration(t *testing.T) {
 	call(admin, "DELETE", fmt.Sprintf("/api/tree/%d/grants/%d", dir.ID, grant.ID), nil, 204)
 	call(reader, "POST", "/api/uploads/"+upload.ID+"/complete", nil, 403)
 	call(reader, "POST", "/api/uploads/"+upload.ID+"/parts", map[string]any{"numbers": []int{1}}, 403)
+}
+
+func TestFolderBatchRemainsHiddenUntilEveryChildCompletes(t *testing.T) {
+	stores := startStores(t)
+	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
+	b := newBrowser(t, server)
+	signInAsAdministrator(t, b)
+	call := func(method, path string, body any, want int) []byte {
+		t.Helper()
+		status, data := b.do(method, path, body)
+		if status != want {
+			t.Fatalf("%s %s: %d %s", method, path, status, data)
+		}
+		return data
+	}
+	var dir struct {
+		ID int64 `json:"id"`
+	}
+	decode(t, call("POST", "/api/tree", map[string]any{"name": "Batch destination"}, 201), &dir)
+	var sessions []struct {
+		ID string `json:"id"`
+	}
+	decode(t, call("POST", "/api/upload-batches", map[string]any{"parentId": dir.ID, "name": "Folder", "files": []any{map[string]any{"path": "a.txt", "size": 3}, map[string]any{"path": "nested/b.txt", "size": 3}}}, 201), &sessions)
+	listing := fmt.Sprintf("/api/tree?parentId=%d", dir.ID)
+	for i, session := range sessions {
+		if data := call("GET", listing, nil, 200); strings.Contains(string(data), "Folder") {
+			t.Fatal("incomplete folder visible")
+		}
+		var urls []struct {
+			URL string `json:"url"`
+		}
+		decode(t, call("POST", "/api/uploads/"+session.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
+		req, _ := http.NewRequest("PUT", urls[0].URL, strings.NewReader("abc"))
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatal(res.StatusCode)
+		}
+		call("POST", "/api/uploads/"+session.ID+"/complete", nil, 200)
+		if i == len(sessions)-1 {
+			if data := call("GET", listing, nil, 200); !strings.Contains(string(data), "Folder") {
+				t.Fatal("complete folder missing")
+			}
+		}
+	}
 }

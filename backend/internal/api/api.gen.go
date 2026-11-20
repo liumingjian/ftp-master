@@ -261,6 +261,16 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// FileVersion defines model for FileVersion.
+type FileVersion struct {
+	CreatedAt time.Time `json:"createdAt"`
+	CreatedBy int64     `json:"createdBy"`
+	Format    string    `json:"format"`
+	Id        int64     `json:"id"`
+	Size      int64     `json:"size"`
+	Username  string    `json:"username"`
+}
+
 // GrantImpact defines model for GrantImpact.
 type GrantImpact struct {
 	ChangedUsers int      `json:"changedUsers"`
@@ -555,6 +565,21 @@ type RenameTreeNodeJSONBody struct {
 	Name string `json:"name"`
 }
 
+// RestoreTreeNodeJSONBody defines parameters for RestoreTreeNode.
+type RestoreTreeNodeJSONBody struct {
+	ParentId *int64 `json:"parentId,omitempty"`
+}
+
+// InitiateUploadBatchJSONBody defines parameters for InitiateUploadBatch.
+type InitiateUploadBatchJSONBody struct {
+	Files []struct {
+		Path string `json:"path"`
+		Size int64  `json:"size"`
+	} `json:"files"`
+	Name     string `json:"name"`
+	ParentId int64  `json:"parentId"`
+}
+
 // CompleteUploadParams defines parameters for CompleteUpload.
 type CompleteUploadParams struct {
 	// Collision Resolve a visible name clash; hidden clashes always keep both silently.
@@ -632,6 +657,12 @@ type MoveTreeNodeJSONRequestBody MoveTreeNodeJSONBody
 // RenameTreeNodeJSONRequestBody defines body for RenameTreeNode for application/json ContentType.
 type RenameTreeNodeJSONRequestBody RenameTreeNodeJSONBody
 
+// RestoreTreeNodeJSONRequestBody defines body for RestoreTreeNode for application/json ContentType.
+type RestoreTreeNodeJSONRequestBody RestoreTreeNodeJSONBody
+
+// InitiateUploadBatchJSONRequestBody defines body for InitiateUploadBatch for application/json ContentType.
+type InitiateUploadBatchJSONRequestBody InitiateUploadBatchJSONBody
+
 // SetUploadPolicyJSONRequestBody defines body for SetUploadPolicy for application/json ContentType.
 type SetUploadPolicyJSONRequestBody = UploadPolicy
 
@@ -698,6 +729,9 @@ type ServerInterface interface {
 	// (PUT /password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
 
+	// (GET /recycle-bin)
+	ListRecycleBin(w http.ResponseWriter, r *http.Request)
+
 	// (GET /registrations)
 	ListRegistrations(w http.ResponseWriter, r *http.Request)
 
@@ -724,6 +758,9 @@ type ServerInterface interface {
 
 	// (POST /tree)
 	CreateDirectory(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /tree/{id})
+	DeleteTreeNode(w http.ResponseWriter, r *http.Request, id int64)
 
 	// (GET /tree/{id})
 	GetTreeNode(w http.ResponseWriter, r *http.Request, id int64)
@@ -755,8 +792,23 @@ type ServerInterface interface {
 	// (GET /tree/{id}/permission)
 	InspectPermission(w http.ResponseWriter, r *http.Request, id int64, params InspectPermissionParams)
 
+	// (DELETE /tree/{id}/purge)
+	PurgeTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
 	// (POST /tree/{id}/rename)
 	RenameTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/restore)
+	RestoreTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /tree/{id}/versions)
+	ListFileVersions(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/versions/{versionId}/restore)
+	RestoreFileVersion(w http.ResponseWriter, r *http.Request, id int64, versionId int64)
+
+	// (POST /upload-batches)
+	InitiateUploadBatch(w http.ResponseWriter, r *http.Request)
 
 	// (GET /upload-policy)
 	GetUploadPolicy(w http.ResponseWriter, r *http.Request)
@@ -769,6 +821,9 @@ type ServerInterface interface {
 
 	// (POST /uploads/{id}/complete)
 	CompleteUpload(w http.ResponseWriter, r *http.Request, id string, params CompleteUploadParams)
+
+	// (GET /uploads/{id}/parts)
+	ListUploadParts(w http.ResponseWriter, r *http.Request, id string)
 
 	// (POST /uploads/{id}/parts)
 	IssueUploadParts(w http.ResponseWriter, r *http.Request, id string)
@@ -1053,6 +1108,20 @@ func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ListRecycleBin operation middleware
+func (siw *ServerInterfaceWrapper) ListRecycleBin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRecycleBin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRegistrations operation middleware
 func (siw *ServerInterfaceWrapper) ListRegistrations(w http.ResponseWriter, r *http.Request) {
 
@@ -1213,6 +1282,32 @@ func (siw *ServerInterfaceWrapper) CreateDirectory(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateDirectory(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTreeNode(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1523,6 +1618,32 @@ func (siw *ServerInterfaceWrapper) InspectPermission(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// PurgeTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) PurgeTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PurgeTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RenameTreeNode operation middleware
 func (siw *ServerInterfaceWrapper) RenameTreeNode(w http.ResponseWriter, r *http.Request) {
 
@@ -1540,6 +1661,107 @@ func (siw *ServerInterfaceWrapper) RenameTreeNode(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RenameTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RestoreTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) RestoreTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestoreTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFileVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListFileVersions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFileVersions(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RestoreFileVersion operation middleware
+func (siw *ServerInterfaceWrapper) RestoreFileVersion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "versionId" -------------
+	var versionId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "versionId", r.PathValue("versionId"), &versionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "versionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestoreFileVersion(w, r, id, versionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InitiateUploadBatch operation middleware
+func (siw *ServerInterfaceWrapper) InitiateUploadBatch(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InitiateUploadBatch(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1624,6 +1846,32 @@ func (siw *ServerInterfaceWrapper) CompleteUpload(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CompleteUpload(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUploadParts operation middleware
+func (siw *ServerInterfaceWrapper) ListUploadParts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUploadParts(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1925,19 +2173,27 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/recycle-bin", wrapper.ListRecycleBin)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/restore", wrapper.RestoreTreeNode)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tree/{id}/purge", wrapper.PurgeTreeNode)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/office/permits/{permitId}/document/{filename}", wrapper.GetOfficeDocument)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/office/permits/{permitId}/save", wrapper.SaveOffice)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/office/permits/{permitId}/delivery", wrapper.GetOfficeDelivery)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/files/{id}/office-edits", wrapper.StartOfficeEdit)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/versions", wrapper.ListFileVersions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/versions/{versionId}/restore", wrapper.RestoreFileVersion)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/download", wrapper.DownloadFile)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/audit/query", wrapper.QueryAudit)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/upload-batches", wrapper.InitiateUploadBatch)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads", wrapper.InitiateUpload)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/uploads/{id}/parts", wrapper.ListUploadParts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads/{id}/parts", wrapper.IssueUploadParts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads/{id}/complete", wrapper.CompleteUpload)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/upload-policy", wrapper.GetUploadPolicy)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/upload-policy", wrapper.SetUploadPolicy)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree", wrapper.ListTree)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree", wrapper.CreateDirectory)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tree/{id}", wrapper.DeleteTreeNode)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}", wrapper.GetTreeNode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/rename", wrapper.RenameTreeNode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/move", wrapper.MoveTreeNode)
@@ -2696,6 +2952,48 @@ func (response ChangePassworddefaultJSONResponse) VisitChangePasswordResponse(w 
 	return err
 }
 
+type ListRecycleBinRequestObject struct {
+}
+
+type ListRecycleBinResponseObject interface {
+	VisitListRecycleBinResponse(w http.ResponseWriter) error
+}
+
+type ListRecycleBin200JSONResponse []struct {
+	DeletedAt    time.Time `json:"deletedAt"`
+	Id           int64     `json:"id"`
+	OriginalPath string    `json:"originalPath"`
+}
+
+func (response ListRecycleBin200JSONResponse) VisitListRecycleBinResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRecycleBindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListRecycleBindefaultJSONResponse) VisitListRecycleBinResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListRegistrationsRequestObject struct {
 }
 
@@ -3053,6 +3351,39 @@ type CreateDirectorydefaultJSONResponse struct {
 }
 
 func (response CreateDirectorydefaultJSONResponse) VisitCreateDirectoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTreeNodeRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type DeleteTreeNodeResponseObject interface {
+	VisitDeleteTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type DeleteTreeNode204Response struct {
+}
+
+func (response DeleteTreeNode204Response) VisitDeleteTreeNodeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteTreeNodedefaultJSONResponse) VisitDeleteTreeNodeResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3451,6 +3782,39 @@ func (response InspectPermissiondefaultJSONResponse) VisitInspectPermissionRespo
 	return err
 }
 
+type PurgeTreeNodeRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type PurgeTreeNodeResponseObject interface {
+	VisitPurgeTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type PurgeTreeNode204Response struct {
+}
+
+func (response PurgeTreeNode204Response) VisitPurgeTreeNodeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type PurgeTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PurgeTreeNodedefaultJSONResponse) VisitPurgeTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RenameTreeNodeRequestObject struct {
 	Id   int64 `json:"id"`
 	Body *RenameTreeNodeJSONRequestBody
@@ -3480,6 +3844,158 @@ type RenameTreeNodedefaultJSONResponse struct {
 }
 
 func (response RenameTreeNodedefaultJSONResponse) VisitRenameTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreTreeNodeRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *RestoreTreeNodeJSONRequestBody
+}
+
+type RestoreTreeNodeResponseObject interface {
+	VisitRestoreTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type RestoreTreeNode204Response struct {
+}
+
+func (response RestoreTreeNode204Response) VisitRestoreTreeNodeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RestoreTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RestoreTreeNodedefaultJSONResponse) VisitRestoreTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFileVersionsRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type ListFileVersionsResponseObject interface {
+	VisitListFileVersionsResponse(w http.ResponseWriter) error
+}
+
+type ListFileVersions200JSONResponse []FileVersion
+
+func (response ListFileVersions200JSONResponse) VisitListFileVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFileVersionsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListFileVersionsdefaultJSONResponse) VisitListFileVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreFileVersionRequestObject struct {
+	Id        int64 `json:"id"`
+	VersionId int64 `json:"versionId"`
+}
+
+type RestoreFileVersionResponseObject interface {
+	VisitRestoreFileVersionResponse(w http.ResponseWriter) error
+}
+
+type RestoreFileVersion201JSONResponse UploadReceipt
+
+func (response RestoreFileVersion201JSONResponse) VisitRestoreFileVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreFileVersiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RestoreFileVersiondefaultJSONResponse) VisitRestoreFileVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InitiateUploadBatchRequestObject struct {
+	Body *InitiateUploadBatchJSONRequestBody
+}
+
+type InitiateUploadBatchResponseObject interface {
+	VisitInitiateUploadBatchResponse(w http.ResponseWriter) error
+}
+
+type InitiateUploadBatch201JSONResponse []UploadSession
+
+func (response InitiateUploadBatch201JSONResponse) VisitInitiateUploadBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InitiateUploadBatchdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response InitiateUploadBatchdefaultJSONResponse) VisitInitiateUploadBatchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3636,6 +4152,47 @@ type CompleteUploaddefaultJSONResponse struct {
 }
 
 func (response CompleteUploaddefaultJSONResponse) VisitCompleteUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUploadPartsRequestObject struct {
+	Id string `json:"id"`
+}
+
+type ListUploadPartsResponseObject interface {
+	VisitListUploadPartsResponse(w http.ResponseWriter) error
+}
+
+type ListUploadParts200JSONResponse []struct {
+	Number int `json:"number"`
+}
+
+func (response ListUploadParts200JSONResponse) VisitListUploadPartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUploadPartsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListUploadPartsdefaultJSONResponse) VisitListUploadPartsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4158,6 +4715,9 @@ type StrictServerInterface interface {
 	// (PUT /password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
 
+	// (GET /recycle-bin)
+	ListRecycleBin(ctx context.Context, request ListRecycleBinRequestObject) (ListRecycleBinResponseObject, error)
+
 	// (GET /registrations)
 	ListRegistrations(ctx context.Context, request ListRegistrationsRequestObject) (ListRegistrationsResponseObject, error)
 
@@ -4184,6 +4744,9 @@ type StrictServerInterface interface {
 
 	// (POST /tree)
 	CreateDirectory(ctx context.Context, request CreateDirectoryRequestObject) (CreateDirectoryResponseObject, error)
+
+	// (DELETE /tree/{id})
+	DeleteTreeNode(ctx context.Context, request DeleteTreeNodeRequestObject) (DeleteTreeNodeResponseObject, error)
 
 	// (GET /tree/{id})
 	GetTreeNode(ctx context.Context, request GetTreeNodeRequestObject) (GetTreeNodeResponseObject, error)
@@ -4215,8 +4778,23 @@ type StrictServerInterface interface {
 	// (GET /tree/{id}/permission)
 	InspectPermission(ctx context.Context, request InspectPermissionRequestObject) (InspectPermissionResponseObject, error)
 
+	// (DELETE /tree/{id}/purge)
+	PurgeTreeNode(ctx context.Context, request PurgeTreeNodeRequestObject) (PurgeTreeNodeResponseObject, error)
+
 	// (POST /tree/{id}/rename)
 	RenameTreeNode(ctx context.Context, request RenameTreeNodeRequestObject) (RenameTreeNodeResponseObject, error)
+
+	// (POST /tree/{id}/restore)
+	RestoreTreeNode(ctx context.Context, request RestoreTreeNodeRequestObject) (RestoreTreeNodeResponseObject, error)
+
+	// (GET /tree/{id}/versions)
+	ListFileVersions(ctx context.Context, request ListFileVersionsRequestObject) (ListFileVersionsResponseObject, error)
+
+	// (POST /tree/{id}/versions/{versionId}/restore)
+	RestoreFileVersion(ctx context.Context, request RestoreFileVersionRequestObject) (RestoreFileVersionResponseObject, error)
+
+	// (POST /upload-batches)
+	InitiateUploadBatch(ctx context.Context, request InitiateUploadBatchRequestObject) (InitiateUploadBatchResponseObject, error)
 
 	// (GET /upload-policy)
 	GetUploadPolicy(ctx context.Context, request GetUploadPolicyRequestObject) (GetUploadPolicyResponseObject, error)
@@ -4229,6 +4807,9 @@ type StrictServerInterface interface {
 
 	// (POST /uploads/{id}/complete)
 	CompleteUpload(ctx context.Context, request CompleteUploadRequestObject) (CompleteUploadResponseObject, error)
+
+	// (GET /uploads/{id}/parts)
+	ListUploadParts(ctx context.Context, request ListUploadPartsRequestObject) (ListUploadPartsResponseObject, error)
 
 	// (POST /uploads/{id}/parts)
 	IssueUploadParts(ctx context.Context, request IssueUploadPartsRequestObject) (IssueUploadPartsResponseObject, error)
@@ -4637,6 +5218,30 @@ func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// ListRecycleBin operation middleware
+func (sh *strictHandler) ListRecycleBin(w http.ResponseWriter, r *http.Request) {
+	var request ListRecycleBinRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRecycleBin(ctx, request.(ListRecycleBinRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRecycleBin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRecycleBinResponseObject); ok {
+		if err := validResponse.VisitListRecycleBinResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListRegistrations operation middleware
 func (sh *strictHandler) ListRegistrations(w http.ResponseWriter, r *http.Request) {
 	var request ListRegistrationsRequestObject
@@ -4880,6 +5485,32 @@ func (sh *strictHandler) CreateDirectory(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateDirectoryResponseObject); ok {
 		if err := validResponse.VisitCreateDirectoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteTreeNode operation middleware
+func (sh *strictHandler) DeleteTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request DeleteTreeNodeRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteTreeNode(ctx, request.(DeleteTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteTreeNodeResponseObject); ok {
+		if err := validResponse.VisitDeleteTreeNodeResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -5178,6 +5809,32 @@ func (sh *strictHandler) InspectPermission(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// PurgeTreeNode operation middleware
+func (sh *strictHandler) PurgeTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request PurgeTreeNodeRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PurgeTreeNode(ctx, request.(PurgeTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PurgeTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PurgeTreeNodeResponseObject); ok {
+		if err := validResponse.VisitPurgeTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // RenameTreeNode operation middleware
 func (sh *strictHandler) RenameTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
 	var request RenameTreeNodeRequestObject
@@ -5204,6 +5861,123 @@ func (sh *strictHandler) RenameTreeNode(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RenameTreeNodeResponseObject); ok {
 		if err := validResponse.VisitRenameTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RestoreTreeNode operation middleware
+func (sh *strictHandler) RestoreTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request RestoreTreeNodeRequestObject
+
+	request.Id = id
+
+	var body RestoreTreeNodeJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RestoreTreeNode(ctx, request.(RestoreTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RestoreTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RestoreTreeNodeResponseObject); ok {
+		if err := validResponse.VisitRestoreTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFileVersions operation middleware
+func (sh *strictHandler) ListFileVersions(w http.ResponseWriter, r *http.Request, id int64) {
+	var request ListFileVersionsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFileVersions(ctx, request.(ListFileVersionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFileVersions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFileVersionsResponseObject); ok {
+		if err := validResponse.VisitListFileVersionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RestoreFileVersion operation middleware
+func (sh *strictHandler) RestoreFileVersion(w http.ResponseWriter, r *http.Request, id int64, versionId int64) {
+	var request RestoreFileVersionRequestObject
+
+	request.Id = id
+	request.VersionId = versionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RestoreFileVersion(ctx, request.(RestoreFileVersionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RestoreFileVersion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RestoreFileVersionResponseObject); ok {
+		if err := validResponse.VisitRestoreFileVersionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// InitiateUploadBatch operation middleware
+func (sh *strictHandler) InitiateUploadBatch(w http.ResponseWriter, r *http.Request) {
+	var request InitiateUploadBatchRequestObject
+
+	var body InitiateUploadBatchJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.InitiateUploadBatch(ctx, request.(InitiateUploadBatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "InitiateUploadBatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(InitiateUploadBatchResponseObject); ok {
+		if err := validResponse.VisitInitiateUploadBatchResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -5317,6 +6091,32 @@ func (sh *strictHandler) CompleteUpload(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CompleteUploadResponseObject); ok {
 		if err := validResponse.VisitCompleteUploadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListUploadParts operation middleware
+func (sh *strictHandler) ListUploadParts(w http.ResponseWriter, r *http.Request, id string) {
+	var request ListUploadPartsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListUploadParts(ctx, request.(ListUploadPartsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListUploadParts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListUploadPartsResponseObject); ok {
+		if err := validResponse.VisitListUploadPartsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -5580,87 +6380,94 @@ func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, u
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"/wAAAP//",
+	"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",
+	"zoMxyWhw/+X+/wMAAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

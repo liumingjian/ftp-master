@@ -66,12 +66,38 @@ type Organization struct {
 	ParentID pgtype.Int8
 }
 
+type RecycleEntry struct {
+	NodeID           int64
+	OriginalParentID pgtype.Int8
+	OriginalPath     string
+	DeletedAt        pgtype.Timestamptz
+}
+
+type StorageGc struct {
+	ObjectKey string
+	UploadID  pgtype.Text
+}
+
 type TreeNode struct {
-	ID        int64
-	ParentID  pgtype.Int8
-	Name      string
-	IsFile    bool
-	DeletedAt pgtype.Timestamptz
+	ID            int64
+	ParentID      pgtype.Int8
+	Name          string
+	IsFile        bool
+	DeletedAt     pgtype.Timestamptz
+	RecycleRootID pgtype.Int8
+}
+
+type UploadBatch struct {
+	ID       string
+	OwnerID  int64
+	ParentID int64
+	RootID   int64
+	Expected int32
+}
+
+type UploadBatchNode struct {
+	NodeID  int64
+	BatchID string
 }
 
 type UploadPolicy struct {
@@ -94,6 +120,8 @@ type UploadSession struct {
 	VersionID       pgtype.Int8
 	CreatedAt       pgtype.Timestamptz
 	Collision       string
+	BatchID         pgtype.Text
+	RelativePath    string
 }
 
 type User struct {

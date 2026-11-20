@@ -141,3 +141,48 @@ A hidden clash always creates a new file with a random suffix, even if the calle
 requests new-version; the response never identifies the hidden item. A directory
 clash supports keep-both only. Publication, version, audit and receipt commit
 atomically under the tree mutation lock, and completed retries return one receipt.
+
+## Recycle Bin
+
+`DELETE /api/tree/{id}` requires Delete on the item and tombstones its entire
+subtree in the same transaction as the `delete` Audit Event. Descendants retain
+their identities, direct Grants and versions. The deleted root is detached;
+its original parent ID and historical path remain in a separate Recycle Entry.
+All normal tree consumers load only live nodes, including Administrator reads.
+Live sibling-name uniqueness excludes deleted nodes, so restoring can return 409
+when another item occupies the original name.
+
+`GET /api/recycle-bin` lists only entries the current User can restore:
+Administrator, a Creator Grant holder on the file, or a holder of Delete on its
+live original parent. `POST /api/tree/{id}/restore` takes `{}` for that parent;
+Administrators may supply `{parentId: ID}` for a live destination directory.
+An unavailable original parent requires this explicit choice. `DELETE
+/api/tree/{id}/purge` is Administrator-only. Restore and purge share the tree
+mutation lock and commit with their Audit Events.
+
+`internal/recycle.Purge(ctx, queries, id)` is the reusable scheduler seam. The
+caller must hold advisory transaction lock 725010 and record its Audit Event in
+that transaction. Purge queues storage work before removing references and
+metadata. `recycle.Collect(ctx,pool,client,bucket)` retries durable `storage_gc`
+rows, aborts queued multipart uploads and removes unreferenced immutable objects.
+It holds the publication lock while checking both File Version and upload intent
+references. A storage failure leaves the queue intact; object removal is
+idempotent. `ListRecycleEntries` exposes Clock-stamped deletion times for the
+30-day scheduler retention policy.
+
+## File Versions
+
+`GET /api/tree/{id}/versions` requires Browse and lists all retained versions,
+newest first, including their author identity, username and Clock-stamped time.
+Historical bytes use the existing extension-free download route with
+`?versionId=ID`; each issuance requires current Download and records `download`.
+`POST /api/tree/{id}/versions/{versionId}/restore` requires Modify, appends a new
+latest File Version attributed to the restoring User, and commits its
+`restore_version` Audit Event atomically. Neither earlier version is changed.
+Missing or foreign-file versions return 404 after non-disclosing authorization.
+
+Restoration shares the source's immutable `object_key`; it does not copy bytes.
+The scheduled cleanup seam (#21) must queue removed keys in `storage_gc` and use
+`recycle.Collect` to remove only unreferenced content. Pruning one version must
+never remove bytes still referenced by a restored version. Retention remains the
+scheduler's responsibility; version history itself does not prune on read.
