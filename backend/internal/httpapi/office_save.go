@@ -17,7 +17,6 @@ import (
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
-	"github.com/minio/minio-go/v7"
 )
 
 type officeFailure struct {
@@ -131,16 +130,12 @@ func (s *Server) SaveOffice(ctx context.Context, r api.SaveOfficeRequestObject) 
 		return nil, err
 	}
 	key := opaqueKey()
-	if _, err = s.transfer.Client.PutObject(ctx, s.transfer.Bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{ContentType: "application/octet-stream"}); err != nil {
+	committed := false
+	defer s.rollbackImmutableObject(ctx, key, &committed)()
+	if err = s.writeImmutableObject(ctx, key, data, "application/octet-stream"); err != nil {
 		return nil, err
 	}
-	// Each save publishes a fresh immutable object. Failed transactions leave no visible version.
-	committed := false
-	defer func() {
-		if !committed {
-			_ = s.transfer.Client.RemoveObject(context.WithoutCancel(ctx), s.transfer.Bucket, key, minio.RemoveObjectOptions{})
-		}
-	}()
+
 	v, err := q.CreateFileVersion(ctx, sqlcdb.CreateFileVersionParams{FileID: p.FileID, ObjectKey: key, Size: int64(len(data)), Format: format, CreatedBy: info.session.User.ID, CreatedAt: pgtype.Timestamptz{Time: s.membership.Clock.Now(), Valid: true}})
 	if err != nil {
 		return nil, err

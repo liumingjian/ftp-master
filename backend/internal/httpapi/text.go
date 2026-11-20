@@ -112,14 +112,11 @@ func (s *Server) SaveText(ctx context.Context, r api.SaveTextRequestObject) (api
 	}
 	key := opaqueKey()
 	committed := false
-	defer func() {
-		if !committed {
-			_ = s.transfer.Client.RemoveObject(context.WithoutCancel(ctx), s.transfer.Bucket, key, minio.RemoveObjectOptions{})
-		}
-	}()
-	if _, err = s.transfer.Client.PutObject(ctx, s.transfer.Bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{ContentType: "text/plain; charset=utf-8"}); err != nil {
+	defer s.rollbackImmutableObject(ctx, key, &committed)()
+	if err = s.writeImmutableObject(ctx, key, data, "text/plain; charset=utf-8"); err != nil {
 		return nil, err
 	}
+
 	info := requestFrom(ctx)
 	v, err := q.CreateFileVersion(ctx, sqlcdb.CreateFileVersionParams{FileID: r.Id, ObjectKey: key, Size: int64(len(data)), Format: latest.Format, CreatedBy: info.session.User.ID, CreatedAt: pgtype.Timestamptz{Time: s.membership.Clock.Now(), Valid: true}})
 	if err != nil {

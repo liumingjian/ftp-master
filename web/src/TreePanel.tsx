@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom';
 import { TextEditor } from "./TextEditor";
 import { BrowseTools, CopyItemLink, PreviewButton } from "./BrowseTools";
 import { ZipDownload } from "./ZipDownload";
@@ -40,7 +41,8 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
  const [destinationPath, setDestinationPath] = useState<Node[]>([]);
  const [revision, setRevision] = useState(0);
   const current = path.at(-1);
-  const [uploadPaths, setUploadPaths] = useState<Node[][]>([]);
+  const [uploadActivity,setUploadActivity]=useState<Record<string,boolean>>({});
+ const [uploadPaths, setUploadPaths] = useState<Node[][]>([]);
   useEffect(() => {
     if(current && (current.rights & 4)) setUploadPaths(previous => previous.some(p => p.at(-1)?.id === current.id) ? previous : [...previous,path]);
   }, [current?.id]);
@@ -114,7 +116,8 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
           {current && !(current.rights & 1) && (
             <p>此目录内容不可浏览；仅显示可访问的路径。</p>
           )}
-          {uploadPaths.map(target => <div key={target.at(-1)!.id} hidden={target.at(-1)!.id !== current?.id}><UploadRow parentId={target.at(-1)!.id} otherFolder={target.at(-1)!.id !== current?.id} navigate={() => setPath(target)} completed={() => setRevision(v => v + 1)} /><FolderUpload otherFolder={target.at(-1)!.id !== current?.id} navigate={() => setPath(target)} parentId={target.at(-1)!.id} completed={() => setRevision(v => v + 1)} /></div>)}
+          {document.querySelector('.shell-header') && Object.entries(uploadActivity).some(([key,active])=>active && Number(key.split(':')[1])!==current?.id) && createPortal(<details><summary>其他目录上传 {Object.entries(uploadActivity).filter(([key,active])=>active && Number(key.split(':')[1])!==current?.id).length}</summary>{uploadPaths.filter(target=>target.at(-1)!.id!==current?.id && (uploadActivity[`file:${target.at(-1)!.id}`]||uploadActivity[`folder:${target.at(-1)!.id}`])).map(target=><button key={target.at(-1)!.id} onClick={()=>setPath(target)}>{target.map(node=>node.name).join('/')}</button>)}</details>,document.querySelector('.shell-header')!)}
+          {uploadPaths.map(target => <div key={target.at(-1)!.id} hidden={target.at(-1)!.id !== current?.id}><UploadRow parentId={target.at(-1)!.id} onActivityChange={active=>setUploadActivity(previous=>({...previous,[`file:${target.at(-1)!.id}`]:active}))} completed={() => setRevision(v => v + 1)} /><FolderUpload onActivityChange={active=>setUploadActivity(previous=>({...previous,[`folder:${target.at(-1)!.id}`]:active}))} parentId={target.at(-1)!.id} completed={() => setRevision(v => v + 1)} /></div>)}
           {administrator && <UploadPolicyEditor />}
           <ZipDownload nodes={nodes}/>
           <ul>

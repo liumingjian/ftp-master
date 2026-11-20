@@ -2,30 +2,59 @@ package httpapi
 
 import (
 	"context"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
+	"github.com/minio/minio-go/v7"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 )
 
 func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBatchRequestObject) (api.InitiateUploadBatchResponseObject, error) {
-	if r.Body == nil || len(r.Body.Files) == 0 || len(r.Body.Files) > 10000 || !validUploadPath(r.Body.Name) || strings.Contains(r.Body.Name, "/") {
+	if r.Body == nil || len(r.Body.Files) > 10000 || !validUploadPath(r.Body.Name) || strings.Contains(r.Body.Name, "/") {
 		return membershipFailure{400, "invalid folder manifest"}, nil
 	}
-	seen := map[string]bool{}
+	policy, err := s.uploadPolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	files := map[string]bool{}
+	dirs := map[string]bool{}
 	for _, f := range r.Body.Files {
-		if !validUploadPath(f.Path) || seen[f.Path] {
+		if !validUploadPath(f.Path) || files[f.Path] || f.Size < 0 || f.Size > 20000000000 {
 			return membershipFailure{400, "invalid folder manifest"}, nil
 		}
-		seen[f.Path] = true
-	}
-	for value := range seen {
-		for prefix := path.Dir(value); prefix != "."; prefix = path.Dir(prefix) {
-			if seen[prefix] {
-				return membershipFailure{400, "file conflicts with directory"}, nil
+		ext := strings.ToLower(strings.TrimPrefix(path.Ext(f.Path), "."))
+		for _, blocked := range policy.BlockedExtensions {
+			if ext == blocked {
+				return membershipFailure{400, "blocked extension: " + ext}, nil
 			}
+		}
+		files[f.Path] = true
+		for d := path.Dir(f.Path); d != "."; d = path.Dir(d) {
+			dirs[d] = true
+		}
+	}
+	if r.Body.Directories != nil {
+		if len(*r.Body.Directories) > 10000 {
+			return membershipFailure{400, "invalid folder manifest"}, nil
+		}
+		for _, d := range *r.Body.Directories {
+			if !validUploadPath(d) {
+				return membershipFailure{400, "invalid folder manifest"}, nil
+			}
+			dirs[d] = true
+			for parent := path.Dir(d); parent != "."; parent = path.Dir(parent) {
+				dirs[parent] = true
+			}
+		}
+	}
+	for d := range dirs {
+		if files[d] {
+			return membershipFailure{400, "file conflicts with directory"}, nil
 		}
 	}
 	tx, err := s.membership.Pool.Begin(ctx)
@@ -36,7 +65,8 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
 		return nil, err
 	}
-	snap, err := s.treeSnapshot(ctx, sqlcdb.New(tx))
+	q := sqlcdb.New(tx)
+	snap, err := s.treeSnapshot(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -44,39 +74,83 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 		f, e := membershipError(err)
 		return f, e
 	}
-	id := opaqueKey()
-	root, err := sqlcdb.New(tx).CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&r.Body.ParentId), Name: r.Body.Name, IsFile: false})
+	parent, _ := snap.Node(r.Body.ParentId)
+	if parent.IsFile {
+		return membershipFailure{409, "destination must be a directory"}, nil
+	}
+	root, err := q.CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&r.Body.ParentId), Name: r.Body.Name})
 	if err != nil {
 		return membershipFailure{409, "folder name already exists"}, nil
 	}
-	_, err = tx.Exec(ctx, "INSERT INTO upload_batches(id,owner_id,parent_id,root_id,expected,created_at) VALUES($1,$2,$3,$4,$5,$6)", id, requestFrom(ctx).session.User.ID, r.Body.ParentId, root.ID, len(r.Body.Files), s.membership.Clock.Now())
-	if err != nil {
-		return nil, err
+	id := opaqueKey()
+	hasFiles := len(r.Body.Files) > 0
+	if hasFiles {
+		if err = q.CreateUploadBatch(ctx, sqlcdb.CreateUploadBatchParams{ID: id, OwnerID: requestFrom(ctx).session.User.ID, ParentID: r.Body.ParentId, RootID: root.ID, Expected: int32(len(r.Body.Files)), CreatedAt: pgtype.Timestamptz{Time: s.membership.Clock.Now(), Valid: true}}); err != nil {
+			return nil, err
+		}
+		if err = q.HideUploadBatchNode(ctx, sqlcdb.HideUploadBatchNodeParams{NodeID: root.ID, BatchID: id}); err != nil {
+			return nil, err
+		}
 	}
-	_, err = tx.Exec(ctx, "INSERT INTO upload_batch_nodes VALUES($1,$2)", root.ID, id)
-	if err != nil {
-		return nil, err
+	names := make([]string, 0, len(dirs))
+	for d := range dirs {
+		names = append(names, d)
+	}
+	sort.Strings(names)
+	parents := map[string]int64{".": root.ID}
+	for _, d := range names {
+		parent := parents[path.Dir(d)]
+		node, e := q.CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&parent), Name: path.Base(d)})
+		if e != nil {
+			return nil, e
+		}
+		parents[d] = node.ID
+		if hasFiles {
+			if err = q.HideUploadBatchNode(ctx, sqlcdb.HideUploadBatchNodeParams{NodeID: node.ID, BatchID: id}); err != nil {
+				return nil, err
+			}
+		}
+	}
+	out := api.InitiateUploadBatch201JSONResponse{}
+	core := minio.Core{Client: s.transfer.Client}
+	committed := false
+	type pending struct{ key, upload string }
+	var pendingUploads []pending
+	defer func() {
+		if !committed {
+			for _, u := range pendingUploads {
+				_ = core.AbortMultipartUpload(context.WithoutCancel(ctx), s.transfer.Bucket, u.key, u.upload)
+			}
+		}
+	}()
+	for _, f := range r.Body.Files {
+		sid, key := opaqueKey(), opaqueKey()
+		upload, e := core.NewMultipartUpload(ctx, s.transfer.Bucket, key, minio.PutObjectOptions{UserMetadata: map[string]string{"upload-intent": sid}})
+		if e != nil {
+			return nil, e
+		}
+		pendingUploads = append(pendingUploads, pending{key, upload})
+		count := int32((f.Size + uploadPartSize - 1) / uploadPartSize)
+		if count == 0 {
+			count = 1
+		}
+		if err = q.CreateUploadSession(ctx, sqlcdb.CreateUploadSessionParams{ID: sid, OwnerID: requestFrom(ctx).session.User.ID, ParentID: r.Body.ParentId, Name: path.Base(f.Path), Size: f.Size, ObjectKey: key, StorageUploadID: upload, PartSize: uploadPartSize, PartCount: count, CreatedAt: pgtype.Timestamptz{Time: s.membership.Clock.Now(), Valid: true}}); err != nil {
+			return nil, err
+		}
+		if err = q.AttachUploadBatch(ctx, sqlcdb.AttachUploadBatchParams{ID: sid, BatchID: pgtype.Text{String: id, Valid: true}, RelativePath: f.Path}); err != nil {
+			return nil, err
+		}
+		out = append(out, api.UploadSession{Id: sid, PartCount: int(count), PartSize: uploadPartSize})
+	}
+	if !hasFiles {
+		if _, err = q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: root.ID, PrincipalKind: "user", PrincipalID: requestFrom(ctx).session.User.ID, Rights: 63, Scope: "subtree", Creator: true}); err != nil {
+			return nil, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	out := api.InitiateUploadBatch201JSONResponse{}
-	for _, f := range r.Body.Files {
-		result, e := s.InitiateUpload(ctx, api.InitiateUploadRequestObject{Body: &api.UploadInput{ParentId: r.Body.ParentId, Name: path.Base(f.Path), Size: f.Size}})
-		if e != nil {
-			return nil, e
-		}
-		session, ok := result.(api.InitiateUpload201JSONResponse)
-		if !ok {
-			failure := result.(membershipFailure)
-			return failure, nil
-		}
-		_, e = s.membership.Pool.Exec(ctx, "UPDATE upload_sessions SET batch_id=$2,relative_path=$3 WHERE id=$1", session.Id, id, f.Path)
-		if e != nil {
-			return nil, e
-		}
-		out = append(out, api.UploadSession(session))
-	}
+	committed = true
 	return out, nil
 }
 func validUploadPath(value string) bool {

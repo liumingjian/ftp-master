@@ -11,6 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const attachUploadBatch = `-- name: AttachUploadBatch :exec
+UPDATE upload_sessions SET batch_id=$2,relative_path=$3 WHERE id=$1
+`
+
+type AttachUploadBatchParams struct {
+	ID           string
+	BatchID      pgtype.Text
+	RelativePath string
+}
+
+func (q *Queries) AttachUploadBatch(ctx context.Context, arg AttachUploadBatchParams) error {
+	_, err := q.db.Exec(ctx, attachUploadBatch, arg.ID, arg.BatchID, arg.RelativePath)
+	return err
+}
+
 const createFileVersion = `-- name: CreateFileVersion :one
 INSERT INTO file_versions(file_id,object_key,size,format,created_by,created_at) VALUES($1,$2,$3,$4,$5,$6) RETURNING id, file_id, object_key, size, format, created_by, created_at
 `
@@ -44,6 +59,31 @@ func (q *Queries) CreateFileVersion(ctx context.Context, arg CreateFileVersionPa
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const createUploadBatch = `-- name: CreateUploadBatch :exec
+INSERT INTO upload_batches(id,owner_id,parent_id,root_id,expected,created_at) VALUES($1,$2,$3,$4,$5,$6)
+`
+
+type CreateUploadBatchParams struct {
+	ID        string
+	OwnerID   int64
+	ParentID  int64
+	RootID    int64
+	Expected  int32
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) CreateUploadBatch(ctx context.Context, arg CreateUploadBatchParams) error {
+	_, err := q.db.Exec(ctx, createUploadBatch,
+		arg.ID,
+		arg.OwnerID,
+		arg.ParentID,
+		arg.RootID,
+		arg.Expected,
+		arg.CreatedAt,
+	)
+	return err
 }
 
 const createUploadSession = `-- name: CreateUploadSession :exec
@@ -80,6 +120,38 @@ func (q *Queries) CreateUploadSession(ctx context.Context, arg CreateUploadSessi
 	return err
 }
 
+const findUploadDirectory = `-- name: FindUploadDirectory :one
+SELECT id FROM tree_nodes WHERE parent_id=$1 AND name=$2 AND NOT is_file AND deleted_at IS NULL
+`
+
+type FindUploadDirectoryParams struct {
+	ParentID pgtype.Int8
+	Name     string
+}
+
+func (q *Queries) FindUploadDirectory(ctx context.Context, arg FindUploadDirectoryParams) (int64, error) {
+	row := q.db.QueryRow(ctx, findUploadDirectory, arg.ParentID, arg.Name)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getUploadBatchRoot = `-- name: GetUploadBatchRoot :one
+SELECT n.id,n.name FROM upload_batches b JOIN tree_nodes n ON n.id=b.root_id WHERE b.id=$1
+`
+
+type GetUploadBatchRootRow struct {
+	ID   int64
+	Name string
+}
+
+func (q *Queries) GetUploadBatchRoot(ctx context.Context, id string) (GetUploadBatchRootRow, error) {
+	row := q.db.QueryRow(ctx, getUploadBatchRoot, id)
+	var i GetUploadBatchRootRow
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
+}
+
 const getUploadPolicy = `-- name: GetUploadPolicy :one
 SELECT blocked_extensions FROM upload_policy WHERE id
 `
@@ -89,6 +161,23 @@ func (q *Queries) GetUploadPolicy(ctx context.Context) ([]string, error) {
 	var blocked_extensions []string
 	err := row.Scan(&blocked_extensions)
 	return blocked_extensions, err
+}
+
+const getUploadPublication = `-- name: GetUploadPublication :one
+SELECT collision,coalesce(batch_id,'')::text AS batch_id,relative_path FROM upload_sessions WHERE id=$1
+`
+
+type GetUploadPublicationRow struct {
+	Collision    string
+	BatchID      string
+	RelativePath string
+}
+
+func (q *Queries) GetUploadPublication(ctx context.Context, id string) (GetUploadPublicationRow, error) {
+	row := q.db.QueryRow(ctx, getUploadPublication, id)
+	var i GetUploadPublicationRow
+	err := row.Scan(&i.Collision, &i.BatchID, &i.RelativePath)
+	return i, err
 }
 
 const getUploadSessionForUpdate = `-- name: GetUploadSessionForUpdate :one
@@ -119,6 +208,29 @@ func (q *Queries) GetUploadSessionForUpdate(ctx context.Context, id string) (Upl
 	return i, err
 }
 
+const grantUploadBatchCreator = `-- name: GrantUploadBatchCreator :exec
+INSERT INTO grants(node_id,principal_kind,principal_id,rights,scope,creator) SELECT root_id,'user',owner_id,63,'subtree',true FROM upload_batches b WHERE b.id=$1
+`
+
+func (q *Queries) GrantUploadBatchCreator(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, grantUploadBatchCreator, id)
+	return err
+}
+
+const hideUploadBatchNode = `-- name: HideUploadBatchNode :exec
+INSERT INTO upload_batch_nodes(node_id,batch_id) VALUES($1,$2)
+`
+
+type HideUploadBatchNodeParams struct {
+	NodeID  int64
+	BatchID string
+}
+
+func (q *Queries) HideUploadBatchNode(ctx context.Context, arg HideUploadBatchNodeParams) error {
+	_, err := q.db.Exec(ctx, hideUploadBatchNode, arg.NodeID, arg.BatchID)
+	return err
+}
+
 const markUploadCompleting = `-- name: MarkUploadCompleting :exec
 UPDATE upload_sessions SET state='completing' WHERE id=$1
 `
@@ -143,6 +255,29 @@ func (q *Queries) PublishUploadReceipt(ctx context.Context, arg PublishUploadRec
 	return err
 }
 
+const revealUploadBatch = `-- name: RevealUploadBatch :exec
+DELETE FROM upload_batch_nodes WHERE batch_id=$1
+`
+
+func (q *Queries) RevealUploadBatch(ctx context.Context, batchID string) error {
+	_, err := q.db.Exec(ctx, revealUploadBatch, batchID)
+	return err
+}
+
+const setUploadCollision = `-- name: SetUploadCollision :exec
+UPDATE upload_sessions SET collision=$2 WHERE id=$1
+`
+
+type SetUploadCollisionParams struct {
+	ID        string
+	Collision string
+}
+
+func (q *Queries) SetUploadCollision(ctx context.Context, arg SetUploadCollisionParams) error {
+	_, err := q.db.Exec(ctx, setUploadCollision, arg.ID, arg.Collision)
+	return err
+}
+
 const setUploadPolicy = `-- name: SetUploadPolicy :exec
 UPDATE upload_policy SET blocked_extensions=$1 WHERE id
 `
@@ -150,4 +285,15 @@ UPDATE upload_policy SET blocked_extensions=$1 WHERE id
 func (q *Queries) SetUploadPolicy(ctx context.Context, blockedExtensions []string) error {
 	_, err := q.db.Exec(ctx, setUploadPolicy, blockedExtensions)
 	return err
+}
+
+const uploadBatchReady = `-- name: UploadBatchReady :one
+SELECT (count(*)=b.expected AND bool_and(s.state='complete'))::boolean AS ready FROM upload_batches b JOIN upload_sessions s ON s.batch_id=b.id WHERE b.id=$1 GROUP BY b.expected
+`
+
+func (q *Queries) UploadBatchReady(ctx context.Context, batchID string) (bool, error) {
+	row := q.db.QueryRow(ctx, uploadBatchReady, batchID)
+	var ready bool
+	err := row.Scan(&ready)
+	return ready, err
 }

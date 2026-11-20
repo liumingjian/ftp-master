@@ -3,7 +3,7 @@ package scheduler
 
 import (
 	"context"
-	"strings"
+	"github.com/jackc/pgx/v5/pgtype"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,30 +54,39 @@ func (j *Jobs) Run(ctx context.Context) error {
 	}
 	// Expired unused permits no longer pin source bytes. Delivered permits
 	// retain base metadata for saving without pinning the source version.
-	statements := []string{
-		`DELETE FROM office_edit_permits WHERE delivered_at IS NULL AND expires_at <= $1`,
-		`WITH ranked AS (SELECT id,object_key,row_number() OVER(PARTITION BY file_id ORDER BY id DESC) n FROM file_versions), removed AS (DELETE FROM file_versions f USING ranked r WHERE f.id=r.id AND r.n>20 RETURNING f.object_key) INSERT INTO storage_gc(object_key) SELECT object_key FROM removed ON CONFLICT DO NOTHING`,
-		`UPDATE upload_batches SET created_at=$1 WHERE created_at IS NULL`,
-		// Mark every old hidden batch as one expired unit, including complete children.
-		`INSERT INTO storage_gc(object_key,upload_id) SELECT u.object_key,u.storage_upload_id FROM upload_sessions u LEFT JOIN upload_batches b ON b.id=u.batch_id WHERE (u.state<>'complete' AND u.created_at <= $1::timestamptz-interval '24 hours') OR b.created_at <= $1::timestamptz-interval '24 hours' ON CONFLICT DO NOTHING`,
-		`DELETE FROM upload_sessions u WHERE (u.state<>'complete' AND u.created_at <= $1::timestamptz-interval '24 hours') OR batch_id IN(SELECT id FROM upload_batches WHERE created_at <= $1::timestamptz-interval '24 hours')`,
-		`INSERT INTO storage_gc(object_key) SELECT v.object_key FROM file_versions v JOIN upload_batch_nodes n ON n.node_id=v.file_id JOIN upload_batches b ON b.id=n.batch_id WHERE b.created_at <= $1::timestamptz-interval '24 hours' ON CONFLICT DO NOTHING`,
-		`DELETE FROM file_versions WHERE file_id IN(SELECT n.node_id FROM upload_batch_nodes n JOIN upload_batches b ON b.id=n.batch_id WHERE b.created_at <= $1::timestamptz-interval '24 hours')`,
-		// Save node identities while removing batch FK references before tree nodes.
-		`CREATE TEMP TABLE expired_batch_nodes ON COMMIT DROP AS SELECT n.node_id FROM upload_batch_nodes n JOIN upload_batches b ON b.id=n.batch_id WHERE b.created_at <= $1::timestamptz-interval '24 hours'`,
-		`DELETE FROM upload_batch_nodes WHERE node_id IN(SELECT node_id FROM expired_batch_nodes)`,
-		`DELETE FROM upload_batches WHERE created_at <= $1::timestamptz-interval '24 hours'`,
-		`DELETE FROM tree_nodes WHERE id IN(SELECT node_id FROM expired_batch_nodes)`,
+	if err = q.DeleteExpiredOfficePermits(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+		return err
 	}
-	for _, sql := range statements { // Only statements with $1 accept the Clock parameter.
-		if strings.Contains(sql, "$1") {
-			_, err = tx.Exec(ctx, sql, now)
-		} else {
-			_, err = tx.Exec(ctx, sql)
-		}
-		if err != nil {
-			return err
-		}
+	if err = q.PruneFileVersions(ctx); err != nil {
+		return err
+	}
+	if err = q.DateLegacyUploadBatches(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+		return err
+	}
+	if err = q.QueueExpiredUploads(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+		return err
+	}
+	if err = q.DeleteExpiredUploads(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+		return err
+	}
+	if err = q.QueueExpiredBatchVersions(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+		return err
+	}
+	if err = q.DeleteExpiredBatchVersions(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+		return err
+	}
+	expiredNodes, err := q.ListExpiredBatchNodes(ctx, pgtype.Timestamptz{Time: now, Valid: true})
+	if err != nil {
+		return err
+	}
+	if err = q.DeleteExpiredBatchVisibility(ctx, expiredNodes); err != nil {
+		return err
+	}
+	if err = q.DeleteExpiredBatches(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+		return err
+	}
+	if err = q.DeleteExpiredBatchTreeNodes(ctx, expiredNodes); err != nil {
+		return err
 	}
 	month := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
 	for _, at := range []time.Time{month, month.AddDate(0, 1, 0)} {
