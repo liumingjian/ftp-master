@@ -5,6 +5,7 @@ package app_test
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -163,15 +164,43 @@ func TestEveryProtectedOperationRefusesAnonymousRequests(t *testing.T) {
 			// Any value will do for path parameters: the request must be
 			// refused before anything is looked up.
 			concrete := pathParam.ReplaceAllString(path, "1")
+			query := url.Values{}
+			for _, parameter := range op.Parameters {
+				if p := parameter.Value; p != nil && p.In == "query" && p.Required {
+					query.Set(p.Name, "1")
+				}
+			}
+			if len(query) != 0 {
+				concrete += "?" + query.Encode()
+			}
 			for name, cookie := range map[string]*http.Cookie{
 				"no cookie":     nil,
 				"forged cookie": {Name: sessionCookieName, Value: "forged"},
 			} {
 				anonymous := newBrowser(t, server)
 				anonymous.cookie = cookie
-				status, body := anonymous.do(method, "/api"+concrete, map[string]any{})
+				var payload any
+				if op.RequestBody != nil {
+					if _, multipart := op.RequestBody.Value.Content["multipart/form-data"]; multipart {
+						// Binding initializes the multipart reader before the
+						// session guard. The guard must not consume its parts.
+						anonymous.header = http.Header{"Content-Type": {"multipart/form-data; boundary=test"}}
+					} else {
+						payload = map[string]any{}
+					}
+				}
+				status, body := anonymous.do(method, "/api"+concrete, payload)
 				if status != http.StatusUnauthorized {
 					t.Errorf("%s %s with %s: status %d, want 401", method, path, name, status)
+					continue
+				}
+				if path == "/office/permits/{permitId}/save" {
+					// The Office Plugin consumes its own receipt envelope.
+					var receipt struct{ Success *bool }
+					decode(t, body, &receipt)
+					if receipt.Success == nil || *receipt.Success {
+						t.Errorf("%s %s with %s: expected failed Office receipt", method, path, name)
+					}
 					continue
 				}
 				var e api.Error
