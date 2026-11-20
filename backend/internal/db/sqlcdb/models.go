@@ -50,6 +50,16 @@ type Grant struct {
 	Creator       bool
 }
 
+type OfficeEditPermit struct {
+	ID          string
+	UserID      int64
+	FileID      int64
+	VersionID   int64
+	CreatedAt   pgtype.Timestamptz
+	ExpiresAt   pgtype.Timestamptz
+	DeliveredAt pgtype.Timestamptz
+}
+
 type Organization struct {
 	ID       int64
 	Name     string

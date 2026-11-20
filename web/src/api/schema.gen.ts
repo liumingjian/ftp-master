@@ -4,6 +4,24 @@
  */
 
 export interface paths {
+    "/files/{id}/office-edits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startOfficeEdit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit/query": {
         parameters: {
             query?: never;
@@ -502,6 +520,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        OfficeEdit: {
+            permitId: string;
+            documentUrl: string;
+            saveUrl: string;
+            deliveryCheckUrl: string;
+            title: string;
+            /** @enum {string} */
+            format: "doc" | "docx" | "wps" | "xls" | "xlsx";
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: int64 */
+            versionId: number;
+        };
         TreeNode: {
             /** Format: int64 */
             id: number;
@@ -690,6 +721,36 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    startOfficeEdit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    versionId?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Edit Permit issued; gateway read expires after five minutes. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeEdit"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     queryAudit: {
         parameters: {
             query?: never;
