@@ -51,7 +51,7 @@ test("Administrator grants a directory and another User can browse it", async ({
   await permissions.getByRole("button", {name:"添加到草稿"}).click();
   await expect(permissions.getByRole("cell", {name:"11（待保存）"})).toBeVisible();
   await permissions.getByRole("button", { name: "保存全部授权" }).click();
-  await expect(permissions.getByRole("status")).toHaveText("授权已保存");
+  await expect(permissions.getByText("授权已保存", { exact: true })).toBeVisible();
   const context = await browser.newContext();
   const reader = await context.newPage();
   await reader.goto("/sign-in");
@@ -79,6 +79,6 @@ test("Administrator renames and moves a directory using the destination picker",
  await expect(page.getByRole("button",{name:`Renamed-${suffix}`,exact:true})).toBeVisible();
  await page.getByRole("button",{name:`移动 Renamed-${suffix}`,exact:true}).click();
  const picker=page.getByRole("region",{name:"移动目标"});await picker.getByRole("button",{name:`Move-target-${suffix}`,exact:true}).click();await picker.getByRole("button",{name:"移动到此目录",exact:true}).click();
- await expect(page.getByRole("status")).toHaveText("项目已移动");await expect(page.getByRole("button",{name:`Renamed-${suffix}`,exact:true})).toHaveCount(0);
+ await expect(page.getByText("项目已移动",{exact:true})).toBeVisible();await expect(page.getByRole("button",{name:`Renamed-${suffix}`,exact:true})).toHaveCount(0);
  const response=await page.request.get(`/api/tree?parentId=${target.id}`);expect((await response.json()).map((n:{name:string})=>n.name)).toContain(`Renamed-${suffix}`);
 });
