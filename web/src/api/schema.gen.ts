@@ -4,6 +4,77 @@
  */
 
 export interface paths {
+    "/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTree"];
+        put?: never;
+        post: operations["createDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["getTreeNode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["listTreeGrants"];
+        put?: never;
+        post: operations["createTreeGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                grantId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteTreeGrant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/registrations": {
         parameters: {
             query?: never;
@@ -238,6 +309,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        TreeNode: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            parentId?: number;
+            name: string;
+            isFile: boolean;
+            rights: number;
+            traversable: boolean;
+        };
+        TreeGrantInput: {
+            /** @enum {string} */
+            principalKind: "user" | "organization" | "user_group";
+            /** Format: int64 */
+            principalId: number;
+            rights: number;
+            /** @enum {string} */
+            scope: "subtree" | "this_level_only";
+        };
+        TreeGrant: components["schemas"]["TreeGrantInput"] & {
+            /** Format: int64 */
+            id: number;
+            creator: boolean;
+        };
         ManagedUser: {
             /** Format: int64 */
             id: number;
@@ -353,6 +448,153 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listTree: {
+        parameters: {
+            query?: {
+                parentId?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Visible children; traversable paths never reveal siblings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNode"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    createDirectory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    /** Format: int64 */
+                    parentId?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNode"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getTreeNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Visible item, including its effective Rights. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNode"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    listTreeGrants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Direct Grants. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeGrant"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    createTreeGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TreeGrantInput"];
+            };
+        };
+        responses: {
+            /** @description Grant created and audited. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeGrant"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    deleteTreeGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                grantId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grant revoked and audited. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     listRegistrations: {
         parameters: {
             query?: never;

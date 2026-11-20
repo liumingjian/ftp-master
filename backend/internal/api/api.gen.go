@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -34,6 +35,84 @@ func (e HealthStatus) Valid() bool {
 	case Degraded:
 		return true
 	case Ok:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TreeGrantPrincipalKind.
+const (
+	TreeGrantPrincipalKindOrganization TreeGrantPrincipalKind = "organization"
+	TreeGrantPrincipalKindUser         TreeGrantPrincipalKind = "user"
+	TreeGrantPrincipalKindUserGroup    TreeGrantPrincipalKind = "user_group"
+)
+
+// Valid indicates whether the value is a known member of the TreeGrantPrincipalKind enum.
+func (e TreeGrantPrincipalKind) Valid() bool {
+	switch e {
+	case TreeGrantPrincipalKindOrganization:
+		return true
+	case TreeGrantPrincipalKindUser:
+		return true
+	case TreeGrantPrincipalKindUserGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TreeGrantScope.
+const (
+	TreeGrantScopeSubtree       TreeGrantScope = "subtree"
+	TreeGrantScopeThisLevelOnly TreeGrantScope = "this_level_only"
+)
+
+// Valid indicates whether the value is a known member of the TreeGrantScope enum.
+func (e TreeGrantScope) Valid() bool {
+	switch e {
+	case TreeGrantScopeSubtree:
+		return true
+	case TreeGrantScopeThisLevelOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TreeGrantInputPrincipalKind.
+const (
+	TreeGrantInputPrincipalKindOrganization TreeGrantInputPrincipalKind = "organization"
+	TreeGrantInputPrincipalKindUser         TreeGrantInputPrincipalKind = "user"
+	TreeGrantInputPrincipalKindUserGroup    TreeGrantInputPrincipalKind = "user_group"
+)
+
+// Valid indicates whether the value is a known member of the TreeGrantInputPrincipalKind enum.
+func (e TreeGrantInputPrincipalKind) Valid() bool {
+	switch e {
+	case TreeGrantInputPrincipalKindOrganization:
+		return true
+	case TreeGrantInputPrincipalKindUser:
+		return true
+	case TreeGrantInputPrincipalKindUserGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TreeGrantInputScope.
+const (
+	TreeGrantInputScopeSubtree       TreeGrantInputScope = "subtree"
+	TreeGrantInputScopeThisLevelOnly TreeGrantInputScope = "this_level_only"
+)
+
+// Valid indicates whether the value is a known member of the TreeGrantInputScope enum.
+func (e TreeGrantInputScope) Valid() bool {
+	switch e {
+	case TreeGrantInputScopeSubtree:
+		return true
+	case TreeGrantInputScopeThisLevelOnly:
 		return true
 	default:
 		return false
@@ -158,6 +237,46 @@ type SignInRequest struct {
 	Username string `json:"username"`
 }
 
+// TreeGrant defines model for TreeGrant.
+type TreeGrant struct {
+	Creator       bool                   `json:"creator"`
+	Id            int64                  `json:"id"`
+	PrincipalId   int64                  `json:"principalId"`
+	PrincipalKind TreeGrantPrincipalKind `json:"principalKind"`
+	Rights        int                    `json:"rights"`
+	Scope         TreeGrantScope         `json:"scope"`
+}
+
+// TreeGrantPrincipalKind defines model for TreeGrant.PrincipalKind.
+type TreeGrantPrincipalKind string
+
+// TreeGrantScope defines model for TreeGrant.Scope.
+type TreeGrantScope string
+
+// TreeGrantInput defines model for TreeGrantInput.
+type TreeGrantInput struct {
+	PrincipalId   int64                       `json:"principalId"`
+	PrincipalKind TreeGrantInputPrincipalKind `json:"principalKind"`
+	Rights        int                         `json:"rights"`
+	Scope         TreeGrantInputScope         `json:"scope"`
+}
+
+// TreeGrantInputPrincipalKind defines model for TreeGrantInput.PrincipalKind.
+type TreeGrantInputPrincipalKind string
+
+// TreeGrantInputScope defines model for TreeGrantInput.Scope.
+type TreeGrantInputScope string
+
+// TreeNode defines model for TreeNode.
+type TreeNode struct {
+	Id          int64  `json:"id"`
+	IsFile      bool   `json:"isFile"`
+	Name        string `json:"name"`
+	ParentId    *int64 `json:"parentId,omitempty"`
+	Rights      int    `json:"rights"`
+	Traversable bool   `json:"traversable"`
+}
+
 // UserGroup defines model for UserGroup.
 type UserGroup struct {
 	Id      int64   `json:"id"`
@@ -185,6 +304,17 @@ type ChangePasswordJSONBody struct {
 // ActivateRegistrationJSONBody defines parameters for ActivateRegistration.
 type ActivateRegistrationJSONBody struct {
 	OrganizationId int64 `json:"organizationId"`
+}
+
+// ListTreeParams defines parameters for ListTree.
+type ListTreeParams struct {
+	ParentId *int64 `form:"parentId,omitempty" json:"parentId,omitempty"`
+}
+
+// CreateDirectoryJSONBody defines parameters for CreateDirectory.
+type CreateDirectoryJSONBody struct {
+	Name     string `json:"name"`
+	ParentId *int64 `json:"parentId,omitempty"`
 }
 
 // MoveUserJSONBody defines parameters for MoveUser.
@@ -222,6 +352,12 @@ type ActivateRegistrationJSONRequestBody ActivateRegistrationJSONBody
 
 // SignInJSONRequestBody defines body for SignIn for application/json ContentType.
 type SignInJSONRequestBody = SignInRequest
+
+// CreateDirectoryJSONRequestBody defines body for CreateDirectory for application/json ContentType.
+type CreateDirectoryJSONRequestBody CreateDirectoryJSONBody
+
+// CreateTreeGrantJSONRequestBody defines body for CreateTreeGrant for application/json ContentType.
+type CreateTreeGrantJSONRequestBody = TreeGrantInput
 
 // CreateUserGroupJSONRequestBody defines body for CreateUserGroup for application/json ContentType.
 type CreateUserGroupJSONRequestBody = UserGroupInput
@@ -282,6 +418,24 @@ type ServerInterface interface {
 	// SignIn Sign in with username and password, starting a session.
 	// (POST /session)
 	SignIn(w http.ResponseWriter, r *http.Request)
+
+	// (GET /tree)
+	ListTree(w http.ResponseWriter, r *http.Request, params ListTreeParams)
+
+	// (POST /tree)
+	CreateDirectory(w http.ResponseWriter, r *http.Request)
+
+	// (GET /tree/{id})
+	GetTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /tree/{id}/grants)
+	ListTreeGrants(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/grants)
+	CreateTreeGrant(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (DELETE /tree/{id}/grants/{grantId})
+	DeleteTreeGrant(w http.ResponseWriter, r *http.Request, id int64, grantId int64)
 
 	// (GET /user-groups)
 	ListUserGroups(w http.ResponseWriter, r *http.Request)
@@ -555,6 +709,166 @@ func (siw *ServerInterfaceWrapper) SignIn(w http.ResponseWriter, r *http.Request
 	handler.ServeHTTP(w, r)
 }
 
+// ListTree operation middleware
+func (siw *ServerInterfaceWrapper) ListTree(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTreeParams
+
+	// ------------- Optional query parameter "parentId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "parentId", r.URL.Query(), &params.ParentId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "parentId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "parentId", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTree(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDirectory operation middleware
+func (siw *ServerInterfaceWrapper) CreateDirectory(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDirectory(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) GetTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTreeGrants operation middleware
+func (siw *ServerInterfaceWrapper) ListTreeGrants(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTreeGrants(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTreeGrant operation middleware
+func (siw *ServerInterfaceWrapper) CreateTreeGrant(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTreeGrant(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTreeGrant operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTreeGrant(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "grantId" -------------
+	var grantId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "grantId", r.PathValue("grantId"), &grantId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "grantId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTreeGrant(w, r, id, grantId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListUserGroups operation middleware
 func (siw *ServerInterfaceWrapper) ListUserGroups(w http.ResponseWriter, r *http.Request) {
 
@@ -807,6 +1121,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree", wrapper.ListTree)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree", wrapper.CreateDirectory)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}", wrapper.GetTreeNode)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/grants", wrapper.ListTreeGrants)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/grants", wrapper.CreateTreeGrant)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tree/{id}/grants/{grantId}", wrapper.DeleteTreeGrant)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/registrations", wrapper.ListRegistrations)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/registrations", wrapper.Register)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/registrations/{id}/activate", wrapper.ActivateRegistration)
@@ -1591,6 +1911,236 @@ func (response SignIn403JSONResponse) VisitSignInResponse(w http.ResponseWriter)
 	return err
 }
 
+type ListTreeRequestObject struct {
+	Params ListTreeParams
+}
+
+type ListTreeResponseObject interface {
+	VisitListTreeResponse(w http.ResponseWriter) error
+}
+
+type ListTree200JSONResponse []TreeNode
+
+func (response ListTree200JSONResponse) VisitListTreeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTreedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListTreedefaultJSONResponse) VisitListTreeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDirectoryRequestObject struct {
+	Body *CreateDirectoryJSONRequestBody
+}
+
+type CreateDirectoryResponseObject interface {
+	VisitCreateDirectoryResponse(w http.ResponseWriter) error
+}
+
+type CreateDirectory201JSONResponse TreeNode
+
+func (response CreateDirectory201JSONResponse) VisitCreateDirectoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDirectorydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateDirectorydefaultJSONResponse) VisitCreateDirectoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTreeNodeRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type GetTreeNodeResponseObject interface {
+	VisitGetTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type GetTreeNode200JSONResponse TreeNode
+
+func (response GetTreeNode200JSONResponse) VisitGetTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetTreeNodedefaultJSONResponse) VisitGetTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTreeGrantsRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type ListTreeGrantsResponseObject interface {
+	VisitListTreeGrantsResponse(w http.ResponseWriter) error
+}
+
+type ListTreeGrants200JSONResponse []TreeGrant
+
+func (response ListTreeGrants200JSONResponse) VisitListTreeGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTreeGrantsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListTreeGrantsdefaultJSONResponse) VisitListTreeGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTreeGrantRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *CreateTreeGrantJSONRequestBody
+}
+
+type CreateTreeGrantResponseObject interface {
+	VisitCreateTreeGrantResponse(w http.ResponseWriter) error
+}
+
+type CreateTreeGrant201JSONResponse TreeGrant
+
+func (response CreateTreeGrant201JSONResponse) VisitCreateTreeGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTreeGrantdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateTreeGrantdefaultJSONResponse) VisitCreateTreeGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTreeGrantRequestObject struct {
+	Id      int64 `json:"id"`
+	GrantId int64 `json:"grantId"`
+}
+
+type DeleteTreeGrantResponseObject interface {
+	VisitDeleteTreeGrantResponse(w http.ResponseWriter) error
+}
+
+type DeleteTreeGrant204Response struct {
+}
+
+func (response DeleteTreeGrant204Response) VisitDeleteTreeGrantResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteTreeGrantdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteTreeGrantdefaultJSONResponse) VisitDeleteTreeGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListUserGroupsRequestObject struct {
 }
 
@@ -2007,6 +2557,24 @@ type StrictServerInterface interface {
 	// SignIn Sign in with username and password, starting a session.
 	// (POST /session)
 	SignIn(ctx context.Context, request SignInRequestObject) (SignInResponseObject, error)
+
+	// (GET /tree)
+	ListTree(ctx context.Context, request ListTreeRequestObject) (ListTreeResponseObject, error)
+
+	// (POST /tree)
+	CreateDirectory(ctx context.Context, request CreateDirectoryRequestObject) (CreateDirectoryResponseObject, error)
+
+	// (GET /tree/{id})
+	GetTreeNode(ctx context.Context, request GetTreeNodeRequestObject) (GetTreeNodeResponseObject, error)
+
+	// (GET /tree/{id}/grants)
+	ListTreeGrants(ctx context.Context, request ListTreeGrantsRequestObject) (ListTreeGrantsResponseObject, error)
+
+	// (POST /tree/{id}/grants)
+	CreateTreeGrant(ctx context.Context, request CreateTreeGrantRequestObject) (CreateTreeGrantResponseObject, error)
+
+	// (DELETE /tree/{id}/grants/{grantId})
+	DeleteTreeGrant(ctx context.Context, request DeleteTreeGrantRequestObject) (DeleteTreeGrantResponseObject, error)
 
 	// (GET /user-groups)
 	ListUserGroups(ctx context.Context, request ListUserGroupsRequestObject) (ListUserGroupsResponseObject, error)
@@ -2452,6 +3020,175 @@ func (sh *strictHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListTree operation middleware
+func (sh *strictHandler) ListTree(w http.ResponseWriter, r *http.Request, params ListTreeParams) {
+	var request ListTreeRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTree(ctx, request.(ListTreeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTree")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTreeResponseObject); ok {
+		if err := validResponse.VisitListTreeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateDirectory operation middleware
+func (sh *strictHandler) CreateDirectory(w http.ResponseWriter, r *http.Request) {
+	var request CreateDirectoryRequestObject
+
+	var body CreateDirectoryJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateDirectory(ctx, request.(CreateDirectoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateDirectory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateDirectoryResponseObject); ok {
+		if err := validResponse.VisitCreateDirectoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTreeNode operation middleware
+func (sh *strictHandler) GetTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request GetTreeNodeRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTreeNode(ctx, request.(GetTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTreeNodeResponseObject); ok {
+		if err := validResponse.VisitGetTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTreeGrants operation middleware
+func (sh *strictHandler) ListTreeGrants(w http.ResponseWriter, r *http.Request, id int64) {
+	var request ListTreeGrantsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTreeGrants(ctx, request.(ListTreeGrantsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTreeGrants")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTreeGrantsResponseObject); ok {
+		if err := validResponse.VisitListTreeGrantsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateTreeGrant operation middleware
+func (sh *strictHandler) CreateTreeGrant(w http.ResponseWriter, r *http.Request, id int64) {
+	var request CreateTreeGrantRequestObject
+
+	request.Id = id
+
+	var body CreateTreeGrantJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateTreeGrant(ctx, request.(CreateTreeGrantRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateTreeGrant")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateTreeGrantResponseObject); ok {
+		if err := validResponse.VisitCreateTreeGrantResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteTreeGrant operation middleware
+func (sh *strictHandler) DeleteTreeGrant(w http.ResponseWriter, r *http.Request, id int64, grantId int64) {
+	var request DeleteTreeGrantRequestObject
+
+	request.Id = id
+	request.GrantId = grantId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteTreeGrant(ctx, request.(DeleteTreeGrantRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteTreeGrant")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteTreeGrantResponseObject); ok {
+		if err := validResponse.VisitDeleteTreeGrantResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListUserGroups operation middleware
 func (sh *strictHandler) ListUserGroups(w http.ResponseWriter, r *http.Request) {
 	var request ListUserGroupsRequestObject
@@ -2644,45 +3381,52 @@ func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, u
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
