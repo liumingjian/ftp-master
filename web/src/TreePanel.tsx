@@ -1,11 +1,12 @@
 import { UploadRow, UploadPolicyEditor } from "./UploadRow";
 import { useEffect, useState } from "react";
-import { GrantsPanel } from "./GrantsPanel";
+import { GrantsPanel, PermissionInspection } from "./GrantsPanel";
 import { api } from "./api/client";
 import type { components } from "./api/schema.gen";
 type Node = components["schemas"]["TreeNode"];
 
 export function TreePanel({ administrator }: { administrator: boolean }) {
+  const [inspectNode,setInspectNode]=useState<Node>();
   const [grantNode, setGrantNode] = useState<Node>();
   const [path, setPath] = useState<Node[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -52,7 +53,8 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
     if(response.ok) setMoving(undefined);
     setRevision(v=>v+1);
   }
-  if (grantNode) return <GrantsPanel node={grantNode} close={() => setGrantNode(undefined)} />;
+  if (inspectNode) return <section><h3>{inspectNode.name}</h3><button onClick={()=>setInspectNode(undefined)}>返回目录</button><PermissionInspection node={inspectNode} administrator={administrator}/></section>;
+  if (grantNode) return <GrantsPanel administrator={administrator} node={grantNode} close={() => setGrantNode(undefined)} />;
   return (
     <section aria-label="共享目录">
       <h2>共享目录</h2>
@@ -92,6 +94,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
                   {n.name}
                 </button>
                 {n.traversable && "（仅通行）"}
+                <button onClick={()=>setInspectNode(n)}>查看有效权限</button>
                 {!!(n.rights & 32) && <button onClick={() => setGrantNode(n)}>管理权限</button>}
                 {(n.rights & 8)!==0 && <form action={form=>rename(n,form)}><label>新名称<input name="name" defaultValue={n.name} required maxLength={255}/></label><button>重命名</button></form>}
                 {(current ? (current.rights & 16)!==0 : administrator) && <button onClick={()=>{setMoving(n);void browseDestination([]);}}>移动 {n.name}</button>}

@@ -70,6 +70,7 @@ test("Administrator grants a directory and another User can browse it", async ({
 test("Administrator renames and moves a directory using the destination picker", async ({page})=>{
  const suffix=Date.now().toString();
  await page.goto("/sign-in");await signIn(page,ADMINISTRATOR_USERNAME,ADMINISTRATOR_PASSWORD);
+ await expect(page.getByTestId("current-user")).toBeVisible();
  const create=async(name:string,parentId?:number)=>{const response=await page.request.post("/api/tree",{data:{name,parentId}});expect(response.status()).toBe(201);return await response.json() as {id:number}};
  const source=await create(`Move-source-${suffix}`);const target=await create(`Move-target-${suffix}`);await create(`Original-${suffix}`,source.id);
  await page.reload();await page.getByRole("button",{name:`Move-source-${suffix}`,exact:true}).click();

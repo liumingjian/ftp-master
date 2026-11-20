@@ -183,6 +183,13 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// GrantImpact defines model for GrantImpact.
+type GrantImpact struct {
+	ChangedUsers int      `json:"changedUsers"`
+	CoveredItems int      `json:"coveredItems"`
+	Warnings     []string `json:"warnings"`
+}
+
 // GroupMembers defines model for GroupMembers.
 type GroupMembers struct {
 	UserIds []int64 `json:"userIds"`
@@ -242,6 +249,15 @@ type PartInput struct {
 type PartURLs = []struct {
 	Number int    `json:"number"`
 	Url    string `json:"url"`
+}
+
+// PermissionInspection defines model for PermissionInspection.
+type PermissionInspection struct {
+	Administrator bool           `json:"administrator"`
+	Rights        int            `json:"rights"`
+	Sources       []SourcedGrant `json:"sources"`
+	Traversable   bool           `json:"traversable"`
+	UserId        int64          `json:"userId"`
 }
 
 // Registration defines model for Registration.
@@ -385,9 +401,20 @@ type SaveGrantDraftJSONBody struct {
 	Remove []int64          `json:"remove"`
 }
 
+// PreviewGrantDraftJSONBody defines parameters for PreviewGrantDraft.
+type PreviewGrantDraftJSONBody struct {
+	Add    []TreeGrantInput `json:"add"`
+	Remove []int64          `json:"remove"`
+}
+
 // MoveTreeNodeJSONBody defines parameters for MoveTreeNode.
 type MoveTreeNodeJSONBody struct {
 	ParentId *int64 `json:"parentId"`
+}
+
+// InspectPermissionParams defines parameters for InspectPermission.
+type InspectPermissionParams struct {
+	UserId *int64 `form:"userId,omitempty" json:"userId,omitempty"`
 }
 
 // RenameTreeNodeJSONBody defines parameters for RenameTreeNode.
@@ -450,6 +477,9 @@ type CreateDirectoryJSONRequestBody CreateDirectoryJSONBody
 
 // SaveGrantDraftJSONRequestBody defines body for SaveGrantDraft for application/json ContentType.
 type SaveGrantDraftJSONRequestBody SaveGrantDraftJSONBody
+
+// PreviewGrantDraftJSONRequestBody defines body for PreviewGrantDraft for application/json ContentType.
+type PreviewGrantDraftJSONRequestBody PreviewGrantDraftJSONBody
 
 // CreateTreeGrantJSONRequestBody defines body for CreateTreeGrant for application/json ContentType.
 type CreateTreeGrantJSONRequestBody = TreeGrantInput
@@ -547,6 +577,9 @@ type ServerInterface interface {
 	// (POST /tree/{id}/grant-draft)
 	SaveGrantDraft(w http.ResponseWriter, r *http.Request, id int64)
 
+	// (POST /tree/{id}/grant-draft/preview)
+	PreviewGrantDraft(w http.ResponseWriter, r *http.Request, id int64)
+
 	// (GET /tree/{id}/grants)
 	ListTreeGrants(w http.ResponseWriter, r *http.Request, id int64)
 
@@ -558,6 +591,9 @@ type ServerInterface interface {
 
 	// (POST /tree/{id}/move)
 	MoveTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /tree/{id}/permission)
+	InspectPermission(w http.ResponseWriter, r *http.Request, id int64, params InspectPermissionParams)
 
 	// (POST /tree/{id}/rename)
 	RenameTreeNode(w http.ResponseWriter, r *http.Request, id int64)
@@ -977,6 +1013,32 @@ func (siw *ServerInterfaceWrapper) SaveGrantDraft(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// PreviewGrantDraft operation middleware
+func (siw *ServerInterfaceWrapper) PreviewGrantDraft(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewGrantDraft(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTreeGrants operation middleware
 func (siw *ServerInterfaceWrapper) ListTreeGrants(w http.ResponseWriter, r *http.Request) {
 
@@ -1081,6 +1143,48 @@ func (siw *ServerInterfaceWrapper) MoveTreeNode(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.MoveTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InspectPermission operation middleware
+func (siw *ServerInterfaceWrapper) InspectPermission(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params InspectPermissionParams
+
+	// ------------- Optional query parameter "userId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "userId", r.URL.Query(), &params.UserId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "userId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InspectPermission(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1504,6 +1608,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/move", wrapper.MoveTreeNode)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/grant-draft", wrapper.GetGrantDraft)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/grant-draft", wrapper.SaveGrantDraft)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/grant-draft/preview", wrapper.PreviewGrantDraft)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/permission", wrapper.InspectPermission)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/grants", wrapper.ListTreeGrants)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/grants", wrapper.CreateTreeGrant)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tree/{id}/grants/{grantId}", wrapper.DeleteTreeGrant)
@@ -2482,6 +2588,46 @@ func (response SaveGrantDraftdefaultJSONResponse) VisitSaveGrantDraftResponse(w 
 	return err
 }
 
+type PreviewGrantDraftRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *PreviewGrantDraftJSONRequestBody
+}
+
+type PreviewGrantDraftResponseObject interface {
+	VisitPreviewGrantDraftResponse(w http.ResponseWriter) error
+}
+
+type PreviewGrantDraft200JSONResponse GrantImpact
+
+func (response PreviewGrantDraft200JSONResponse) VisitPreviewGrantDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewGrantDraftdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PreviewGrantDraftdefaultJSONResponse) VisitPreviewGrantDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListTreeGrantsRequestObject struct {
 	Id int64 `json:"id"`
 }
@@ -2624,6 +2770,46 @@ type MoveTreeNodedefaultJSONResponse struct {
 }
 
 func (response MoveTreeNodedefaultJSONResponse) VisitMoveTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InspectPermissionRequestObject struct {
+	Id     int64 `json:"id"`
+	Params InspectPermissionParams
+}
+
+type InspectPermissionResponseObject interface {
+	VisitInspectPermissionResponse(w http.ResponseWriter) error
+}
+
+type InspectPermission200JSONResponse PermissionInspection
+
+func (response InspectPermission200JSONResponse) VisitInspectPermissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InspectPermissiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response InspectPermissiondefaultJSONResponse) VisitInspectPermissionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3363,6 +3549,9 @@ type StrictServerInterface interface {
 	// (POST /tree/{id}/grant-draft)
 	SaveGrantDraft(ctx context.Context, request SaveGrantDraftRequestObject) (SaveGrantDraftResponseObject, error)
 
+	// (POST /tree/{id}/grant-draft/preview)
+	PreviewGrantDraft(ctx context.Context, request PreviewGrantDraftRequestObject) (PreviewGrantDraftResponseObject, error)
+
 	// (GET /tree/{id}/grants)
 	ListTreeGrants(ctx context.Context, request ListTreeGrantsRequestObject) (ListTreeGrantsResponseObject, error)
 
@@ -3374,6 +3563,9 @@ type StrictServerInterface interface {
 
 	// (POST /tree/{id}/move)
 	MoveTreeNode(ctx context.Context, request MoveTreeNodeRequestObject) (MoveTreeNodeResponseObject, error)
+
+	// (GET /tree/{id}/permission)
+	InspectPermission(ctx context.Context, request InspectPermissionRequestObject) (InspectPermissionResponseObject, error)
 
 	// (POST /tree/{id}/rename)
 	RenameTreeNode(ctx context.Context, request RenameTreeNodeRequestObject) (RenameTreeNodeResponseObject, error)
@@ -3982,6 +4174,39 @@ func (sh *strictHandler) SaveGrantDraft(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// PreviewGrantDraft operation middleware
+func (sh *strictHandler) PreviewGrantDraft(w http.ResponseWriter, r *http.Request, id int64) {
+	var request PreviewGrantDraftRequestObject
+
+	request.Id = id
+
+	var body PreviewGrantDraftJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewGrantDraft(ctx, request.(PreviewGrantDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewGrantDraft")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PreviewGrantDraftResponseObject); ok {
+		if err := validResponse.VisitPreviewGrantDraftResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListTreeGrants operation middleware
 func (sh *strictHandler) ListTreeGrants(w http.ResponseWriter, r *http.Request, id int64) {
 	var request ListTreeGrantsRequestObject
@@ -4094,6 +4319,33 @@ func (sh *strictHandler) MoveTreeNode(w http.ResponseWriter, r *http.Request, id
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(MoveTreeNodeResponseObject); ok {
 		if err := validResponse.VisitMoveTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// InspectPermission operation middleware
+func (sh *strictHandler) InspectPermission(w http.ResponseWriter, r *http.Request, id int64, params InspectPermissionParams) {
+	var request InspectPermissionRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.InspectPermission(ctx, request.(InspectPermissionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "InspectPermission")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(InspectPermissionResponseObject); ok {
+		if err := validResponse.VisitInspectPermissionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4503,67 +4755,71 @@ func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, u
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"oZzl7LIPL3sjkjBv8Xnx3wAAAP//",
+	"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",
+	"/w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
