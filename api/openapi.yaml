@@ -84,6 +84,57 @@ paths:
                 type: string
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /password:
+    put:
+      operationId: changePassword
+      summary: Change the signed-in User's password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 1
+                  maxLength: 1024
+      responses:
+        "204":
+          description: Password changed.
+        default:
+          $ref: "#/components/responses/Unauthorized"
+  /users/{userId}/password:
+    put:
+      operationId: resetPassword
+      summary: Reset a User's password as an Administrator.
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              properties:
+                newPassword:
+                  type: string
+                  minLength: 1
+                  maxLength: 1024
+      responses:
+        "204":
+          description: Password reset.
+        default:
+          $ref: "#/components/responses/Unauthorized"
 components:
   securitySchemes:
     session:

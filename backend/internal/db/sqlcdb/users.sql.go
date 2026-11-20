@@ -7,9 +7,49 @@ package sqlcdb
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const changePasswordWithAudit = `-- name: ChangePasswordWithAudit :execrows
+WITH changed AS (
+ UPDATE users SET password_hash = $6
+ WHERE users.id = $7 AND password_hash = $8
+ RETURNING users.id
+)
+INSERT INTO audit_events (occurred_at, user_id, username, source_ip, action, outcome, detail)
+SELECT $1, $2, $3, $4, $5, 'success',
+ jsonb_build_object('target_user_id', changed.id) FROM changed
+`
+
+type ChangePasswordWithAuditParams struct {
+	OccurredAt   pgtype.Timestamptz
+	ActorID      pgtype.Int8
+	ActorName    string
+	SourceIp     *netip.Addr
+	Action       string
+	NewHash      string
+	TargetID     int64
+	ExpectedHash string
+}
+
+func (q *Queries) ChangePasswordWithAudit(ctx context.Context, arg ChangePasswordWithAuditParams) (int64, error) {
+	result, err := q.db.Exec(ctx, changePasswordWithAudit,
+		arg.OccurredAt,
+		arg.ActorID,
+		arg.ActorName,
+		arg.SourceIp,
+		arg.Action,
+		arg.NewHash,
+		arg.TargetID,
+		arg.ExpectedHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const createInitialAdministrator = `-- name: CreateInitialAdministrator :execrows
 INSERT INTO users (username, display_name, password_hash, is_administrator, status, created_at)
