@@ -82,7 +82,7 @@ func TestRecycleCreatorOrParentDeleteAndOrphanRestore(t *testing.T) {
 	var upload struct {
 		ID string `json:"id"`
 	}
-	decode(t, call(creator, "POST", "/api/uploads", map[string]any{"parentId": dir.ID, "name": "created.txt", "size": 5}, 201), &upload)
+	decode(t, call(creator, "POST", "/api/uploads", map[string]any{"parentId": dir.ID, "name": "created.docx", "size": 5}, 201), &upload)
 	var urls []struct {
 		URL string `json:"url"`
 	}
@@ -102,7 +102,15 @@ func TestRecycleCreatorOrParentDeleteAndOrphanRestore(t *testing.T) {
 	decode(t, call(creator, "POST", "/api/uploads/"+upload.ID+"/complete", nil, 200), &receipt)
 	file := fmt.Sprintf("/api/tree/%d", receipt.FileID)
 	parent := fmt.Sprintf("/api/tree/%d", dir.ID)
+	var permit struct {
+		Document string `json:"documentUrl"`
+		Delivery string `json:"deliveryCheckUrl"`
+	}
+	decode(t, call(creator, "POST", fmt.Sprintf("/api/files/%d/office-edits", receipt.FileID), map[string]any{}, 201), &permit)
 	call(admin, "DELETE", file, nil, 204)
+	call(creator, "GET", permit.Document, nil, 404)
+	call(creator, "GET", permit.Delivery, nil, 404)
+	call(creator, "POST", "/api/uploads/"+upload.ID+"/complete", nil, 404)
 	call(creator, "GET", file+"/download", nil, 404)
 	call(creator, "POST", file+"/restore", map[string]any{}, 204)
 	call(admin, "DELETE", file, nil, 204)
