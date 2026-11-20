@@ -1,3 +1,4 @@
+import { AuditPanel } from "./AuditPanel"
 import {TreePanel} from "./TreePanel"
 import { RegistrationsPanel } from './RegistrationsPanel'
 import { MembershipPanel } from './MembershipPanel'
@@ -39,7 +40,7 @@ export function SignedInShell() {
       <main className="shell-main">
         <HealthPanel />
  <TreePanel administrator={state.user.isAdministrator} />
-        {state.user.isAdministrator && <><MembershipPanel /><RegistrationsPanel /></>}
+        {state.user.isAdministrator && <><AuditPanel /><MembershipPanel /><RegistrationsPanel /></>}
         <PasswordPanel administrator={state.user.isAdministrator} />
       </main>
     </div>
