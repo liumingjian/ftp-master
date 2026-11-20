@@ -130,6 +130,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tree/{id}/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["openText"];
+        put: operations["saveText"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree/{id}/versions": {
         parameters: {
             query?: never;
@@ -1152,6 +1170,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OfficeEdit"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    openText: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open UTF-8 plain text under 10 MB with Modify; audited. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: int64 */
+                        versionId: number;
+                        content: string;
+                    };
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    saveText: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    baseVersionId: number;
+                    content: string;
+                };
+            };
+        };
+        responses: {
+            /** @description New immutable File Version and Audit Event; outdated base returns 409 without change. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadReceipt"];
                 };
             };
             default: components["responses"]["Unauthorized"];

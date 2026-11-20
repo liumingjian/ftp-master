@@ -1,3 +1,4 @@
+import { TextEditor } from "./TextEditor";
 import { BrowseTools, CopyItemLink, PreviewButton } from "./BrowseTools";
 import { VersionsPanel } from "./VersionsPanel";
 import {FolderUpload} from './FolderUpload';
@@ -116,6 +117,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
                 </button>
                 <CopyItemLink node={n}/>
                 {n.isFile && !!(n.rights & 1) && <PreviewButton node={n}/>}
+                {n.isFile && <TextEditor node={n}/>}
                 {n.isFile && !!(n.rights & 1) && <button onClick={()=>setVersionNode(n)}>文件版本</button>}
                 {n.isFile && !!(n.rights & 2) && <a href={`/api/tree/${n.id}/download`} download>下载 {n.name}</a>}
                 {!!(n.rights & 16) && <button onClick={()=>void deleteNode(n.id)}>删除 {n.name}</button>}

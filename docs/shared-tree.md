@@ -226,3 +226,20 @@ The browser copies `/#item=ID` links. After sign-in the application resolves the
 stable ID through the authenticated tree endpoint, opens directories or file
 previews, and reports unavailable items without revealing their existence.
 Renames and moves preserve these links; Grants are evaluated anew on every read.
+
+## Built-in text editing
+
+`GET /api/tree/{id}/text` requires current Modify, reads the latest immutable
+version and returns `{versionId, content}` after committing a `text_open` Audit
+Event. Supported formats are txt, md, csv, json, xml, log, yaml, yml, toml, ini
+and conf. Content must be UTF-8 without NUL bytes and smaller than 10,000,000
+bytes. The same limits apply to saves.
+
+`PUT /api/tree/{id}/text` accepts `{baseVersionId, content}`. It rechecks Modify
+and the latest version under the publication lock. An outdated base returns 409
+without creating content, a File Version or a save Audit Event. The editor keeps
+the unsaved buffer and prompts the User to copy changes before reloading and
+merging. A successful save returns the ordinary UploadReceipt (201), appends a
+fresh immutable object and File Version, and atomically records `text_save` with
+both version IDs. Database/audit failure rolls back the version and removes the
+unpublished object. Restoration and cleanup reuse the existing version seams.
