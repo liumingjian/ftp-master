@@ -48,7 +48,7 @@ func (s *Server) StartOfficeEdit(ctx context.Context, r api.StartOfficeEditReque
 	if !node.IsFile {
 		return membershipFailure{409, "item is not a file"}, nil
 	}
-	version, err := q.GetOfficeVersion(ctx, sqlcdb.GetOfficeVersionParams{FileID: r.Id, Column2: versionID})
+	version, err := q.GetFileVersion(ctx, sqlcdb.GetFileVersionParams{FileID: r.Id, Column2: versionID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return membershipFailure{404, "file version not found"}, nil
 	}

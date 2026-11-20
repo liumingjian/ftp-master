@@ -118,7 +118,63 @@ func TestMultipartPublishesOnceWithCreatorAndExactBytes(t *testing.T) {
 	if len(grants) != 1 || !grants[0].Creator || grants[0].Rights != 63 {
 		t.Fatalf("Creator Grant %v", grants)
 	}
-	// Objects are an explicitly agreed observable transfer seam. No metadata-table assertions.
+	// The redirect is an authorized issuance; the client then reads exact immutable bytes.
+	downloadPath := fmt.Sprintf("/api/tree/%d/download", published.FileID)
+	req, _ := http.NewRequest("GET", server.URL+downloadPath, nil)
+	req.AddCookie(b.cookie)
+	redirectClient := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	res, err := redirectClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 302 || res.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("redirect: %d", res.StatusCode)
+	}
+	downloaded, err := http.Get(res.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotBytes, _ := io.ReadAll(downloaded.Body)
+	downloaded.Body.Close()
+	if downloaded.StatusCode != 200 || !bytes.Equal(gotBytes, content) || !strings.Contains(downloaded.Header.Get("Content-Disposition"), "report.txt") {
+		t.Fatal("download bytes or filename mismatch")
+	}
+	downloadEvents := 0
+	for _, event := range readAuditEvents(t, stores.config.DatabaseURL) {
+		if event.Action == "download" {
+			downloadEvents++
+		}
+	}
+	if downloadEvents != 1 {
+		t.Fatalf("download events: %d", downloadEvents)
+	}
+	// Current permissions govern every issuance, including requested historical versions.
+	var readerID int64
+	err = conn.QueryRow(context.Background(), `INSERT INTO users(username,display_name,password_hash,status,created_at) SELECT 'download-reader','Reader',password_hash,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`).Scan(&readerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := newBrowser(t, server)
+	if status, _ := reader.signIn("download-reader", initialAdministratorPassword); status != 200 {
+		t.Fatal(status)
+	}
+	if status, _ := reader.do("GET", downloadPath, nil); status != 404 {
+		t.Fatalf("invisible: %d", status)
+	}
+	call("POST", fmt.Sprintf("/api/tree/%d/grants", published.FileID), map[string]any{"principalKind": "user", "principalId": readerID, "rights": 1, "scope": "subtree"}, 201)
+	if status, _ := reader.do("GET", downloadPath, nil); status != 403 {
+		t.Fatalf("Browse only: %d", status)
+	}
+	if status, _ := b.do("GET", downloadPath+"?versionId=99999999", nil); status != 404 {
+		t.Fatalf("missing version: %d", status)
+	}
+	if status, _ := b.do("GET", fmt.Sprintf("/api/tree/%d/download", dir.ID), nil); status != 409 {
+		t.Fatalf("directory: %d", status)
+	}
+	// Objects are an explicitly agreed observable transfer seam.
+
+	// No metadata-table assertions.
 	client, err := minio.New(stores.config.MinIOEndpoint, &minio.Options{Creds: credentials.NewStaticV4(stores.config.MinIOAccessKey, stores.config.MinIOSecretKey, "")})
 	if err != nil {
 		t.Fatal(err)

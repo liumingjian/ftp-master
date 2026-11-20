@@ -72,27 +72,3 @@ func (q *Queries) GetOfficePermit(ctx context.Context, id string) (GetOfficePerm
 	)
 	return i, err
 }
-
-const getOfficeVersion = `-- name: GetOfficeVersion :one
-SELECT id, file_id, object_key, size, format, created_by, created_at FROM file_versions WHERE file_id=$1 AND ($2::bigint=0 OR id=$2) ORDER BY id DESC LIMIT 1
-`
-
-type GetOfficeVersionParams struct {
-	FileID  int64
-	Column2 int64
-}
-
-func (q *Queries) GetOfficeVersion(ctx context.Context, arg GetOfficeVersionParams) (FileVersion, error) {
-	row := q.db.QueryRow(ctx, getOfficeVersion, arg.FileID, arg.Column2)
-	var i FileVersion
-	err := row.Scan(
-		&i.ID,
-		&i.FileID,
-		&i.ObjectKey,
-		&i.Size,
-		&i.Format,
-		&i.CreatedBy,
-		&i.CreatedAt,
-	)
-	return i, err
-}
