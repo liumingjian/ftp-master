@@ -5,12 +5,37 @@
 package sqlcdb
 
 import (
+	"net/netip"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type AuditEvent struct {
+	ID         pgtype.Int8
+	OccurredAt pgtype.Timestamptz
+	UserID     pgtype.Int8
+	Username   string
+	SourceIp   *netip.Addr
+	Action     string
+	Outcome    string
+	ItemID     pgtype.Int8
+	ItemPath   pgtype.Text
+	Detail     []byte
+}
 
 type GooseDbVersion struct {
 	ID        int32
 	VersionID int64
 	IsApplied bool
 	Tstamp    pgtype.Timestamp
+}
+
+type User struct {
+	ID              int64
+	Username        string
+	DisplayName     string
+	PasswordHash    string
+	IsAdministrator bool
+	Status          string
+	CreatedAt       pgtype.Timestamptz
 }

@@ -21,10 +21,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Return the signed-in User of the current session. */
+        get: operations["getSession"];
+        put?: never;
+        /** Sign in with username and password, starting a session. */
+        post: operations["signIn"];
+        /** Sign out, ending the current session immediately. */
+        delete: operations["signOut"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Error: {
+            /** @description Stable machine-readable reason, e.g. unauthenticated, invalid_credentials. */
+            code: string;
+            message: string;
+        };
+        SignInRequest: {
+            username: string;
+            password: string;
+        };
+        CurrentUser: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            displayName: string;
+            isAdministrator: boolean;
+        };
         Health: {
             status: components["schemas"]["HealthStatus"];
             database: components["schemas"]["DatabaseHealth"];
@@ -56,7 +91,17 @@ export interface components {
             schemaVersion: number;
         };
     };
-    responses: never;
+    responses: {
+        /** @description There is no valid session for an active User. */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
@@ -91,6 +136,83 @@ export interface operations {
                     "application/json": components["schemas"]["Health"];
                 };
             };
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session is valid; its idle expiry is extended. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUser"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    signIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignInRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed in. The session cookie is set. */
+            200: {
+                headers: {
+                    /** @description The HttpOnly session cookie. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUser"];
+                };
+            };
+            /** @description The username and password do not identify an active User. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    signOut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out. The session cookie is cleared. */
+            204: {
+                headers: {
+                    /** @description Expires the session cookie. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
 }

@@ -8,22 +8,37 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/liumingjian/ftp-master/backend/internal/audit"
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
 	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/health"
 	"github.com/liumingjian/ftp-master/backend/internal/httpapi"
+	"github.com/liumingjian/ftp-master/backend/internal/identity"
 )
 
-// Config locates the backing stores.
+// Config locates the backing stores and sets up the first sign-in.
 type Config struct {
+	// DatabaseURL connects as the application role (ftp_master_app), which
+	// owns nothing and holds only the privileges the migrations grant it.
 	DatabaseURL string
+	// MigrationDatabaseURL connects as the schema owner; it is used only to
+	// apply migrations at startup.
+	MigrationDatabaseURL string
+
+	// InitialAdministrator is created on startup while no Administrator
+	// exists; leave it empty once the installation has one.
+	InitialAdministrator InitialAdministrator
+
+	// HTTP adjusts how the API treats the network in front of it.
+	HTTP httpapi.Options
 
 	RedisAddr     string
 	RedisPassword string
@@ -35,6 +50,12 @@ type Config struct {
 	MinIOBucket    string
 }
 
+// InitialAdministrator are the credentials of the first Administrator.
+type InitialAdministrator struct {
+	Username string
+	Password string
+}
+
 // App is a running service instance.
 type App struct {
 	pool    *pgxpool.Pool
@@ -42,9 +63,13 @@ type App struct {
 	handler http.Handler
 }
 
-// New connects to the backing stores, applies pending migrations, ensures the
-// content bucket exists and builds the HTTP handler.
+// New applies pending migrations, connects to the backing stores, ensures the
+// content bucket, the current Audit partitions and the initial Administrator
+// exist, and builds the HTTP handler.
 func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
+	if err := migrate(ctx, cfg.MigrationDatabaseURL); err != nil {
+		return nil, err
+	}
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("connect to PostgreSQL: %w", err)
@@ -57,10 +82,6 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 		}
 	}()
 
-	if err := db.Migrate(ctx, pool); err != nil {
-		return nil, err
-	}
-
 	minioClient, err := minio.New(cfg.MinIOEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
 		Secure: cfg.MinIOUseSSL,
@@ -72,16 +93,49 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 		return nil, err
 	}
 
+	queries := sqlcdb.New(pool)
+	recorder := audit.NewRecorder(queries, clk)
+	// This month's and next month's partitions, so the first events of a
+	// month do not race to create one.
+	now := clk.Now()
+	for _, month := range []time.Time{now, now.AddDate(0, 1, 0)} {
+		if err := recorder.EnsurePartition(ctx, month); err != nil {
+			return nil, err
+		}
+	}
+	identityService, err := identity.NewService(queries, redisClient, recorder, clk)
+	if err != nil {
+		return nil, err
+	}
+	initial := cfg.InitialAdministrator
+	if err := identityService.EnsureInitialAdministrator(ctx, initial.Username, initial.Password); err != nil {
+		return nil, err
+	}
+
 	checker := health.NewChecker(clk,
-		sqlcdb.New(pool),
+		queries,
 		bucketPinger{client: minioClient, bucket: cfg.MinIOBucket},
 		redisPinger{client: redisClient},
 	)
-	return &App{
-		pool:    pool,
-		redis:   redisClient,
-		handler: httpapi.NewHandler(checker),
-	}, nil
+	handler, err := httpapi.NewHandler(checker, identityService, cfg.HTTP)
+	if err != nil {
+		return nil, err
+	}
+	return &App{pool: pool, redis: redisClient, handler: handler}, nil
+}
+
+// migrate applies pending migrations as the schema owner, over a connection
+// used for nothing else.
+func migrate(ctx context.Context, databaseURL string) error {
+	if databaseURL == "" {
+		return errors.New("no migration database URL configured")
+	}
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return fmt.Errorf("connect to PostgreSQL as schema owner: %w", err)
+	}
+	defer pool.Close()
+	return db.Migrate(ctx, pool)
 }
 
 // Handler serves the HTTP API.
