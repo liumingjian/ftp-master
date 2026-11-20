@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
@@ -39,7 +40,8 @@ func opaqueKey() string {
 }
 func (s *Server) uploadPolicy(ctx context.Context) (api.UploadPolicy, error) {
 	var out api.UploadPolicy
-	err := s.membership.Pool.QueryRow(ctx, "SELECT blocked_extensions FROM upload_policy WHERE id").Scan(&out.BlockedExtensions)
+	var err error
+	out.BlockedExtensions, err = sqlcdb.New(s.membership.Pool).GetUploadPolicy(ctx)
 	return out, err
 }
 func (s *Server) GetUploadPolicy(ctx context.Context, _ api.GetUploadPolicyRequestObject) (api.GetUploadPolicyResponseObject, error) {
@@ -66,7 +68,7 @@ func (s *Server) SetUploadPolicy(ctx context.Context, r api.SetUploadPolicyReque
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, "UPDATE upload_policy SET blocked_extensions=$1 WHERE id", extensions)
+	err = sqlcdb.New(tx).SetUploadPolicy(ctx, extensions)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +124,7 @@ func (s *Server) InitiateUpload(ctx context.Context, r api.InitiateUploadRequest
 	if count == 0 {
 		count = 1
 	}
-	_, err = s.membership.Pool.Exec(ctx, `INSERT INTO upload_sessions(id,owner_id,parent_id,name,size,object_key,storage_upload_id,part_size,part_count,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, id, requestFrom(ctx).session.User.ID, b.ParentId, b.Name, b.Size, key, upload, uploadPartSize, count, s.membership.Clock.Now())
+	err = sqlcdb.New(s.membership.Pool).CreateUploadSession(ctx, sqlcdb.CreateUploadSessionParams{ID: id, OwnerID: requestFrom(ctx).session.User.ID, ParentID: b.ParentId, Name: b.Name, Size: b.Size, ObjectKey: key, StorageUploadID: upload, PartSize: uploadPartSize, PartCount: int32(count), CreatedAt: pgtype.Timestamptz{Time: s.membership.Clock.Now(), Valid: true}})
 	if err != nil {
 		_ = core.AbortMultipartUpload(ctx, s.transfer.Bucket, key, upload)
 		return nil, err
@@ -139,7 +141,8 @@ type uploadIntent struct {
 
 func (s *Server) loadUpload(ctx context.Context, tx pgx.Tx, id string) (uploadIntent, *tree.Snapshot, error) {
 	var u uploadIntent
-	err := tx.QueryRow(ctx, `SELECT id,owner_id,parent_id,name,size,object_key,storage_upload_id,part_size,part_count,state,file_id,version_id FROM upload_sessions WHERE id=$1 FOR UPDATE`, id).Scan(&u.ID, &u.Owner, &u.Parent, &u.Name, &u.Size, &u.Key, &u.StorageID, &u.PartSize, &u.Count, &u.State, &u.File, &u.Version)
+	record, err := sqlcdb.New(tx).GetUploadSessionForUpdate(ctx, id)
+	u = uploadIntent{ID: record.ID, Owner: record.OwnerID, Parent: record.ParentID, Name: record.Name, Size: record.Size, Key: record.ObjectKey, StorageID: record.StorageUploadID, PartSize: record.PartSize, Count: int(record.PartCount), State: record.State, File: nullableID(record.FileID.Int64), Version: nullableID(record.VersionID.Int64)}
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && u.Owner != requestFrom(ctx).session.User.ID {
 		return u, nil, membershipFailure{404, "upload not found"}
 	}
@@ -202,7 +205,7 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	if u.State == "complete" {
 		return api.CompleteUpload200JSONResponse{FileId: *u.File, VersionId: *u.Version}, nil
 	}
-	_, err = tx.Exec(ctx, "UPDATE upload_sessions SET state='completing' WHERE id=$1", u.ID)
+	err = sqlcdb.New(tx).MarkUploadCompleting(ctx, u.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -279,8 +282,8 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	if err != nil {
 		return nil, err
 	}
-	var version int64
-	err = tx.QueryRow(ctx, `INSERT INTO file_versions(file_id,object_key,size,format,created_by,created_at) VALUES($1,$2,$3,$4,$5,$6) RETURNING id`, node.ID, u.Key, u.Size, strings.ToLower(strings.TrimPrefix(filepath.Ext(u.Name), ".")), u.Owner, s.membership.Clock.Now()).Scan(&version)
+	created, err := q.CreateFileVersion(ctx, sqlcdb.CreateFileVersionParams{FileID: node.ID, ObjectKey: u.Key, Size: u.Size, Format: strings.ToLower(strings.TrimPrefix(filepath.Ext(u.Name), ".")), CreatedBy: u.Owner, CreatedAt: pgtype.Timestamptz{Time: s.membership.Clock.Now(), Valid: true}})
+	version := created.ID
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +296,7 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.Exec(ctx, "UPDATE upload_sessions SET state='complete',file_id=$2,version_id=$3 WHERE id=$1", u.ID, node.ID, version)
+	err = q.PublishUploadReceipt(ctx, sqlcdb.PublishUploadReceiptParams{ID: u.ID, FileID: pgtype.Int8{Int64: node.ID, Valid: true}, VersionID: pgtype.Int8{Int64: version, Valid: true}})
 	if err != nil {
 		return nil, err
 	}
