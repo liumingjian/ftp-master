@@ -47,7 +47,7 @@ func (q *Queries) CreateGrant(ctx context.Context, arg CreateGrantParams) (Grant
 }
 
 const createTreeNode = `-- name: CreateTreeNode :one
-INSERT INTO tree_nodes(parent_id,name,is_file) VALUES ($1, $2, $3) RETURNING id, parent_id, name, is_file, deleted_at
+INSERT INTO tree_nodes(parent_id,name,is_file) VALUES ($1, $2, $3) RETURNING id, parent_id, name, is_file, deleted_at, recycle_root_id
 `
 
 type CreateTreeNodeParams struct {
@@ -65,6 +65,7 @@ func (q *Queries) CreateTreeNode(ctx context.Context, arg CreateTreeNodeParams) 
 		&i.Name,
 		&i.IsFile,
 		&i.DeletedAt,
+		&i.RecycleRootID,
 	)
 	return i, err
 }
@@ -140,7 +141,7 @@ func (q *Queries) ListGrants(ctx context.Context) ([]Grant, error) {
 }
 
 const listTreeNodes = `-- name: ListTreeNodes :many
-SELECT id, parent_id, name, is_file, deleted_at FROM tree_nodes WHERE deleted_at IS NULL ORDER BY id
+SELECT id, parent_id, name, is_file, deleted_at, recycle_root_id FROM tree_nodes WHERE deleted_at IS NULL ORDER BY id
 `
 
 func (q *Queries) ListTreeNodes(ctx context.Context) ([]TreeNode, error) {
@@ -158,6 +159,7 @@ func (q *Queries) ListTreeNodes(ctx context.Context) ([]TreeNode, error) {
 			&i.Name,
 			&i.IsFile,
 			&i.DeletedAt,
+			&i.RecycleRootID,
 		); err != nil {
 			return nil, err
 		}
@@ -170,7 +172,7 @@ func (q *Queries) ListTreeNodes(ctx context.Context) ([]TreeNode, error) {
 }
 
 const moveTreeNode = `-- name: MoveTreeNode :one
-UPDATE tree_nodes SET parent_id=$1 WHERE id= $2 RETURNING id, parent_id, name, is_file, deleted_at
+UPDATE tree_nodes SET parent_id=$1 WHERE id= $2 RETURNING id, parent_id, name, is_file, deleted_at, recycle_root_id
 `
 
 type MoveTreeNodeParams struct {
@@ -187,12 +189,13 @@ func (q *Queries) MoveTreeNode(ctx context.Context, arg MoveTreeNodeParams) (Tre
 		&i.Name,
 		&i.IsFile,
 		&i.DeletedAt,
+		&i.RecycleRootID,
 	)
 	return i, err
 }
 
 const renameTreeNode = `-- name: RenameTreeNode :one
-UPDATE tree_nodes SET name= $1 WHERE id= $2 RETURNING id, parent_id, name, is_file, deleted_at
+UPDATE tree_nodes SET name= $1 WHERE id= $2 RETURNING id, parent_id, name, is_file, deleted_at, recycle_root_id
 `
 
 type RenameTreeNodeParams struct {
@@ -209,6 +212,7 @@ func (q *Queries) RenameTreeNode(ctx context.Context, arg RenameTreeNodeParams) 
 		&i.Name,
 		&i.IsFile,
 		&i.DeletedAt,
+		&i.RecycleRootID,
 	)
 	return i, err
 }
