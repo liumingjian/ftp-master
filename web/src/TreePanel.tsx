@@ -1,3 +1,4 @@
+import { BrowseTools, CopyItemLink, PreviewButton } from "./BrowseTools";
 import { VersionsPanel } from "./VersionsPanel";
 import {FolderUpload} from './FolderUpload';
 import { UploadRow, UploadPolicyEditor } from "./UploadRow";
@@ -75,6 +76,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
   return (
     <section aria-label="共享目录">
       <h2>共享目录</h2>
+      <BrowseTools navigate={node => setPath([node])}/>
       <button onClick={()=>void loadRecycle()}>回收站</button>
       {showRecycle && <section aria-label="回收站"><h3>回收站</h3><button onClick={()=>setShowRecycle(false)}>关闭回收站</button><ul>{recycled.map(e=><li key={e.id}>{e.originalPath}<button onClick={()=>void recycleAction(e.id,"restore")}>恢复原位置</button>{administrator && <><button onClick={()=>void recycleAction(e.id,"purge")}>永久删除</button><form action={form=>recycleAction(e.id,"restore",Number(form.get("parent")))}><label>目标目录编号<input name="parent" type="number" min="1" required/></label><button>恢复到指定目录</button></form></>}</li>)}</ul></section>}
       <div className="tree-layout">
@@ -112,6 +114,8 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
                 >
                   {n.name}
                 </button>
+                <CopyItemLink node={n}/>
+                {n.isFile && !!(n.rights & 1) && <PreviewButton node={n}/>}
                 {n.isFile && !!(n.rights & 1) && <button onClick={()=>setVersionNode(n)}>文件版本</button>}
                 {n.isFile && !!(n.rights & 2) && <a href={`/api/tree/${n.id}/download`} download>下载 {n.name}</a>}
                 {!!(n.rights & 16) && <button onClick={()=>void deleteNode(n.id)}>删除 {n.name}</button>}

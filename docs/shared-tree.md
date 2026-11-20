@@ -241,3 +241,23 @@ An owner-defined function grants only this bounded partition operation to the
 application role; Audit Events remain append-only for that role. Partition creation
 and retirement share a separate advisory transaction lock, including on-demand
 partition creation by Audit recorders.
+## Search, preview and copied links
+
+`GET /api/tree/search?q=literal` matches file names case-insensitively across
+all live files with current Browse, including files reached through Traversable
+Ancestors. Directories, Drop Box contents without Browse and hidden siblings do
+not appear. Queries are literal substrings, not SQL wildcard expressions.
+
+`GET /api/tree/{id}/preview` requires Browse (Download is independent), selects
+the latest immutable File Version, and streams passive image, PDF, plain text,
+audio and video types. Range requests return ordinary 206/416 responses through
+Go's ServeContent and MinIO's seekable immutable object. An explicit format
+allowlist rejects HTML, SVG and unknown types with 415. Content-Type is pinned,
+content sniffing is disabled, caching is disabled and a restrictive CSP applies. Text and media are sandboxed;
+PDF uses the browser's isolated native viewer without sandbox to permit rendering.
+Neither search nor preview creates an Audit Event.
+
+The browser copies `/#item=ID` links. After sign-in the application resolves the
+stable ID through the authenticated tree endpoint, opens directories or file
+previews, and reports unavailable items without revealing their existence.
+Renames and moves preserve these links; Grants are evaluated anew on every read.
