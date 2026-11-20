@@ -12,6 +12,26 @@ servers:
 security:
   - session: []
 paths:
+  /files/{id}/office-edits:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    post:
+      operationId: startOfficeEdit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                versionId: {type: integer, format: int64, minimum: 1}
+      responses:
+        '201':
+          description: Edit Permit issued; gateway read expires after five minutes.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OfficeEdit'}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /uploads:
     post:
       operationId: initiateUpload
@@ -899,6 +919,18 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    OfficeEdit:
+      type: object
+      required: [permitId, documentUrl, saveUrl, deliveryCheckUrl, title, format, expiresAt, versionId]
+      properties:
+        permitId: {type: string}
+        documentUrl: {type: string}
+        saveUrl: {type: string}
+        deliveryCheckUrl: {type: string}
+        title: {type: string}
+        format: {type: string, enum: [doc, docx, wps, xls, xlsx]}
+        expiresAt: {type: string, format: date-time}
+        versionId: {type: integer, format: int64}
     TreeNode:
       type: object
       required: [id, name, isFile, rights, traversable]
