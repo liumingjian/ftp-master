@@ -170,6 +170,7 @@ func TestSchedulerVersionsMultipartAndAuditRetention(t *testing.T) {
 		}
 	}
 	check("SELECT count(*) FROM file_versions WHERE file_id=$1", 20, file)
+	check("SELECT count(*) FROM file_versions WHERE file_id=$1 AND id < $2", 0, file, firstVersion+3)
 	check("SELECT count(*) FROM upload_sessions WHERE id='abandoned'", 1)
 	check("SELECT count(*) FROM audit_events WHERE action='retention_fixture'", 1)
 	exec("UPDATE office_edit_permits SET delivered_at=$1 WHERE id='pin'", clk.Now())
@@ -182,6 +183,7 @@ func TestSchedulerVersionsMultipartAndAuditRetention(t *testing.T) {
 	run()
 	check("SELECT count(*) FROM file_versions WHERE file_id=$1", 20, file)
 	check("SELECT count(*) FROM upload_sessions WHERE id='abandoned'", 0)
+	check("SELECT count(*) FROM audit_events WHERE action='retention_fixture'", 1)
 	check("SELECT count(*) FROM tree_nodes WHERE id=$1", 0, hidden)
 	if _, err = core.ListObjectParts(ctx, stores.config.MinIOBucket, "abandoned", uploadID, 0, 100); minio.ToErrorResponse(err).Code != "NoSuchUpload" {
 		t.Fatalf("multipart not aborted: %v", err)
