@@ -27,6 +27,7 @@ test("Administrator queries audit events, opens details and exports CSV", async 
   ).toBeVisible();
   await panel.getByRole("button", { name: "仅此人员" }).click();
   await expect(panel.getByRole("status")).toContainText("条记录");
+  await panel.getByRole("button", { name: "关闭详情" }).click();
   const download = page.waitForEvent("download");
   await panel.getByRole("button", { name: "导出 CSV" }).click();
   expect((await download).suggestedFilename()).toBe("audit.csv");
