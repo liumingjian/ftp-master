@@ -114,3 +114,4 @@ body {
 .sign-in-form p {
   margin: 0;
 }
+.tree-layout {display:grid;grid-template-columns:minmax(150px,1fr) 3fr;gap:1rem}
