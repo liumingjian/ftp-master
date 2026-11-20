@@ -38,6 +38,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tree/{id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires Modify on the item. Returns 409 for name conflicts or cycles. */
+        post: operations["renameTreeNode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires Delete on the source parent and Upload on the destination. Null destination means root and requires Administrator. Returns 409 for name conflicts or cycles. */
+        post: operations["moveTreeNode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree/{id}/grants": {
         parameters: {
             query?: never;
@@ -512,6 +550,65 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Visible item, including its effective Rights. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNode"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    renameTreeNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated stable item; metadata and Audit Event committed together. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNode"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    moveTreeNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    parentId: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated stable item; metadata and Audit Event committed together. */
             200: {
                 headers: {
                     [name: string]: unknown;

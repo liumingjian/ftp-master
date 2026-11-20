@@ -168,3 +168,47 @@ func (q *Queries) ListTreeNodes(ctx context.Context) ([]TreeNode, error) {
 	}
 	return items, nil
 }
+
+const moveTreeNode = `-- name: MoveTreeNode :one
+UPDATE tree_nodes SET parent_id=$1 WHERE id= $2 RETURNING id, parent_id, name, is_file, deleted_at
+`
+
+type MoveTreeNodeParams struct {
+	ParentID pgtype.Int8
+	ID       int64
+}
+
+func (q *Queries) MoveTreeNode(ctx context.Context, arg MoveTreeNodeParams) (TreeNode, error) {
+	row := q.db.QueryRow(ctx, moveTreeNode, arg.ParentID, arg.ID)
+	var i TreeNode
+	err := row.Scan(
+		&i.ID,
+		&i.ParentID,
+		&i.Name,
+		&i.IsFile,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const renameTreeNode = `-- name: RenameTreeNode :one
+UPDATE tree_nodes SET name= $1 WHERE id= $2 RETURNING id, parent_id, name, is_file, deleted_at
+`
+
+type RenameTreeNodeParams struct {
+	Name string
+	ID   int64
+}
+
+func (q *Queries) RenameTreeNode(ctx context.Context, arg RenameTreeNodeParams) (TreeNode, error) {
+	row := q.db.QueryRow(ctx, renameTreeNode, arg.Name, arg.ID)
+	var i TreeNode
+	err := row.Scan(
+		&i.ID,
+		&i.ParentID,
+		&i.Name,
+		&i.IsFile,
+		&i.DeletedAt,
+	)
+	return i, err
+}
