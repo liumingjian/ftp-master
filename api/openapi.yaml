@@ -84,6 +84,292 @@ paths:
                 type: string
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /organizations:
+    get:
+      operationId: listOrganizations
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Organizations"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    post:
+      operationId: createOrganization
+      responses:
+        '201':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Organization"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/OrganizationInput"
+  /organizations/{id}:
+    patch:
+      operationId: updateOrganization
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Organization"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/OrganizationInput"
+    delete:
+      operationId: deleteOrganization
+      responses:
+        '204':
+          description: Success.
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+  /user-groups:
+    get:
+      operationId: listUserGroups
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UserGroups"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    post:
+      operationId: createUserGroup
+      responses:
+        '201':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UserGroup"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UserGroupInput"
+  /user-groups/{id}/members:
+    put:
+      operationId: setUserGroupMembers
+      responses:
+        '204':
+          description: Success.
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/GroupMembers"
 components:
   securitySchemes:
     session:
@@ -177,3 +463,81 @@ components:
           type: integer
           format: int64
           description: Latest migration version applied, as read from PostgreSQL; 0 when down.
+    OrganizationInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        parentId:
+          type: integer
+          format: int64
+          nullable: true
+    Organization:
+      type: object
+      required:
+      - id
+      - name
+      - parentId
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        parentId:
+          type: integer
+          format: int64
+          nullable: true
+    UserGroupInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+    UserGroup:
+      type: object
+      required:
+      - id
+      - name
+      - userIds
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        userIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+    GroupMembers:
+      type: object
+      required:
+      - userIds
+      properties:
+        userIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          uniqueItems: true
+    Organizations:
+      type: array
+      items:
+        "$ref": "#/components/schemas/Organization"
+    UserGroups:
+      type: array
+      items:
+        "$ref": "#/components/schemas/UserGroup"

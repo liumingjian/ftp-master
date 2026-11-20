@@ -117,7 +117,7 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 		bucketPinger{client: minioClient, bucket: cfg.MinIOBucket},
 		redisPinger{client: redisClient},
 	)
-	handler, err := httpapi.NewHandler(checker, identityService, cfg.HTTP)
+	handler, err := httpapi.NewHandler(checker, identityService, cfg.HTTP, httpapi.MembershipDependencies{Pool: pool, Clock: clk})
 	if err != nil {
 		return nil, err
 	}

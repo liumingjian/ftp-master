@@ -30,6 +30,12 @@ type GooseDbVersion struct {
 	Tstamp    pgtype.Timestamp
 }
 
+type Organization struct {
+	ID       int64
+	Name     string
+	ParentID pgtype.Int8
+}
+
 type User struct {
 	ID              int64
 	Username        string
@@ -38,4 +44,15 @@ type User struct {
 	IsAdministrator bool
 	Status          string
 	CreatedAt       pgtype.Timestamptz
+	OrganizationID  int64
+}
+
+type UserGroup struct {
+	ID   int64
+	Name string
+}
+
+type UserGroupMember struct {
+	GroupID int64
+	UserID  int64
 }
