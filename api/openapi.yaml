@@ -128,6 +128,85 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/TreeNode'}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/rename:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    post:
+      operationId: renameTreeNode
+      description: Requires Modify on the item. Returns 409 for name conflicts or cycles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 255}
+      responses:
+        '200':
+          description: Updated stable item; metadata and Audit Event committed together.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/move:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    post:
+      operationId: moveTreeNode
+      description: Requires Delete on the source parent and Upload on the destination. Null destination means root and requires Administrator. Returns 409 for name conflicts or cycles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parentId]
+              properties:
+                parentId: {type: integer, format: int64, nullable: true}
+      responses:
+        '200':
+          description: Updated stable item; metadata and Audit Event committed together.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/grant-draft:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: getGrantDraft
+      responses:
+        '200':
+          description: Direct and inherited Grants with their sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SourcedGrant'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: saveGrantDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [add, remove]
+              properties:
+                add: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/TreeGrantInput'}}
+                remove: {type: array, maxItems: 100, items: {type: integer, format: int64}}
+      responses:
+        '204': {description: Draft committed atomically}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /tree/{id}/grants:
     parameters:
       - in: path
@@ -726,6 +805,47 @@ paths:
                   $ref: '#/components/schemas/ManagedUser'
         default:
           $ref: '#/components/responses/Unauthorized'
+  /users/import:
+    post:
+      operationId: importUsers
+      description: Atomically import active Users from UTF-8 CSV (at most 1000 data records and 2 MiB).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csv]
+              properties:
+                csv: {type: string, maxLength: 2097152}
+      responses:
+        '201':
+          description: Every User was created and audited.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created]
+                properties:
+                  created: {type: integer}
+        '422':
+          description: No Users created. Row is the one-based CSV record number including the header.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [errors]
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      required: [row, message]
+                      properties:
+                        row: {type: integer}
+                        message: {type: string}
+        default:
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     session:
@@ -753,6 +873,14 @@ components:
         isFile: {type: boolean}
         rights: {type: integer}
         traversable: {type: boolean}
+    SourcedGrant:
+      type: object
+      required: [grant, sourceId, sourcePath, inherited]
+      properties:
+        grant: {$ref: '#/components/schemas/TreeGrant'}
+        sourceId: {type: integer, format: int64}
+        sourcePath: {type: string}
+        inherited: {type: boolean}
     TreeGrantInput:
       type: object
       required: [principalKind, principalId, rights, scope]

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { ImportUsersPanel } from './ImportUsersPanel'
 import { api } from './api/client'
 import type { components } from './api/schema.gen'
 
@@ -39,6 +40,7 @@ export function MembershipPanel() {
   return <section aria-label="组织与用户组管理">
     <h2>组织与用户组管理</h2>
     {error && <p role="alert">{error}</p>}
+    <ImportUsersPanel onImported={reload} />
     <h3>用户状态与组织</h3>
     <label>选择用户<select aria-label="选择用户" value={userId} onChange={e => { setUserId(e.target.value); setUserOrganization(users.find(u => u.id === Number(e.target.value))?.organizationId.toString() ?? '') }}><option value="">请选择</option>{users.map(u => <option key={u.id} value={u.id}>{u.displayName}（{u.username}，{u.status === 'active' ? '已激活' : '已停用'}）</option>)}</select></label>
     {userId && <>
@@ -47,7 +49,7 @@ export function MembershipPanel() {
       <button type="button" onClick={() => void run(() => api.PUT('/users/{userId}/organization', { params: { path: { userId: Number(userId) } }, body: { organizationId: Number(userOrganization) } }))}>移动用户</button>
     </>}
     <h3>组织层级</h3>
-    <ul>{organizations.map(o => <li key={o.id}>{o.name}（上级：{organizations.find(p => p.id === o.parentId)?.name ?? '无'}）</li>)}</ul>
+    <ul>{organizations.map(o => <li key={o.id}>{o.name}（编号：{o.id}，上级：{organizations.find(p => p.id === o.parentId)?.name ?? '无'}）</li>)}</ul>
     <form onSubmit={saveOrganization}>
       <label>编辑组织<select aria-label="编辑组织" value={selected} onChange={e => { const id = e.target.value; setSelected(id); const o = organizations.find(o => o.id === Number(id)); setName(o?.name ?? ''); setParent(o?.parentId?.toString() ?? '') }}><option value="">新建组织</option>{organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
       <label>组织名称<input required maxLength={150} value={name} onChange={e => setName(e.target.value)} /></label>

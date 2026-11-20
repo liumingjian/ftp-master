@@ -106,6 +106,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tree/{id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires Modify on the item. Returns 409 for name conflicts or cycles. */
+        post: operations["renameTreeNode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires Delete on the source parent and Upload on the destination. Null destination means root and requires Administrator. Returns 409 for name conflicts or cycles. */
+        post: operations["moveTreeNode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/grant-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["getGrantDraft"];
+        put?: never;
+        post: operations["saveGrantDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree/{id}/grants": {
         parameters: {
             query?: never;
@@ -373,6 +429,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Atomically import active Users from UTF-8 CSV (at most 1000 data records and 2 MiB). */
+        post: operations["importUsers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -386,6 +459,13 @@ export interface components {
             isFile: boolean;
             rights: number;
             traversable: boolean;
+        };
+        SourcedGrant: {
+            grant: components["schemas"]["TreeGrant"];
+            /** Format: int64 */
+            sourceId: number;
+            sourcePath: string;
+            inherited: boolean;
         };
         TreeGrantInput: {
             /** @enum {string} */
@@ -737,6 +817,116 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TreeNode"];
                 };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    renameTreeNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated stable item; metadata and Audit Event committed together. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNode"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    moveTreeNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    parentId: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated stable item; metadata and Audit Event committed together. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNode"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getGrantDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Direct and inherited Grants with their sources */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourcedGrant"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    saveGrantDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    add: components["schemas"]["TreeGrantInput"][];
+                    remove: number[];
+                };
+            };
+        };
+        responses: {
+            /** @description Draft committed atomically */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Unauthorized"];
         };
@@ -1636,6 +1826,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ManagedUser"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    importUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    csv: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Every User was created and audited. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        created: number;
+                    };
+                };
+            };
+            /** @description No Users created. Row is the one-based CSV record number including the header. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        errors: {
+                            row: number;
+                            message: string;
+                        }[];
+                    };
                 };
             };
             default: components["responses"]["Unauthorized"];

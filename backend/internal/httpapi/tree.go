@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
@@ -87,15 +89,20 @@ func (s *Server) changeTree(ctx context.Context, action string, id int64, change
 	if err != nil {
 		return nil, err
 	}
+	oldPath := snap.Path(id)
 	result, err := change(q, snap)
 	if err != nil {
+		var conflict *pgconn.PgError
+		if errors.As(err, &conflict) && conflict.Code == "23505" {
+			return nil, membershipFailure{409, "an item with this name already exists in the destination"}
+		}
 		return nil, err
 	}
 	info := requestFrom(ctx)
 	if n, ok := result.(api.TreeNode); ok {
 		id = n.Id
 	}
-	err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: info.session.User.ID, Username: info.session.User.Username, SourceIP: info.sourceIP, ItemID: id, ItemPath: snap.Path(id), Action: audit.Action(action), Outcome: audit.OutcomeSuccess, Detail: map[string]any{"nodeId": id, "result": result}})
+	err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: info.session.User.ID, Username: info.session.User.Username, SourceIP: info.sourceIP, ItemID: id, ItemPath: snap.Path(id), Action: audit.Action(action), Outcome: audit.OutcomeSuccess, Detail: map[string]any{"nodeId": id, "result": result, "oldPath": oldPath, "newPath": snap.Path(id)}})
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +110,7 @@ func (s *Server) changeTree(ctx context.Context, action string, id int64, change
 }
 func (s *Server) CreateDirectory(ctx context.Context, r api.CreateDirectoryRequestObject) (api.CreateDirectoryResponseObject, error) {
 	result, err := s.changeTree(ctx, "directory_create", 0, func(q *sqlcdb.Queries, snap *tree.Snapshot) (any, error) {
-		if r.Body == nil || strings.TrimSpace(r.Body.Name) == "" || len(r.Body.Name) > 255 || strings.ContainsAny(r.Body.Name, "/\\") || r.Body.Name == "." || r.Body.Name == ".." {
+		if r.Body == nil || !validTreeName(r.Body.Name) {
 			return nil, membershipFailure{400, "invalid name"}
 		}
 		if r.Body.ParentId == nil {
@@ -153,39 +160,7 @@ func (s *Server) ListTreeGrants(ctx context.Context, r api.ListTreeGrantsRequest
 }
 func (s *Server) CreateTreeGrant(ctx context.Context, r api.CreateTreeGrantRequestObject) (api.CreateTreeGrantResponseObject, error) {
 	out, err := s.changeTree(ctx, "grant_change", r.Id, func(q *sqlcdb.Queries, snap *tree.Snapshot) (any, error) {
-		if err := treeAccess(snap, r.Id, permission.GrantRight); err != nil {
-			return nil, err
-		}
-		if r.Body == nil || r.Body.Rights < 1 || r.Body.Rights > 63 || r.Body.PrincipalId <= 0 {
-			return nil, membershipFailure{400, "invalid Grant"}
-		}
-		kind := string(r.Body.PrincipalKind)
-		scope := string(r.Body.Scope)
-		if (kind != "user" && kind != "organization" && kind != "user_group") || (scope != "subtree" && scope != "this_level_only") {
-			return nil, membershipFailure{400, "invalid principal or Scope"}
-		}
-		exists := false
-		switch kind {
-		case "user":
-			_, e := q.GetUser(ctx, r.Body.PrincipalId)
-			exists = e == nil
-		case "organization":
-			rows, e := q.ListOrganizations(ctx)
-			if e != nil {
-				return nil, e
-			}
-			for _, v := range rows {
-				exists = exists || v.ID == r.Body.PrincipalId
-			}
-		case "user_group":
-			_, e := q.GetUserGroup(ctx, r.Body.PrincipalId)
-			exists = e == nil
-		}
-		if !exists {
-			return nil, membershipFailure{400, "principal not found"}
-		}
-		g, e := q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: r.Id, PrincipalKind: kind, PrincipalID: r.Body.PrincipalId, Rights: int16(permission.Rights(r.Body.Rights).Coherent()), Scope: scope})
-		return grantResponse(g), e
+		return createGrant(ctx, q, snap, r.Id, r.Body)
 	})
 	if err != nil {
 		f, e := membershipError(err)
@@ -224,3 +199,151 @@ func (e membershipFailure) VisitCreateTreeGrantResponse(w http.ResponseWriter) e
 func (e membershipFailure) VisitDeleteTreeGrantResponse(w http.ResponseWriter) error {
 	return e.write(w)
 }
+
+func createGrant(ctx context.Context, q *sqlcdb.Queries, snap *tree.Snapshot, id int64, body *api.TreeGrantInput) (any, error) {
+	if err := treeAccess(snap, id, permission.GrantRight); err != nil {
+		return nil, err
+	}
+	if body == nil || body.Rights < 1 || body.Rights > 63 || body.PrincipalId <= 0 {
+		return nil, membershipFailure{400, "invalid Grant"}
+	}
+	kind := string(body.PrincipalKind)
+	scope := string(body.Scope)
+	if (kind != "user" && kind != "organization" && kind != "user_group") || (scope != "subtree" && scope != "this_level_only") {
+		return nil, membershipFailure{400, "invalid principal or Scope"}
+	}
+	exists := false
+	switch kind {
+	case "user":
+		_, e := q.GetUser(ctx, body.PrincipalId)
+		exists = e == nil
+	case "organization":
+		rows, e := q.ListOrganizations(ctx)
+		if e != nil {
+			return nil, e
+		}
+		for _, v := range rows {
+			exists = exists || v.ID == body.PrincipalId
+		}
+	case "user_group":
+		_, e := q.GetUserGroup(ctx, body.PrincipalId)
+		exists = e == nil
+	}
+	if !exists {
+		return nil, membershipFailure{400, "principal not found"}
+	}
+	if !snap.User.Administrator {
+		allowed := snap.Permission(id).Rights
+		node, _ := snap.Node(id)
+		if !node.IsFile && scope == "subtree" {
+			allowed = 0
+			for _, source := range GrantSources(snap, id) {
+				g := source.Grant
+				if string(g.Scope) != "subtree" {
+					continue
+				}
+				resolved := permission.Evaluate(snap.User, []permission.Node{{Grants: []permission.Grant{{Principal: permission.Principal{Kind: permission.PrincipalKind(g.PrincipalKind), ID: g.PrincipalId}, Rights: permission.Rights(g.Rights), Scope: permission.Subtree}}}}, nil)
+				allowed |= resolved.Rights
+			}
+		}
+		if !allowed.Has(permission.Rights(body.Rights).Coherent()) {
+			return nil, membershipFailure{403, "Grant exceeds delegated Rights or Scope"}
+		}
+	}
+	node, _ := snap.Node(id)
+	if node.IsFile {
+		scope = "subtree"
+	}
+	g, e := q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: id, PrincipalKind: kind, PrincipalID: body.PrincipalId, Rights: int16(permission.Rights(body.Rights).Coherent()), Scope: scope})
+	return grantResponse(g), e
+}
+
+func validTreeName(name string) bool {
+	return strings.TrimSpace(name) != "" && len([]rune(name)) <= 255 && !strings.ContainsAny(name, "/\\\x00") && name != "." && name != ".."
+}
+func (s *Server) RenameTreeNode(ctx context.Context, r api.RenameTreeNodeRequestObject) (api.RenameTreeNodeResponseObject, error) {
+	out, err := s.changeTree(ctx, "rename", r.Id, func(q *sqlcdb.Queries, snap *tree.Snapshot) (any, error) {
+		if err := treeAccess(snap, r.Id, permission.Modify); err != nil {
+			return nil, err
+		}
+		if r.Body == nil || !validTreeName(r.Body.Name) {
+			return nil, membershipFailure{400, "invalid name"}
+		}
+		n, err := q.RenameTreeNode(ctx, sqlcdb.RenameTreeNodeParams{ID: r.Id, Name: r.Body.Name})
+		if err != nil {
+			return nil, err
+		}
+		for i := range snap.Nodes {
+			if snap.Nodes[i].ID == n.ID {
+				snap.Nodes[i] = n
+			}
+		}
+		return treeResponse(n, snap), nil
+	})
+	if err != nil {
+		f, e := membershipError(err)
+		return f, e
+	}
+	return api.RenameTreeNode200JSONResponse(out.(api.TreeNode)), nil
+}
+func (s *Server) MoveTreeNode(ctx context.Context, r api.MoveTreeNodeRequestObject) (api.MoveTreeNodeResponseObject, error) {
+	out, err := s.changeTree(ctx, "move", r.Id, func(q *sqlcdb.Queries, snap *tree.Snapshot) (any, error) {
+		if err := treeAccess(snap, r.Id, 0); err != nil {
+			return nil, err
+		}
+		if r.Body == nil {
+			return nil, membershipFailure{400, "destination required"}
+		}
+		n, _ := snap.Node(r.Id)
+		if n.ParentID.Valid {
+			if err := treeAccess(snap, n.ParentID.Int64, permission.Delete); err != nil {
+				return nil, err
+			}
+		} else if !snap.User.Administrator {
+			return nil, membershipFailure{403, "Administrator required"}
+		}
+		if r.Body.ParentId == nil {
+			if !snap.User.Administrator {
+				return nil, membershipFailure{403, "Administrator required"}
+			}
+		} else {
+			target := *r.Body.ParentId
+			if err := treeAccess(snap, target, permission.Upload); err != nil {
+				return nil, err
+			}
+			dest, _ := snap.Node(target)
+			if dest.IsFile {
+				return nil, membershipFailure{409, "destination is a file"}
+			}
+			for target != 0 {
+				if target == r.Id {
+					return nil, membershipFailure{409, "cannot move into own subtree"}
+				}
+				ancestor, ok := snap.Node(target)
+				if !ok {
+					break
+				}
+				target = ancestor.ParentID.Int64
+			}
+		}
+		n, err := q.MoveTreeNode(ctx, sqlcdb.MoveTreeNodeParams{ID: r.Id, ParentID: parentID(r.Body.ParentId)})
+		if err != nil {
+			return nil, err
+		}
+		for i := range snap.Nodes {
+			if snap.Nodes[i].ID == n.ID {
+				snap.Nodes[i] = n
+			}
+		}
+		return treeResponse(n, snap), nil
+	})
+	if err != nil {
+		f, e := membershipError(err)
+		return f, e
+	}
+	return api.MoveTreeNode200JSONResponse(out.(api.TreeNode)), nil
+}
+func (e membershipFailure) VisitRenameTreeNodeResponse(w http.ResponseWriter) error {
+	return e.write(w)
+}
+func (e membershipFailure) VisitMoveTreeNodeResponse(w http.ResponseWriter) error { return e.write(w) }

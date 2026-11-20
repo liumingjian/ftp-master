@@ -74,3 +74,29 @@ appear in that directory. Administrators configure the extension policy through
 if deploying separately, configure `MINIO_PUBLIC_ENDPOINT`,
 `MINIO_PUBLIC_USE_SSL`, `MINIO_REGION`, and storage CORS for the web origin.
 See [transfer contracts](docs/shared-tree.md#transfer-integration).
+## Bulk User import
+
+Administrators can upload a UTF-8 CSV in Organization management. The browser sends
+its decoded contents as `{"csv":"..."}` to `POST /api/users/import`. A UTF-8 BOM,
+CRLF and standard CSV quoting are accepted. Limits: 2 MiB, 1000 data records.
+The header must be exactly:
+
+```csv
+username,display_name,password,organization_id
+alice,Alice,initial-password,2
+```
+
+`organization_id` is the numeric stable Organization ID shown in the management
+list and returned by `GET /api/organizations`; names and hierarchy paths are never
+used as identifiers. Usernames and display names are trimmed, nonblank and at most
+150 characters; passwords are preserved exactly, nonempty and at most 1024 bytes.
+Usernames are unique without regard to case, including pending or deactivated Users.
+Every User is created active and non-Administrator and can sign in immediately.
+
+The whole file is validated before creation. HTTP 422 returns an `errors` array of
+`{row,message}` entries, using one-based CSV record numbers (header is record 1).
+Errors can repeat a row when it has multiple problems. A malformed CSV record stops
+parsing where recovery is ambiguous. Any validation or storage failure creates no
+Users or import Audit Events. Each successful User creation and its `account_import`
+Audit Event commit in the same transaction. Passwords are hashed with the sign-in
+policy and never included in Audit Events or validation responses.

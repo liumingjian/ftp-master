@@ -82,3 +82,31 @@ share a transaction. Upload bodies never pass through the application.
 
 For isolated local acceptance, Compose also accepts FTP_MASTER_SUBNET and
 FTP_MASTER_WEB_IP alongside the existing port overrides.
+## Draft Grants
+
+`GET /api/tree/{id}/grant-draft` returns every reaching Grant with `sourceId`,
+`sourcePath`, and `inherited`. This includes assignments to other principals,
+not just those matching the editor. `POST` takes `add` (TreeGrantInput[]) and
+`remove` (direct Grant IDs), at most 100 each. Authorization uses the original
+snapshot; all changes and per-change Audit Events commit together. The draft
+also records its summary event. Inherited assignments cannot be removed here.
+A delegated editor cannot expand a this-level-only Grant into a subtree Grant;
+Rights are normalized and bounded by their delegated Rights. File Scope is
+normalized to subtree and hidden in the UI. Creator changes are reserved for
+the directory-authorized Creator management flow.
+
+`GrantsPanel` is the dedicated permission editor, linked from each manageable
+item and the current directory. It keeps additions and removals local until
+Save All. Ten individual assignments trigger the suggestion to use membership
+principals. `GrantSources` is reusable by impact and permission inspection.
+
+`POST /api/tree/{id}/rename` accepts `{name}` and requires Modify on the
+item. `POST /api/tree/{id}/move` accepts `{parentId}` and requires Delete on
+its source parent plus Upload on the destination. Moving a top-level item or
+moving to root (`parentId: null`) requires Administrator. A file cannot be a
+parent; cycles and destination name collisions return 409. Names cannot be
+blank, dot segments, longer than 255 characters, or contain slash, backslash
+or NUL. Both operations retain stable IDs and direct Grants, change only
+metadata, and commit with an Audit Event containing `oldPath` and `newPath`.
+Inherited Rights are evaluated again against the destination. The browser's
+move picker navigates visible directories and enables destinations with Upload.

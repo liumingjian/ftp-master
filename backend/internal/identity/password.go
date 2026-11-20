@@ -63,3 +63,6 @@ func verifyPassword(hash, password string) bool {
 	got := argon2.IDKey([]byte(password), salt, iterations, memory, threads, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
+
+// HashImportedPassword applies the same password hashing policy to imported Users.
+func HashImportedPassword(password string) (string, error) { return hashPassword(password) }
