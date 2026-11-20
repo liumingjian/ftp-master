@@ -81,7 +81,7 @@ func (q *Queries) CreateInitialAdministrator(ctx context.Context, arg CreateInit
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id FROM users WHERE id = $1
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -96,12 +96,13 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.Status,
 		&i.CreatedAt,
 		&i.OrganizationID,
+		&i.OrganizationHint,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id FROM users WHERE lower(username) = lower($1)
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint FROM users WHERE lower(username) = lower($1)
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -116,6 +117,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Status,
 		&i.CreatedAt,
 		&i.OrganizationID,
+		&i.OrganizationHint,
 	)
 	return i, err
 }

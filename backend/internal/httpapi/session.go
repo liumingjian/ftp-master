@@ -18,6 +18,9 @@ func (s *Server) SignIn(ctx context.Context, request api.SignInRequestObject) (a
 		return signInBadRequest{code: "bad_request", message: "username or password too long"}, nil
 	}
 	session, err := s.identity.SignIn(ctx, body.Username, body.Password, requestFrom(ctx).sourceIP)
+	if errors.Is(err, identity.ErrPendingRegistration) {
+		return pendingSignIn{}, nil
+	}
 	if errors.Is(err, identity.ErrInvalidCredentials) {
 		return api.SignIn401JSONResponse{Code: "invalid_credentials", Message: "wrong username or password"}, nil
 	}
@@ -78,5 +81,12 @@ type signInBadRequest struct{ code, message string }
 
 func (b signInBadRequest) VisitSignInResponse(w http.ResponseWriter) error {
 	writeError(w, http.StatusBadRequest, b.code, b.message)
+	return nil
+}
+
+type pendingSignIn struct{}
+
+func (pendingSignIn) VisitSignInResponse(w http.ResponseWriter) error {
+	writeError(w, 403, "registration_pending", "Registration pending approval")
 	return nil
 }
