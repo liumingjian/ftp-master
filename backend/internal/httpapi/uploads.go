@@ -155,6 +155,11 @@ func (s *Server) loadUpload(ctx context.Context, tx pgx.Tx, id string) (uploadIn
 	if err != nil {
 		return u, nil, err
 	}
+	if u.File != nil {
+		if _, ok := snap.Node(*u.File); !ok {
+			return u, nil, membershipFailure{404, "upload not found"}
+		}
+	}
 	return u, snap, treeAccess(snap, u.Parent, permission.Upload)
 }
 func (s *Server) IssueUploadParts(ctx context.Context, r api.IssueUploadPartsRequestObject) (api.IssueUploadPartsResponseObject, error) {

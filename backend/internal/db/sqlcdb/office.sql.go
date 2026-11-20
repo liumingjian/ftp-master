@@ -37,7 +37,7 @@ func (q *Queries) CreateOfficePermit(ctx context.Context, arg CreateOfficePermit
 }
 
 const getOfficePermit = `-- name: GetOfficePermit :one
-SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at,v.object_key,v.size,v.format,n.name FROM office_edit_permits p JOIN file_versions v ON v.id=p.version_id JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1
+SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at,v.object_key,v.size,v.format,n.name FROM office_edit_permits p JOIN file_versions v ON v.id=p.version_id JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL
 `
 
 type GetOfficePermitRow struct {
@@ -71,4 +71,55 @@ func (q *Queries) GetOfficePermit(ctx context.Context, id string) (GetOfficePerm
 		&i.Name,
 	)
 	return i, err
+}
+
+const lockOfficePermit = `-- name: LockOfficePermit :one
+SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at,v.object_key,v.size,v.format,n.name FROM office_edit_permits p JOIN file_versions v ON v.id=p.version_id JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL FOR UPDATE OF p
+`
+
+type LockOfficePermitRow struct {
+	ID          string
+	UserID      int64
+	FileID      int64
+	VersionID   int64
+	CreatedAt   pgtype.Timestamptz
+	ExpiresAt   pgtype.Timestamptz
+	DeliveredAt pgtype.Timestamptz
+	ObjectKey   string
+	Size        int64
+	Format      string
+	Name        string
+}
+
+func (q *Queries) LockOfficePermit(ctx context.Context, id string) (LockOfficePermitRow, error) {
+	row := q.db.QueryRow(ctx, lockOfficePermit, id)
+	var i LockOfficePermitRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.FileID,
+		&i.VersionID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DeliveredAt,
+		&i.ObjectKey,
+		&i.Size,
+		&i.Format,
+		&i.Name,
+	)
+	return i, err
+}
+
+const markOfficeDelivered = `-- name: MarkOfficeDelivered :exec
+UPDATE office_edit_permits SET delivered_at=$2 WHERE id=$1
+`
+
+type MarkOfficeDeliveredParams struct {
+	ID          string
+	DeliveredAt pgtype.Timestamptz
+}
+
+func (q *Queries) MarkOfficeDelivered(ctx context.Context, arg MarkOfficeDeliveredParams) error {
+	_, err := q.db.Exec(ctx, markOfficeDelivered, arg.ID, arg.DeliveredAt)
+	return err
 }
