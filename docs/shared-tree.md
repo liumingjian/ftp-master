@@ -74,8 +74,8 @@ Completion persists `completing` before S3 completion, then locks the session an
 Shared Tree mutation advisory lock 725010. An exact-key StatObject with matching
 intent metadata and size recovers S3 success if the metadata transaction failed.
 File, initial version, Creator Grant, upload Audit Event and receipt publish in
-one PostgreSQL transaction. Name collisions return a generic 409; no existing
-object is overwritten. Collision/version choice extends that publication seam.
+one PostgreSQL transaction. Visible name collisions use the resolution flow
+below; existing storage objects are never overwritten.
 An S3 object completed before a failed publication remains discoverable through
 the session for retry or later abandoned-upload cleanup. S3 and PostgreSQL do not
 share a transaction. Upload bodies never pass through the application.
