@@ -65,3 +65,12 @@ make test-e2e          # Playwright against the running stack (`make up` first)
 - **Tests** sit at three seams: the HTTP API (integration, build tag `integration`, real stores via
   testcontainers), the browser (Playwright in `web/e2e`), and pure units (plain `go test`;
   on the web, `src/**/*.test.ts` under Node's test runner).
+
+## Direct browser uploads
+
+Open a directory with Upload, then choose **上传文件**. Progress, speed and ETA
+appear in that directory. Administrators configure the extension policy through
+**上传扩展名限制**. The local stack signs the browser's localhost MinIO port;
+if deploying separately, configure `MINIO_PUBLIC_ENDPOINT`,
+`MINIO_PUBLIC_USE_SSL`, `MINIO_REGION`, and storage CORS for the web origin.
+See [transfer contracts](docs/shared-tree.md#transfer-integration).

@@ -23,6 +23,16 @@ type AuditEvent struct {
 	Detail     []byte
 }
 
+type FileVersion struct {
+	ID        int64
+	FileID    int64
+	ObjectKey string
+	Size      int64
+	Format    string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
 type GooseDbVersion struct {
 	ID        int32
 	VersionID int64
@@ -52,6 +62,27 @@ type TreeNode struct {
 	Name      string
 	IsFile    bool
 	DeletedAt pgtype.Timestamptz
+}
+
+type UploadPolicy struct {
+	ID                bool
+	BlockedExtensions []string
+}
+
+type UploadSession struct {
+	ID              string
+	OwnerID         int64
+	ParentID        int64
+	Name            string
+	Size            int64
+	ObjectKey       string
+	StorageUploadID string
+	PartSize        int64
+	PartCount       int32
+	State           string
+	FileID          pgtype.Int8
+	VersionID       pgtype.Int8
+	CreatedAt       pgtype.Timestamptz
 }
 
 type User struct {

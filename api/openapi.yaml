@@ -12,6 +12,74 @@ servers:
 security:
   - session: []
 paths:
+  /uploads:
+    post:
+      operationId: initiateUpload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UploadInput'}
+      responses:
+        '201':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadSession'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /uploads/{id}/parts:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    post:
+      operationId: issueUploadParts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PartInput'}
+      responses:
+        '200':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PartURLs'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /uploads/{id}/complete:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    post:
+      operationId: completeUpload
+      responses:
+        '200':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadReceipt'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /upload-policy:
+    get:
+      operationId: getUploadPolicy
+      responses:
+        '200':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadPolicy'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    put:
+      operationId: setUploadPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UploadPolicy'}
+      responses:
+        '200':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadPolicy'}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /tree:
     get:
       operationId: listTree
@@ -881,3 +949,41 @@ components:
         username: {type: string}
         displayName: {type: string}
         organizationHint: {type: string}
+    UploadInput:
+      type: object
+      required: [parentId, name, size]
+      properties:
+        parentId: {type: integer, format: int64}
+        name: {type: string}
+        size: {type: integer, format: int64}
+    UploadSession:
+      type: object
+      required: [id, partSize, partCount]
+      properties:
+        id: {type: string}
+        partSize: {type: integer, format: int64}
+        partCount: {type: integer}
+    PartInput:
+      type: object
+      required: [numbers]
+      properties:
+        numbers: {type: array, items: {type: integer}, maxItems: 100}
+    PartURLs:
+      type: array
+      items:
+        type: object
+        required: [number, url]
+        properties:
+          number: {type: integer}
+          url: {type: string}
+    UploadReceipt:
+      type: object
+      required: [fileId, versionId]
+      properties:
+        fileId: {type: integer, format: int64}
+        versionId: {type: integer, format: int64}
+    UploadPolicy:
+      type: object
+      required: [blockedExtensions]
+      properties:
+        blockedExtensions: {type: array, items: {type: string}}
