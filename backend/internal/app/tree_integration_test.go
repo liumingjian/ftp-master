@@ -441,6 +441,11 @@ func TestGrantDraftDelegationAndScope(t *testing.T) {
 	if len(sources) != 1 || !sources[0].Inherited || sources[0].SourcePath != "/Area" {
 		t.Fatalf("inheritance: %+v", sources)
 	}
+	call(delegated, "POST", path, removal, 204)
+	decode(t, call(admin, "GET", fmt.Sprintf("/api/tree/%d/permission?userId=%d", root.ID, uid), nil, 200), &inspection)
+	if inspection.Rights != 11 {
+		t.Fatalf("saved self-revocation: %+v", inspection)
+	}
 }
 
 func TestGrantPreviewMatchesSavedEffectivePermission(t *testing.T) {
