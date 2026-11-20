@@ -49,7 +49,7 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 	if err != nil {
 		return membershipFailure{409, "folder name already exists"}, nil
 	}
-	_, err = tx.Exec(ctx, "INSERT INTO upload_batches VALUES($1,$2,$3,$4,$5)", id, requestFrom(ctx).session.User.ID, r.Body.ParentId, root.ID, len(r.Body.Files))
+	_, err = tx.Exec(ctx, "INSERT INTO upload_batches(id,owner_id,parent_id,root_id,expected,created_at) VALUES($1,$2,$3,$4,$5,$6)", id, requestFrom(ctx).session.User.ID, r.Body.ParentId, root.ID, len(r.Body.Files), s.membership.Clock.Now())
 	if err != nil {
 		return nil, err
 	}

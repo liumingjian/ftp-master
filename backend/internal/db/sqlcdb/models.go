@@ -58,6 +58,9 @@ type OfficeEditPermit struct {
 	CreatedAt   pgtype.Timestamptz
 	ExpiresAt   pgtype.Timestamptz
 	DeliveredAt pgtype.Timestamptz
+	ObjectKey   string
+	Size        int64
+	Format      string
 }
 
 type Organization struct {
@@ -88,11 +91,12 @@ type TreeNode struct {
 }
 
 type UploadBatch struct {
-	ID       string
-	OwnerID  int64
-	ParentID int64
-	RootID   int64
-	Expected int32
+	ID        string
+	OwnerID   int64
+	ParentID  int64
+	RootID    int64
+	Expected  int32
+	CreatedAt pgtype.Timestamptz
 }
 
 type UploadBatchNode struct {

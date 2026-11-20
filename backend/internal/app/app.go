@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +24,7 @@ import (
 	"github.com/liumingjian/ftp-master/backend/internal/health"
 	"github.com/liumingjian/ftp-master/backend/internal/httpapi"
 	"github.com/liumingjian/ftp-master/backend/internal/identity"
+	"github.com/liumingjian/ftp-master/backend/internal/scheduler"
 )
 
 // Config locates the backing stores and sets up the first sign-in.
@@ -64,6 +67,8 @@ type App struct {
 	pool    *pgxpool.Pool
 	redis   *redis.Client
 	handler http.Handler
+	cancel  context.CancelFunc
+	workers sync.WaitGroup
 }
 
 // New applies pending migrations, connects to the backing stores, ensures the
@@ -136,7 +141,28 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{pool: pool, redis: redisClient, handler: handler}, nil
+	a := &App{pool: pool, redis: redisClient, handler: handler}
+	workerCtx, cancel := context.WithCancel(ctx)
+	a.cancel = cancel
+	a.workers.Add(1)
+	go func() {
+		defer a.workers.Done()
+		jobs := scheduler.New(pool, minioClient, cfg.MinIOBucket, clk)
+		//clock:wallclock Wakeup cadence only; every retention cutoff reads the injected Clock.
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			if err := jobs.Run(workerCtx); err != nil && workerCtx.Err() == nil {
+				slog.Error("retention jobs failed", "error", err)
+			}
+			select {
+			case <-workerCtx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return a, nil
 }
 
 // migrate applies pending migrations as the schema owner, over a connection
@@ -158,6 +184,8 @@ func (a *App) Handler() http.Handler { return a.handler }
 
 // Close releases connections to the backing stores.
 func (a *App) Close() {
+	a.cancel()
+	a.workers.Wait()
 	a.pool.Close()
 	_ = a.redis.Close()
 }
