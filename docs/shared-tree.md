@@ -169,3 +169,23 @@ It holds the publication lock while checking both File Version and upload intent
 references. A storage failure leaves the queue intact; object removal is
 idempotent. `ListRecycleEntries` exposes Clock-stamped deletion times for the
 30-day scheduler retention policy.
+
+## Creator sharing and administration
+
+Every file Grant write (legacy create, draft save and draft preview) checks the
+intended audience against the original snapshot when the editor lacks Grant on
+the parent directory. Each User principal and every current member of an
+Organization (including descendants) or User Group must already see the parent.
+Visibility includes Traversable Ancestors and explicitly accessible Drop Boxes;
+it is not inferred from the proposed file Grant. Inactive members cannot see the
+parent and therefore cannot be included by a restricted editor. Membership
+changes after a Grant is saved follow normal principal membership semantics.
+
+Only holders of Grant on the parent (or Administrators) can revoke a Creator
+Grant through either deletion interface. `TreeGrantInput.creator: true` creates
+a file-only User Grant of all Rights and requires that same parent authority.
+Transfer is a single draft removing the old Creator Grant and adding its
+replacement with `creator: true`; preview, audit and rollback use the ordinary
+atomic draft path. The Chinese permission editor exposes Creator markers,
+removal and transfer controls and the parent-audience restriction. Existing
+self-Grant-loss and broad-subtree warnings retain their original meanings.
