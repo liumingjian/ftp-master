@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./api/client";
+import { redirectToSignIn } from "./navigation";
 import { useRequestOnMount } from "./requestOnMount";
 
 type Event = {
@@ -93,6 +94,10 @@ export function AuditPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (response.status === 401) {
+        redirectToSignIn();
+        return;
+      }
       if (!response.ok) {
         setError(
           response.status === 400

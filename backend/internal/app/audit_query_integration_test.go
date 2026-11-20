@@ -41,7 +41,7 @@ func TestAuditQueryHistoricalPathsPackedFilesAndCSV(t *testing.T) {
 	}
 	defer conn.Close(ctx)
 	_, err = conn.Exec(ctx, `INSERT INTO audit_events(occurred_at,user_id,username,action,outcome,item_id,item_path,detail) VALUES
- ('2026-11-19T09:00:00Z',1,'admin','rename','success',81,'/Old/a.txt','{}'),
+ ('2026-11-19T09:00:00Z',1,'=SUM(1)','rename','success',81,'/Old/a.txt','{}'),
  ('2026-11-19T09:01:00Z',1,'admin','move','success',81,'/New/a.txt','{}'),
  ('2026-11-19T09:02:00Z',1,'admin','zip_download','success',NULL,NULL,'{"files":[{"id":81,"path":"/Old/sub/a.txt"}]}'),
  ('2026-11-19T09:03:00Z',1,'admin','download','failure',82,'/Older/b.txt','{}')`)
@@ -72,7 +72,7 @@ func TestAuditQueryHistoricalPathsPackedFilesAndCSV(t *testing.T) {
 	delete(body, "action")
 	body["export"] = true
 	status, data := admin.do("POST", "/api/audit/query", body)
-	if status != 200 || !strings.Contains(string(data), "/Old/a.txt") || !strings.Contains(string(data), "/New/a.txt") {
+	if status != 200 || !strings.Contains(string(data), "/Old/a.txt") || !strings.Contains(string(data), "/New/a.txt") || !strings.Contains(string(data), "'=SUM(1)") {
 		t.Fatalf("csv: %d %s", status, data)
 	}
 	delete(body, "export")
