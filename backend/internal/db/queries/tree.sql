@@ -20,3 +20,8 @@ SELECT ARRAY(SELECT id FROM ancestors)::bigint[] AS organization_ids,
 UPDATE tree_nodes SET name= @name WHERE id= @id RETURNING *;
 -- name: MoveTreeNode :one
 UPDATE tree_nodes SET parent_id=sqlc.narg(parent_id) WHERE id= @id RETURNING *;
+
+-- name: ListLatestTreeVersions :many
+SELECT DISTINCT ON (file_id) file_id, id, size, format
+FROM file_versions WHERE file_id = ANY(@file_ids::bigint[])
+ORDER BY file_id, id DESC;

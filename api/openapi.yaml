@@ -1204,6 +1204,14 @@ components:
         isFile: {type: boolean}
         rights: {type: integer}
         traversable: {type: boolean}
+        latestVersion:
+          description: Latest immutable content metadata, included for browsable files in tree listings.
+          type: object
+          required: [id, size, format]
+          properties:
+            id: {type: integer, format: int64}
+            size: {type: integer, format: int64}
+            format: {type: string}
     GrantImpact:
       type: object
       required: [changedUsers, coveredItems, warnings]

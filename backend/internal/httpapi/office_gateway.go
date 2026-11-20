@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -82,10 +81,14 @@ func (r officeDocumentResponse) VisitGetOfficeDocumentResponse(w http.ResponseWr
 		return errors.New("Office object size mismatch")
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", strconv.FormatInt(p.Size, 10))
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+	// Begin a streamed response before copying even small documents. Proxies
+	// must wait for response completion after delivery has been committed.
+	if err = http.NewResponseController(w).Flush(); err != nil {
+		return nil
+	}
 	n, err := io.CopyN(w, obj, p.Size)
 	// Errors after headers must not append an API error to the document body.
 	if err != nil || n != p.Size || ctx.Err() != nil {

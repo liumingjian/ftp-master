@@ -8,6 +8,15 @@ import type { components } from "./api/schema.gen";
 type Node = components["schemas"]["TreeNode"];
 
 export function TreePanel({ administrator }: { administrator: boolean }) {
+  const [officePlugin, setOfficePlugin] = useState(false);
+  useEffect(() => {
+    const root = document.documentElement;
+    const update = () => setOfficePlugin(!!root.getAttribute("data-ftp-office-plugin")?.trim());
+    const observer = new MutationObserver(update);
+    observer.observe(root, {attributes: true, attributeFilter: ["data-ftp-office-plugin"]});
+    update();
+    return () => observer.disconnect();
+  }, []);
   const [recycled,setRecycled]=useState<{id:number;originalPath:string;deletedAt:string}[]>([]);
   const [showRecycle,setShowRecycle]=useState(false);
   async function loadRecycle() { const {data}=await api.GET("/recycle-bin");setRecycled(data??[]);setShowRecycle(true); }
@@ -113,6 +122,12 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
                   {n.name}
                 </button>
                 {n.isFile && !!(n.rights & 1) && <button onClick={()=>setVersionNode(n)}>文件版本</button>}
+                {officePlugin && n.isFile && !!(n.rights & 8) && n.latestVersion &&
+                  ["doc", "docx", "wps", "xls", "xlsx"].includes(n.latestVersion.format) &&
+                  n.latestVersion.size <= 25 * 1024 * 1024 &&
+                  <a href={`/api/files/${n.id}/office-edits`} data-ftp-office-edit="1"
+                    data-ftp-office-version={n.latestVersion.id} target="_blank" rel="noopener"
+                    onClick={event => event.preventDefault()}>在线编辑 {n.name}</a>}
                 {n.isFile && !!(n.rights & 2) && <a href={`/api/tree/${n.id}/download`} download>下载 {n.name}</a>}
                 {!!(n.rights & 16) && <button onClick={()=>void deleteNode(n.id)}>删除 {n.name}</button>}
                 {n.traversable && "（仅通行）"}
