@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/tree/zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["downloadZip"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/recycle-bin": {
         parameters: {
             query?: never;
@@ -974,6 +990,37 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    downloadZip: {
+        parameters: {
+            query: {
+                ids: string;
+                preflight?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Streaming ZIP of authorized selected files, limited to 10 GB before streaming. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            /** @description Preflight accepted; no download or audit event. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     listRecycleBin: {
         parameters: {
             query?: never;

@@ -12,6 +12,20 @@ servers:
 security:
   - session: []
 paths:
+  /tree/zip:
+    get:
+      operationId: downloadZip
+      parameters:
+        - {in: query, name: ids, required: true, schema: {type: string, maxLength: 20000}}
+        - {in: query, name: preflight, schema: {type: boolean, default: false}}
+      responses:
+        '200':
+          description: Streaming ZIP of authorized selected files, limited to 10 GB before streaming.
+          content:
+            application/zip:
+              schema: {type: string, format: binary}
+        '204': {description: Preflight accepted; no download or audit event.}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /recycle-bin:
     get:
       operationId: listRecycleBin
