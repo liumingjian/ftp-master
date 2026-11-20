@@ -15,7 +15,7 @@ test('password change validates the current password and Administrator reset res
     await page.getByLabel('当前密码').fill(ADMINISTRATOR_PASSWORD)
     await page.getByRole('button', { name: '修改密码', exact: true }).click()
     await expect(page.getByRole('status')).toHaveText('密码已修改')
-    await page.getByLabel('用户编号').fill(String(user.id))
+    await page.getByLabel('用户编号', { exact: true }).fill(String(user.id))
     await page.getByLabel('重置密码', { exact: true }).fill(ADMINISTRATOR_PASSWORD)
     await page.getByRole('button', { name: '重置密码', exact: true }).click()
     await expect(page.getByRole('status')).toHaveText('密码已重置')
