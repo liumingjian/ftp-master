@@ -40,13 +40,17 @@ var (
 )
 
 // status is a User's lifecycle state (users.status: pending, active or
-// deactivated). Only an active User may sign in or keep a session.
+// deactivated or rejected). Only an active User may sign in or keep a session.
 type status string
 
 const statusActive status = "active"
+const statusPending status = "pending"
+
+// ErrPendingRegistration is disclosed only after the password has verified.
+var ErrPendingRegistration = errors.New("registration pending approval")
 
 // failureReason is why a sign-in was refused. It goes into the Audit Event's
-// detail only: the caller is never told which part was wrong.
+// detail only. A verified pending Registration also receives its pending notice.
 type failureReason string
 
 const (
@@ -152,6 +156,9 @@ func (s *Service) SignIn(ctx context.Context, username, password string, from ne
 		event.Detail = map[string]any{"reason": reason}
 		if err := s.audit.Record(ctx, event); err != nil {
 			return Session{}, err
+		}
+		if found && passwordOK && status(row.Status) == statusPending {
+			return Session{}, ErrPendingRegistration
 		}
 		return Session{}, ErrInvalidCredentials
 	}
