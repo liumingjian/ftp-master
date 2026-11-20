@@ -37,3 +37,21 @@ Grant form and visibility in a separate browser context. Run it with:
 cd web
 E2E_BASE_URL=http://localhost:8088 pnpm test:e2e tree.spec.ts
 ```
+
+## Draft Grants
+
+`GET /api/tree/{id}/grant-draft` returns every reaching Grant with `sourceId`,
+`sourcePath`, and `inherited`. This includes assignments to other principals,
+not just those matching the editor. `POST` takes `add` (TreeGrantInput[]) and
+`remove` (direct Grant IDs), at most 100 each. Authorization uses the original
+snapshot; all changes and per-change Audit Events commit together. The draft
+also records its summary event. Inherited assignments cannot be removed here.
+A delegated editor cannot expand a this-level-only Grant into a subtree Grant;
+Rights are normalized and bounded by their delegated Rights. File Scope is
+normalized to subtree and hidden in the UI. Creator changes are reserved for
+the directory-authorized Creator management flow.
+
+`GrantsPanel` is the dedicated permission editor, linked from each manageable
+item and the current directory. It keeps additions and removals local until
+Save All. Ten individual assignments trigger the suggestion to use membership
+principals. `GrantSources` is reusable by impact and permission inspection.

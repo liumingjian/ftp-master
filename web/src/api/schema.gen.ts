@@ -38,6 +38,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tree/{id}/grant-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["getGrantDraft"];
+        put?: never;
+        post: operations["saveGrantDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree/{id}/grants": {
         parameters: {
             query?: never;
@@ -336,6 +354,13 @@ export interface components {
             rights: number;
             traversable: boolean;
         };
+        SourcedGrant: {
+            grant: components["schemas"]["TreeGrant"];
+            /** Format: int64 */
+            sourceId: number;
+            sourcePath: string;
+            inherited: boolean;
+        };
         TreeGrantInput: {
             /** @enum {string} */
             principalKind: "user" | "organization" | "user_group";
@@ -536,6 +561,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TreeNode"];
                 };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getGrantDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Direct and inherited Grants with their sources */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourcedGrant"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    saveGrantDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    add: components["schemas"]["TreeGrantInput"][];
+                    remove: number[];
+                };
+            };
+        };
+        responses: {
+            /** @description Draft committed atomically */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Unauthorized"];
         };
