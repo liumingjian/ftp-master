@@ -462,7 +462,12 @@ func (s *Server) ListUploadParts(ctx context.Context, r api.ListUploadPartsReque
 		return f, e
 	}
 	out := api.ListUploadParts200JSONResponse{}
-	if u.State == "complete" {
+	complete := u.State == "complete"
+	if u.State == "completing" {
+		info, e := s.transfer.Client.StatObject(ctx, s.transfer.Bucket, u.Key, minio.StatObjectOptions{})
+		complete = e == nil && info.Size == u.Size && (info.UserMetadata["Upload-Intent"] == u.ID || info.UserMetadata["upload-intent"] == u.ID)
+	}
+	if complete {
 		for n := 1; n <= u.Count; n++ {
 			out = append(out, struct {
 				Number int `json:"number"`

@@ -130,11 +130,13 @@ test('offline uploads resume automatically and leave prompt is limited to runnin
  const panel=page.getByRole('region',{name:'共享目录'}),name=`Offline-${Date.now()}`
  await panel.getByLabel('目录名称').fill(name);await panel.getByRole('button',{name:'创建目录'}).click();await panel.getByRole('button',{name,exact:true}).click()
  let interrupted=false
- await page.route('**/*partNumber=2*',async route=>{if(interrupted){await route.continue();return};interrupted=true;await context.setOffline(true);await route.abort()})
+ let promptWhileRunning=false
+ await page.route('**/*partNumber=2*',async route=>{if(interrupted){await route.continue();return};interrupted=true;promptWhileRunning=await page.evaluate("(()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented})()");await context.setOffline(true);await route.abort()})
  await panel.getByLabel('上传文件',{exact:true}).setInputFiles({name:'offline.txt',mimeType:'text/plain',buffer:Buffer.alloc(9*1024*1024,70)})
  await expect(panel.getByRole('alert')).toContainText('已保存的分片会保留')
  await expect(panel.getByLabel('重新选择文件')).toBeVisible()
+ expect(promptWhileRunning).toBe(true)
  await context.setOffline(false)
  await expect(panel.getByRole('status',{name:'上传进度'})).toContainText('上传完成',{timeout:60000})
- expect(await page.evaluate(()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented})).toBe(false)
+ expect(await page.evaluate("(()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented})()")).toBe(false)
 })
