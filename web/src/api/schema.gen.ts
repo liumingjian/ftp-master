@@ -4,7 +4,6 @@
  */
 
 export interface paths {
-<<<<<<< HEAD
     "/files/{id}/office-edits": {
         parameters: {
             query?: never;
@@ -12,22 +11,27 @@ export interface paths {
             path: {
                 id: number;
             };
-=======
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startOfficeEdit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit/query": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
->>>>>>> codex/spec-1
             cookie?: never;
         };
         get?: never;
         put?: never;
-<<<<<<< HEAD
-        post: operations["startOfficeEdit"];
-=======
         post: operations["queryAudit"];
->>>>>>> codex/spec-1
         delete?: never;
         options?: never;
         head?: never;
@@ -717,7 +721,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-<<<<<<< HEAD
     startOfficeEdit: {
         parameters: {
             query?: never;
@@ -725,22 +728,39 @@ export interface operations {
             path: {
                 id: number;
             };
-=======
-    queryAudit: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
->>>>>>> codex/spec-1
             cookie?: never;
         };
         requestBody: {
             content: {
                 "application/json": {
-<<<<<<< HEAD
                     /** Format: int64 */
                     versionId?: number;
-=======
+                };
+            };
+        };
+        responses: {
+            /** @description Edit Permit issued; gateway read expires after five minutes. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeEdit"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    queryAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
                     /** Format: date-time */
                     from: string;
                     /** Format: date-time */
@@ -760,25 +780,16 @@ export interface operations {
                     /** @default 1 */
                     page?: number;
                     export?: boolean;
->>>>>>> codex/spec-1
                 };
             };
         };
         responses: {
-<<<<<<< HEAD
-            /** @description Edit Permit issued; gateway read expires after five minutes. */
-            201: {
-=======
             /** @description Paged events and historical directory suggestions, or all filtered events as CSV. No Audit Event is recorded. */
             200: {
->>>>>>> codex/spec-1
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-<<<<<<< HEAD
-                    "application/json": components["schemas"]["OfficeEdit"];
-=======
                     "application/json": {
                         total: number;
                         page: number;
@@ -807,7 +818,6 @@ export interface operations {
                         }[];
                     };
                     "text/csv": string;
->>>>>>> codex/spec-1
                 };
             };
             default: components["responses"]["Unauthorized"];
