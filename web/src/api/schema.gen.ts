@@ -56,6 +56,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/office/permits/{permitId}/document/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                permitId: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getOfficeDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/office/permits/{permitId}/delivery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                permitId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getOfficeDelivery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/files/{id}/office-edits": {
         parameters: {
             query?: never;
@@ -863,6 +900,55 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getOfficeDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                permitId: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exact immutable document bytes; delivery is recorded only after the full response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getOfficeDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                permitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delivery state for the issuing User. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        delivered: boolean;
+                    };
+                };
             };
             default: components["responses"]["Unauthorized"];
         };

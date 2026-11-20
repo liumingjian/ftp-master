@@ -54,6 +54,36 @@ paths:
       responses:
         '204': {description: Completed}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /office/permits/{permitId}/document/{filename}:
+    parameters:
+      - {name: permitId, in: path, required: true, schema: {type: string}}
+      - {name: filename, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getOfficeDocument
+      security: []
+      responses:
+        "200":
+          description: Exact immutable document bytes; delivery is recorded only after the full response.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        default: {$ref: "#/components/responses/Unauthorized"}
+  /office/permits/{permitId}/delivery:
+    parameters:
+      - {name: permitId, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getOfficeDelivery
+      responses:
+        "200":
+          description: Delivery state for the issuing User.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [delivered]
+                properties:
+                  delivered: {type: boolean}
+        default: {$ref: "#/components/responses/Unauthorized"}
   /files/{id}/office-edits:
     parameters:
       - {in: path, name: id, required: true, schema: {type: integer, format: int64}}

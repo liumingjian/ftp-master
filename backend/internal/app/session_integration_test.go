@@ -183,8 +183,8 @@ func TestEveryProtectedOperationRefusesAnonymousRequests(t *testing.T) {
 		}
 	}
 
-	// Only sign-in, Registration and health checks may be reached signed out.
-	want := map[string]bool{"signIn": true, "register": true, "getHealth": true}
+	// The Document Gateway is explicitly permit-gated; dedicated tests probe invalid permits.
+	want := map[string]bool{"signIn": true, "register": true, "getHealth": true, "getOfficeDocument": true}
 	for id := range public {
 		if !want[id] {
 			t.Errorf("operation %s is reachable without sign-in", id)
