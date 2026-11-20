@@ -66,6 +66,7 @@ func (s *Server) sessionCookie(token string, maxAge int) string {
 func currentUser(u identity.User) api.CurrentUser {
 	return api.CurrentUser{
 		Id:              u.ID,
+		OrganizationId:  u.OrganizationID,
 		Username:        u.Username,
 		DisplayName:     u.DisplayName,
 		IsAdministrator: u.IsAdministrator,

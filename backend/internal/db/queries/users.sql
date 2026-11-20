@@ -21,3 +21,13 @@ WITH changed AS (
 INSERT INTO audit_events (occurred_at, user_id, username, source_ip, action, outcome, detail)
 SELECT @occurred_at, @actor_id, @actor_name, @source_ip, @action, 'success',
  jsonb_build_object('target_user_id', changed.id) FROM changed;
+
+-- name: SetUserStatus :execrows
+UPDATE users SET status = @status, session_epoch = session_epoch + CASE WHEN @status = 'deactivated' THEN 1 ELSE 0 END
+WHERE id = @id AND status IN ('active', 'deactivated');
+
+-- name: MoveUser :execrows
+UPDATE users SET organization_id = @organization_id WHERE id = @id AND status IN ('active', 'deactivated');
+
+-- name: ListManagedUsers :many
+SELECT * FROM users WHERE status IN ('active','deactivated') ORDER BY username;

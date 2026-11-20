@@ -45,6 +45,7 @@ type User struct {
 	Status          string
 	CreatedAt       pgtype.Timestamptz
 	OrganizationID  int64
+	SessionEpoch    int64
 }
 
 type UserGroup struct {

@@ -9,6 +9,9 @@ type UserGroup = components['schemas']['UserGroup']
 export function MembershipPanel() {
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [groups, setGroups] = useState<UserGroup[]>([])
+  const [users, setUsers] = useState<components['schemas']['ManagedUser'][]>([])
+  const [userId, setUserId] = useState('')
+  const [userOrganization, setUserOrganization] = useState('')
   const [error, setError] = useState('')
   const [name, setName] = useState('')
   const [parent, setParent] = useState('')
@@ -17,7 +20,8 @@ export function MembershipPanel() {
   const [group, setGroup] = useState('')
   const [members, setMembers] = useState('')
   async function reload() {
-    const [o, g] = await Promise.all([api.GET('/organizations'), api.GET('/user-groups')])
+    const [o, g, u] = await Promise.all([api.GET('/organizations'), api.GET('/user-groups'), api.GET('/managed-users')])
+    if (u.data) setUsers(u.data)
     if (o.data) setOrganizations(o.data)
     if (g.data) setGroups(g.data)
     if (o.error || g.error) setError('无法读取组织或用户组')
@@ -35,6 +39,13 @@ export function MembershipPanel() {
   return <section aria-label="组织与用户组管理">
     <h2>组织与用户组管理</h2>
     {error && <p role="alert">{error}</p>}
+    <h3>用户状态与组织</h3>
+    <label>选择用户<select aria-label="选择用户" value={userId} onChange={e => { setUserId(e.target.value); setUserOrganization(users.find(u => u.id === Number(e.target.value))?.organizationId.toString() ?? '') }}><option value="">请选择</option>{users.map(u => <option key={u.id} value={u.id}>{u.displayName}（{u.username}，{u.status === 'active' ? '已激活' : '已停用'}）</option>)}</select></label>
+    {userId && <>
+      <button type="button" onClick={() => void run(() => api.PATCH('/users/{userId}/status', { params: { path: { userId: Number(userId) } }, body: { status: users.find(u => u.id === Number(userId))?.status === 'active' ? 'deactivated' : 'active' } }))}>{users.find(u => u.id === Number(userId))?.status === 'active' ? '停用用户' : '重新激活用户'}</button>
+      <label>用户所属组织<select aria-label="用户所属组织" value={userOrganization} onChange={e => setUserOrganization(e.target.value)}>{organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+      <button type="button" onClick={() => void run(() => api.PUT('/users/{userId}/organization', { params: { path: { userId: Number(userId) } }, body: { organizationId: Number(userOrganization) } }))}>移动用户</button>
+    </>}
     <h3>组织层级</h3>
     <ul>{organizations.map(o => <li key={o.id}>{o.name}（上级：{organizations.find(p => p.id === o.parentId)?.name ?? '无'}）</li>)}</ul>
     <form onSubmit={saveOrganization}>

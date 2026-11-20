@@ -138,10 +138,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{userId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["setUserStatus"];
+        trace?: never;
+    };
+    "/users/{userId}/organization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["moveUser"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listManagedUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ManagedUser: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            displayName: string;
+            status: string;
+            /** Format: int64 */
+            organizationId: number;
+        };
         Error: {
             /** @description Stable machine-readable reason, e.g. unauthenticated, invalid_credentials. */
             code: string;
@@ -156,6 +213,8 @@ export interface components {
             id: number;
             username: string;
             displayName: string;
+            /** Format: int64 */
+            organizationId: number;
             isAdministrator: boolean;
         };
         Health: {
@@ -807,6 +866,83 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    setUserStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    status: "active" | "deactivated";
+                };
+            };
+        };
+        responses: {
+            /** @description User changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    moveUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    organizationId: number;
+                };
+            };
+        };
+        responses: {
+            /** @description User changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    listManagedUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active and deactivated Users. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedUser"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
         };
     };
 }

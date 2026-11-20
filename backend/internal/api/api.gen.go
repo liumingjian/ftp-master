@@ -40,11 +40,30 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for SetUserStatusJSONBodyStatus.
+const (
+	Active      SetUserStatusJSONBodyStatus = "active"
+	Deactivated SetUserStatusJSONBodyStatus = "deactivated"
+)
+
+// Valid indicates whether the value is a known member of the SetUserStatusJSONBodyStatus enum.
+func (e SetUserStatusJSONBodyStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Deactivated:
+		return true
+	default:
+		return false
+	}
+}
+
 // CurrentUser defines model for CurrentUser.
 type CurrentUser struct {
 	DisplayName     string `json:"displayName"`
 	Id              int64  `json:"id"`
 	IsAdministrator bool   `json:"isAdministrator"`
+	OrganizationId  int64  `json:"organizationId"`
 	Username        string `json:"username"`
 }
 
@@ -92,6 +111,15 @@ type Health struct {
 // HealthStatus defines model for HealthStatus.
 type HealthStatus string
 
+// ManagedUser defines model for ManagedUser.
+type ManagedUser struct {
+	DisplayName    string `json:"displayName"`
+	Id             int64  `json:"id"`
+	OrganizationId int64  `json:"organizationId"`
+	Status         string `json:"status"`
+	Username       string `json:"username"`
+}
+
 // Organization defines model for Organization.
 type Organization struct {
 	Id       int64  `json:"id"`
@@ -138,10 +166,23 @@ type ChangePasswordJSONBody struct {
 	NewPassword     string `json:"newPassword"`
 }
 
+// MoveUserJSONBody defines parameters for MoveUser.
+type MoveUserJSONBody struct {
+	OrganizationId int64 `json:"organizationId"`
+}
+
 // ResetPasswordJSONBody defines parameters for ResetPassword.
 type ResetPasswordJSONBody struct {
 	NewPassword string `json:"newPassword"`
 }
+
+// SetUserStatusJSONBody defines parameters for SetUserStatus.
+type SetUserStatusJSONBody struct {
+	Status SetUserStatusJSONBodyStatus `json:"status"`
+}
+
+// SetUserStatusJSONBodyStatus defines parameters for SetUserStatus.
+type SetUserStatusJSONBodyStatus string
 
 // CreateOrganizationJSONRequestBody defines body for CreateOrganization for application/json ContentType.
 type CreateOrganizationJSONRequestBody = OrganizationInput
@@ -161,14 +202,23 @@ type CreateUserGroupJSONRequestBody = UserGroupInput
 // SetUserGroupMembersJSONRequestBody defines body for SetUserGroupMembers for application/json ContentType.
 type SetUserGroupMembersJSONRequestBody = GroupMembers
 
+// MoveUserJSONRequestBody defines body for MoveUser for application/json ContentType.
+type MoveUserJSONRequestBody MoveUserJSONBody
+
 // ResetPasswordJSONRequestBody defines body for ResetPassword for application/json ContentType.
 type ResetPasswordJSONRequestBody ResetPasswordJSONBody
+
+// SetUserStatusJSONRequestBody defines body for SetUserStatus for application/json ContentType.
+type SetUserStatusJSONRequestBody SetUserStatusJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+
+	// (GET /managed-users)
+	ListManagedUsers(w http.ResponseWriter, r *http.Request)
 
 	// (GET /organizations)
 	ListOrganizations(w http.ResponseWriter, r *http.Request)
@@ -202,9 +252,15 @@ type ServerInterface interface {
 
 	// (PUT /user-groups/{id}/members)
 	SetUserGroupMembers(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (PUT /users/{userId}/organization)
+	MoveUser(w http.ResponseWriter, r *http.Request, userId int64)
 	// ResetPassword Reset a User's password as an Administrator.
 	// (PUT /users/{userId}/password)
 	ResetPassword(w http.ResponseWriter, r *http.Request, userId int64)
+
+	// (PATCH /users/{userId}/status)
+	SetUserStatus(w http.ResponseWriter, r *http.Request, userId int64)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -221,6 +277,20 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListManagedUsers operation middleware
+func (siw *ServerInterfaceWrapper) ListManagedUsers(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListManagedUsers(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -420,6 +490,32 @@ func (siw *ServerInterfaceWrapper) SetUserGroupMembers(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// MoveUser operation middleware
+func (siw *ServerInterfaceWrapper) MoveUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MoveUser(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ResetPassword operation middleware
 func (siw *ServerInterfaceWrapper) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
@@ -437,6 +533,32 @@ func (siw *ServerInterfaceWrapper) ResetPassword(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ResetPassword(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetUserStatus operation middleware
+func (siw *ServerInterfaceWrapper) SetUserStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetUserStatus(w, r, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -579,6 +701,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/user-groups", wrapper.ListUserGroups)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/user-groups", wrapper.CreateUserGroup)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/user-groups/{id}/members", wrapper.SetUserGroupMembers)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/users/{userId}/status", wrapper.SetUserStatus)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/users/{userId}/organization", wrapper.MoveUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/managed-users", wrapper.ListManagedUsers)
 
 	return m
 }
@@ -616,6 +741,44 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListManagedUsersRequestObject struct {
+}
+
+type ListManagedUsersResponseObject interface {
+	VisitListManagedUsersResponse(w http.ResponseWriter) error
+}
+
+type ListManagedUsers200JSONResponse []ManagedUser
+
+func (response ListManagedUsers200JSONResponse) VisitListManagedUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListManagedUsersdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListManagedUsersdefaultJSONResponse) VisitListManagedUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1403,6 +1566,40 @@ func (response SetUserGroupMembers409JSONResponse) VisitSetUserGroupMembersRespo
 	return err
 }
 
+type MoveUserRequestObject struct {
+	UserId int64 `json:"userId"`
+	Body   *MoveUserJSONRequestBody
+}
+
+type MoveUserResponseObject interface {
+	VisitMoveUserResponse(w http.ResponseWriter) error
+}
+
+type MoveUser204Response struct {
+}
+
+func (response MoveUser204Response) VisitMoveUserResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type MoveUserdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response MoveUserdefaultJSONResponse) VisitMoveUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ResetPasswordRequestObject struct {
 	UserId int64 `json:"userId"`
 	Body   *ResetPasswordJSONRequestBody
@@ -1437,11 +1634,48 @@ func (response ResetPassworddefaultJSONResponse) VisitResetPasswordResponse(w ht
 	return err
 }
 
+type SetUserStatusRequestObject struct {
+	UserId int64 `json:"userId"`
+	Body   *SetUserStatusJSONRequestBody
+}
+
+type SetUserStatusResponseObject interface {
+	VisitSetUserStatusResponse(w http.ResponseWriter) error
+}
+
+type SetUserStatus204Response struct {
+}
+
+func (response SetUserStatus204Response) VisitSetUserStatusResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SetUserStatusdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetUserStatusdefaultJSONResponse) VisitSetUserStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+
+	// (GET /managed-users)
+	ListManagedUsers(ctx context.Context, request ListManagedUsersRequestObject) (ListManagedUsersResponseObject, error)
 
 	// (GET /organizations)
 	ListOrganizations(ctx context.Context, request ListOrganizationsRequestObject) (ListOrganizationsResponseObject, error)
@@ -1475,9 +1709,15 @@ type StrictServerInterface interface {
 
 	// (PUT /user-groups/{id}/members)
 	SetUserGroupMembers(ctx context.Context, request SetUserGroupMembersRequestObject) (SetUserGroupMembersResponseObject, error)
+
+	// (PUT /users/{userId}/organization)
+	MoveUser(ctx context.Context, request MoveUserRequestObject) (MoveUserResponseObject, error)
 	// ResetPassword Reset a User's password as an Administrator.
 	// (PUT /users/{userId}/password)
 	ResetPassword(ctx context.Context, request ResetPasswordRequestObject) (ResetPasswordResponseObject, error)
+
+	// (PATCH /users/{userId}/status)
+	SetUserStatus(ctx context.Context, request SetUserStatusRequestObject) (SetUserStatusResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -1536,6 +1776,30 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
 		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListManagedUsers operation middleware
+func (sh *strictHandler) ListManagedUsers(w http.ResponseWriter, r *http.Request) {
+	var request ListManagedUsersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListManagedUsers(ctx, request.(ListManagedUsersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListManagedUsers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListManagedUsersResponseObject); ok {
+		if err := validResponse.VisitListManagedUsersResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1855,6 +2119,39 @@ func (sh *strictHandler) SetUserGroupMembers(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// MoveUser operation middleware
+func (sh *strictHandler) MoveUser(w http.ResponseWriter, r *http.Request, userId int64) {
+	var request MoveUserRequestObject
+
+	request.UserId = userId
+
+	var body MoveUserJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MoveUser(ctx, request.(MoveUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MoveUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MoveUserResponseObject); ok {
+		if err := validResponse.VisitMoveUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ResetPassword operation middleware
 func (sh *strictHandler) ResetPassword(w http.ResponseWriter, r *http.Request, userId int64) {
 	var request ResetPasswordRequestObject
@@ -1888,44 +2185,79 @@ func (sh *strictHandler) ResetPassword(w http.ResponseWriter, r *http.Request, u
 	}
 }
 
+// SetUserStatus operation middleware
+func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, userId int64) {
+	var request SetUserStatusRequestObject
+
+	request.UserId = userId
+
+	var body SetUserStatusJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetUserStatus(ctx, request.(SetUserStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetUserStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetUserStatusResponseObject); ok {
+		if err := validResponse.VisitSetUserStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7Fptb9u6Ff4rB9yAbYBiu23ugLmfctvuNli3ZnW7fSiCghGPJd5IpHp4lNQN/N8HUrKtN9duEDcd4G+2",
-	"TPPwvDzn5aHuRGzzwho07MT0ThC6whqH4csHI0tOLemvqPz32BpGw/6jLIpMx5K1NePfnTX+mYtTzKX/",
-	"9EfCuZiKP4w3m4+rX934FZElsVwuI6HQxaQLv4mYivcpEoJ2YCzcyEwrcOictgbmlkAakDHrG4QPDmkk",
-	"/P/rLb3EFyURGva/+a8F2QKJdaWH0q7I5OJfMkf/lRcFiqlwTNokYhkJHbSbW8oli6nQhv96KqLVOm0Y",
-	"E6Sw0J2pXBvtmCRbamx2ZW2G0vhFpUMyw6KWkSD8XGry9vzo5TaWR61z9oVdrk9kr37HmL2sl5LllXT4",
-	"GmXGaV/zykL/QXK68lHb5G8ko2PIdULBlXBTrYTgXlQRSAeEUsGcbA4X1nFCOPv3m+cwgdsUDSh7a0Yi",
-	"2sd4ZTFkr45JykJEnVMP6o0FGoUmXmw0b6v23xQ5RQIJVzK+1iYBx5YQpHG3SKhG8Heps5IQFLLUmQNJ",
-	"CJlNElRwtQBOERzSjY4xAoM3SEDIJRlvFadNjMCpdoBGFVYbBoOoQuw6nZgTHazSdsa+BhhSuEJNz7+x",
-	"VdjXfcbyKkPIZZxqgyfegeEBoXTWRICjZARlADca9jD2SmkTUPcpJlT+sczcaOPIDVpydE4me4R3ONxm",
-	"/ZBav5Eti39ifoXk+tp5aJyr8FEz5m5PlNZPJJFceIAZ/bnE82oDphJ7Jq/FDB1wG7BiGae4K9X1onQZ",
-	"iTjF+BrVGQ+GrGnGHRRIXl1UVaiFv0Y+ODU7eJHZ+LoFPSUZT1iH5NHzmqozxc4ztzPKMqqNMWNLtde/",
-	"V2XHkku365/V+lm1NqQLr8oMY2uqEOgay2beUuHnNSA3ttPGsfQPHUsK8b3VbtsiqRMmtRoNU3ZtE9Vh",
-	"0fRyV5HtQTZbmwlNmXuJ9tpLw4SkQtX458arbymRRn+VXKf3dpDuXddW5SqXX96gSXzAP/llEolcm/X3",
-	"AemF9DX3fFiKKbPMZ50KczutG2phXQfX+w4Zq6nyuSlK7uv9E6gTjrDr+O3M9i1wtPzcTXHLSMx0Ys7N",
-	"O/xcohswSCGdu7WkukaZPD3daZVmO/NdBh3Ismv/1scZMpBv4UJZ+PHx/BD15ltx/a1Cs1b7IWN636Bc",
-	"C98/IjduGrKAw7gkzYuZX123olUz38/kr5mLtyZbQGzttfYZnH2udiGkR3C2HgPQZ3o5ZyR4CqktycGt",
-	"5tSWXI0GmhfPwXdqC2i1NkAVLgC/cNhDs8//2guvZK5cNBVzLj7l0jHSp9WBN+oV+h+4qEYXbea2r8p7",
-	"X4C0SXxlsiXFCHYOTCWnYYbx9WnOxUklAF6/f38BZxfnI/hVxtdoFKTSqAzJgTSh5fbjloI402gY/Cmq",
-	"LjVBgxQ0C215aA7mOkP489nLdzCZTE7/Ejo3zVmt00rk2cW5iMTNah4Qk9GT0SQU+QKNLLSYimejyehZ",
-	"ACmnwXHjdN0DJRgi08dllX+VmIrfkOtaH7XHx6eTyYNNjatuoj82vgoObzf5OkwtceoT9sir98vk2Q84",
-	"yhlDhtIxWIP9E5WmeaYGSMT042UkXJnnkhZiKt5hYYn9fBUmmGZX4+PCNzGtzaug6Gw+tt1CM+i8N9px",
-	"uyQd0IltQQMGnJVxjM4Fl50+oOCtnENdMYFwXjpUteAn2/ZbW2bcokbCn5491mlPH0vw3x5DsF9TWDcQ",
-	"yi8IJWOrU6rKHzr+1arFQcK4qtbLdqUNQ2YPR08OcoAjjI4wuheMejVifKfVsuppMmTsA+xleN4BWCFJ",
-	"5siBv/l4VzVVvnXYtFShA26DI2ootHsMv+xB6XSA8zrG/DHm9ygdkuO0H9ofCiUfLbR/mgo1OVaoI1p/",
-	"rgrVZK5qXqTT9aXSJHixWnZ/PHX4/eo+8aIhvkcXGby9uDex1r0r6chr797nbPaB80CVXO0IcTBb5WCF",
-	"c1lm/L1YWDZn1soN1ayqE4PqRJtwU/snBysf1oNpiwga7jRmOjFvSxZ7Ff4gDmzJIwj8S80W1WySdhBn",
-	"KMnrGokUpaqvmmbIJy8q9qe356svhfZzNff2G4lmgu/6dHm/rNKypNfHaxMBGuVnfH+IOjzWh9F5jkpL",
-	"xmwRXLiNmJmtOayDpfrmzfvwrf7m1K662H8eOAytMgT0ll74Xypy7v6pedmmULgkMxCOgZDrGzQIHR4r",
-	"K2r9QKNkm7f/wUV6h+dqYGmzDVcO+Tsw5fdYU733BNXBX0CB1S1FYNpWiQuUBWMZdLgXny+GX0bZwuYF",
-	"PGsTqOrh7aPqjtJjXTYC0udKv/4kWTPzWym8BoF/wIBpSDn2dMee7uHJu82l0mHSbeeS7QfTdo0rsyN6",
-	"jui550TUKAmBsRvnjdenhiakGW7Kw+pVq/9ncqOlyH0HoSPcjnDbG25ufFe9urHczUe8Q4fNMX43zqqt",
-	"Hw9rnfdMHpDUOCyFQRgGkAciMILfQHY5C5DOd/utN7HrRqbR8Dfebvl46X3hkG5WLi8pE1MxloUWy8vl",
-	"/wIAAP//",
+	"7Fvdb9u6Ff9XDrgB2wDFdtvcAXOfctvuNli7ZnW7PRRBwYjHEm8kUiWPkvoG/t8HkrKsL9euGzct4LdI",
+	"pni+v35k7lis80IrVGTZ9I4ZtIVWFv3De8VLSrWRf6Bwz7FWhIrcn7woMhlzklqNf7dauXc2TjHn7q8/",
+	"G5yzKfvTeL35OPxqxy+M0YYtl8uICbSxkYXbhE3ZuxQNgrSgNNzwTAqwaK3UCubaAFfAY5I3CO8tmhFz",
+	"31dbOorPSmNQkfvNPRZGF2hIBjmEtEXGF//mObpHWhTIpsySkSphy4hJL91cm5wTmzKp6O+nLFqtk4ow",
+	"QeMX2jORSyUtGU7aNDa70jpDrtwibRKu5B9eN+e77lxaNGqYv2XEDH4qpXFG+OCYbSyPWsL1Oeyxc1lT",
+	"11e/Y0yO+HNO/IpbfIk8o7Svv6Dn/6KxMli6bbhXnNAS5DIxngrchJXgnQRFBNyCQS5gbnQOF9pSYnD2",
+	"n1dPYQK3KSoQ+laNWLSTooohrXd0VBYs6nA9KDcWqASqeLGWvC3a/1KkFA1wuOLxtVQJWNIGgSt7iwbF",
+	"CP7JZVYaBIHEZWaBG4RMJwkKuFoApQgWzY2MMQKFN2jAIJVGOa1YqWIESqUFVKLQUhEoROEjwMpEnUiv",
+	"lbYxdlXAkMAh9nr2jbXAvuwz4lcZQs7jVCo8cQb0Lwxyq1UEOEpGUPoUgYpcMnBCSeVj92NsULjXPLOj",
+	"tSHXMZejtTzZwd89c+v1Q2L9ZnRZvMb8Co3tS+di5Vz4PyVhbneMyOoNN4YvXMQp+anE87ABmRJ7Kq/I",
+	"DDG4KbBiHqe4LWH2vHQZsTjF+BrFGQ26rGr6HRRonLgogqv5TyPnnJIsPMt0fN0KPcEJT0j6bNKzmqgy",
+	"xVae2xnFZUWvjBlpU1n9a0W2xKm0274M62dhrU8XTpQZxloFF+gqS2dOU/7nOiDXupPKEncvLXHj/Xuj",
+	"3jZ5UsdNKjEaquzqJqrcomnlriCbnWxWqwlVmTuK+tpRw8Rwgc38v7bqa654guLAxXOvuri2eo/wfZXM",
+	"2iI7VMo3jSV9Ve2sihXbOf/8ClXiUsOjXyYRy6WqnwfsVHDX42zQnSqzzOXnkJ22+qHXSaWPet9tIp+r",
+	"oqS+3D+AOJ6Fbey3a8CX0kjLzt1isIzYTCbqXL3FTyXaAYUU3NpbbURXKZPHp1u10nTrr1LoQD2q7Vux",
+	"M6QgF/W+gH5/f76Pyvwlv/5SSa7Fvk+f3tUpa+K7e+TaTEMasBiXRtJi5lZXTXsYnvo17yVR8UZlC4i1",
+	"vpau1pGrata79AjO6rELXU3kc0IDjyHVpbFwKynVJYVRTNLiKbiedgGtJhBMiAvAz+T3kOQqpXTEA82V",
+	"iaZsTsXHnFtC83HF8Fq8Qv4LF2FUlGqu+6K8c6VaqsTVcF2aGEHPgUxJqZ8ZXSWfU3ESCMDLd+8u4Ozi",
+	"fAS/8vgalYCUK5GhscCVH07ceCsgziQqAsdF6OcTVGi8ZH6A8W3UXGYIfz17/hYmk8np33yPKymrZFqR",
+	"PLs4ZxG7WU1ObDJ6NJr4Ylig4oVkU/ZkNBk98UFKqTfcOK27xQS9Zzq/rMsm+w2p6oqi9rj+eDK5tyl9",
+	"1Xf1x/QX3uDtcUj6+S5OXcIeOfF+mTz5DqycEWTILYFW2OeoVE2eGkHCph8uI2bLPOdmwabsLRbakJtE",
+	"/azX7P+cX7h2r7V5cIrO5uM8NFEnLunYjcZ7JS012i37rTbcKXc0+7t+9uirNeAsTnaBPtK973t+vXUF",
+	"znmZ0SaytUDjFoC09KTGuluQN+qpXboP6OxtQgMamZVxjDYIf3qPhDdiYVVnAQbnpUVREX70tRp3Hz15",
+	"KG5PH4rwPx6CsFtTaDvgys8McsJWRxnaBLT0qxaLg7hx6GqW7Y7Ewxa9OHp0EAaOYXQMo73CqFcjxndS",
+	"LEPvlyFhP8Ce+/edACu44TmSr8Uf7kLz6VqsdevpJ4V2cEQNgbYDO5e9UDodQFGPPn/0+R1KB6c47bv2",
+	"+0LwB3PtH6ZCTY4V6hitP1aFaiJ8FX7U6fpSrhK8WC3bP546J0bhnPuiQb4Hqym8vdgbgOyevnXotXfv",
+	"Y1u7hPNAlVztCLFXm/imMbM52wczhJleJgrFiVR+kv2LhZUNqwG+BZgNdxozmag3JbGdCr8nB7qkEXic",
+	"qkLVKtRNWogz5MbJGrEUuahggxnSybOAkvX2fPG5kAZtBVE09xuxZoLv2nS5X1ZpadLJ46SJAJWQKvFM",
+	"VO5RMyPzHIXkhNnCm3ATgDWrsb6DpfrmjZDh2yZrrm24cPLUYz1SZAjoNL1wvwQQc//UvGxDTVQaNeCO",
+	"HrjsK9QTHR4rwxHEgUbJ9vnGdy7SWyxXBZZUm+LKIn1FTLk9akh8z6A6+MUoWJ3meFRulbhAaFCaQPqb",
+	"FvPF8CWpDainj2epPKQ/vH0UTr1drPOGQ7pc6dafJPUJxkYIr3HQcUCHaVA59nTHnu7+wbv14dth0m3n",
+	"MPI7w3aNo8Vj9ByjZ8+JqFESPGI3zhsX8oYmpBmuy8Pq8t7PDG60BNl3EDqG2zHcdg43O74LV1yWLcR8",
+	"Y8S91je+lO0UZmHnhwu1Nu6xx+XBDpKx9XbfnhHrp7f7gC2GzLoVZnqLFpvozM9m1/vEqg6LTBn0c+U9",
+	"4VLebsC7UBRw64a41v9wNEauhmesL8ZuODqoyutsdbv1Z/MM27vIHEZbf5m5vpUycJ95+ML1jxjv7em8",
+	"cWXvw6XTo0VzszJXaTI2ZWNeSLa8XP4/AAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

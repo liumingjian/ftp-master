@@ -19,6 +19,7 @@ import (
 // User is a signed-in, active User.
 type User struct {
 	ID              int64
+	OrganizationID  int64
 	Username        string
 	DisplayName     string
 	IsAdministrator bool
@@ -156,7 +157,7 @@ func (s *Service) SignIn(ctx context.Context, username, password string, from ne
 	}
 
 	user := userFromRow(row)
-	token, err := s.sessions.create(ctx, user.ID)
+	token, err := s.sessions.create(ctx, user.ID, row.SessionEpoch)
 	if err != nil {
 		return Session{}, err
 	}
@@ -173,7 +174,7 @@ func (s *Service) SignIn(ctx context.Context, username, password string, from ne
 // Authenticate returns the session token names if it is live and belongs to
 // an active User, and extends it. It returns ErrUnauthenticated otherwise.
 func (s *Service) Authenticate(ctx context.Context, token string) (Session, error) {
-	userID, ok, err := s.sessions.resolve(ctx, token)
+	userID, epoch, ok, err := s.sessions.resolve(ctx, token)
 	if err != nil {
 		return Session{}, err
 	}
@@ -187,7 +188,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Session, erro
 	if err != nil {
 		return Session{}, fmt.Errorf("load session user: %w", err)
 	}
-	if status(row.Status) != statusActive {
+	if status(row.Status) != statusActive || row.SessionEpoch != epoch {
 		return Session{}, ErrUnauthenticated
 	}
 	return Session{User: userFromRow(row), Token: token}, nil
@@ -218,6 +219,7 @@ func signInEvent(actor User, from netip.Addr, outcome audit.Outcome) audit.Event
 func userFromRow(row sqlcdb.User) User {
 	return User{
 		ID:              row.ID,
+		OrganizationID:  row.OrganizationID,
 		Username:        row.Username,
 		DisplayName:     row.DisplayName,
 		IsAdministrator: row.IsAdministrator,
