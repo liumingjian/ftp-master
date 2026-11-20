@@ -15,3 +15,8 @@ WITH RECURSIVE ancestors AS (
 )
 SELECT ARRAY(SELECT id FROM ancestors)::bigint[] AS organization_ids,
  ARRAY(SELECT group_id FROM user_group_members WHERE user_id=sqlc.arg(user_id))::bigint[] AS user_group_ids;
+
+-- name: RenameTreeNode :one
+UPDATE tree_nodes SET name= @name WHERE id= @id RETURNING *;
+-- name: MoveTreeNode :one
+UPDATE tree_nodes SET parent_id=sqlc.narg(parent_id) WHERE id= @id RETURNING *;

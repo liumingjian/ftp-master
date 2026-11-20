@@ -55,3 +55,14 @@ the directory-authorized Creator management flow.
 item and the current directory. It keeps additions and removals local until
 Save All. Ten individual assignments trigger the suggestion to use membership
 principals. `GrantSources` is reusable by impact and permission inspection.
+
+`POST /api/tree/{id}/rename` accepts `{name}` and requires Modify on the
+item. `POST /api/tree/{id}/move` accepts `{parentId}` and requires Delete on
+its source parent plus Upload on the destination. Moving a top-level item or
+moving to root (`parentId: null`) requires Administrator. A file cannot be a
+parent; cycles and destination name collisions return 409. Names cannot be
+blank, dot segments, longer than 255 characters, or contain slash, backslash
+or NUL. Both operations retain stable IDs and direct Grants, change only
+metadata, and commit with an Audit Event containing `oldPath` and `newPath`.
+Inherited Rights are evaluated again against the destination. The browser's
+move picker navigates visible directories and enables destinations with Upload.

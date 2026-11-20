@@ -60,6 +60,56 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/TreeNode'}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/rename:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    post:
+      operationId: renameTreeNode
+      description: Requires Modify on the item. Returns 409 for name conflicts or cycles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 255}
+      responses:
+        '200':
+          description: Updated stable item; metadata and Audit Event committed together.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/move:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    post:
+      operationId: moveTreeNode
+      description: Requires Delete on the source parent and Upload on the destination. Null destination means root and requires Administrator. Returns 409 for name conflicts or cycles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parentId]
+              properties:
+                parentId: {type: integer, format: int64, nullable: true}
+      responses:
+        '200':
+          description: Updated stable item; metadata and Audit Event committed together.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /tree/{id}/grant-draft:
     parameters:
       - {name: id, in: path, required: true, schema: {type: integer, format: int64}}
