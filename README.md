@@ -117,6 +117,8 @@ spreadsheet formula safety. ZIP events store `detail.files` as an array of
 `{id, path}` objects, one per packed file; both directory and stable-ID filters
 include these entries. No Audit Event update/delete privilege is added.
 
+## Grant drafts
+
 Grant draft previews use the same validation and Effective Permission evaluator as
 saving. `changedUsers` counts distinct active Users whose Rights change on at least
 one item (Administrators retain every Right); `coveredItems` counts distinct items
