@@ -96,14 +96,34 @@ type SignInRequest struct {
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
+// ChangePasswordJSONBody defines parameters for ChangePassword.
+type ChangePasswordJSONBody struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+// ResetPasswordJSONBody defines parameters for ResetPassword.
+type ResetPasswordJSONBody struct {
+	NewPassword string `json:"newPassword"`
+}
+
+// ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
+type ChangePasswordJSONRequestBody ChangePasswordJSONBody
+
 // SignInJSONRequestBody defines body for SignIn for application/json ContentType.
 type SignInJSONRequestBody = SignInRequest
+
+// ResetPasswordJSONRequestBody defines body for ResetPassword for application/json ContentType.
+type ResetPasswordJSONRequestBody ResetPasswordJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// ChangePassword Change the signed-in User's password.
+	// (PUT /password)
+	ChangePassword(w http.ResponseWriter, r *http.Request)
 	// SignOut Sign out, ending the current session immediately.
 	// (DELETE /session)
 	SignOut(w http.ResponseWriter, r *http.Request)
@@ -113,6 +133,9 @@ type ServerInterface interface {
 	// SignIn Sign in with username and password, starting a session.
 	// (POST /session)
 	SignIn(w http.ResponseWriter, r *http.Request)
+	// ResetPassword Reset a User's password as an Administrator.
+	// (PUT /users/{userId}/password)
+	ResetPassword(w http.ResponseWriter, r *http.Request, userId int64)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -129,6 +152,20 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ChangePassword operation middleware
+func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChangePassword(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -171,6 +208,32 @@ func (siw *ServerInterfaceWrapper) SignIn(w http.ResponseWriter, r *http.Request
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SignIn(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResetPassword operation middleware
+func (siw *ServerInterfaceWrapper) ResetPassword(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResetPassword(w, r, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -304,6 +367,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/session", wrapper.SignOut)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/session", wrapper.SignIn)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/password", wrapper.ChangePassword)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/users/{userId}/password", wrapper.ResetPassword)
 
 	return m
 }
@@ -341,6 +406,39 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChangePasswordRequestObject struct {
+	Body *ChangePasswordJSONRequestBody
+}
+
+type ChangePasswordResponseObject interface {
+	VisitChangePasswordResponse(w http.ResponseWriter) error
+}
+
+type ChangePassword204Response struct {
+}
+
+func (response ChangePassword204Response) VisitChangePasswordResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ChangePassworddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ChangePassworddefaultJSONResponse) VisitChangePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -463,11 +561,48 @@ func (response SignIn401JSONResponse) VisitSignInResponse(w http.ResponseWriter)
 	return err
 }
 
+type ResetPasswordRequestObject struct {
+	UserId int64 `json:"userId"`
+	Body   *ResetPasswordJSONRequestBody
+}
+
+type ResetPasswordResponseObject interface {
+	VisitResetPasswordResponse(w http.ResponseWriter) error
+}
+
+type ResetPassword204Response struct {
+}
+
+func (response ResetPassword204Response) VisitResetPasswordResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ResetPassworddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ResetPassworddefaultJSONResponse) VisitResetPasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+	// ChangePassword Change the signed-in User's password.
+	// (PUT /password)
+	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
 	// SignOut Sign out, ending the current session immediately.
 	// (DELETE /session)
 	SignOut(ctx context.Context, request SignOutRequestObject) (SignOutResponseObject, error)
@@ -477,6 +612,9 @@ type StrictServerInterface interface {
 	// SignIn Sign in with username and password, starting a session.
 	// (POST /session)
 	SignIn(ctx context.Context, request SignInRequestObject) (SignInResponseObject, error)
+	// ResetPassword Reset a User's password as an Administrator.
+	// (PUT /users/{userId}/password)
+	ResetPassword(ctx context.Context, request ResetPasswordRequestObject) (ResetPasswordResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -535,6 +673,37 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
 		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ChangePassword operation middleware
+func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	var request ChangePasswordRequestObject
+
+	var body ChangePasswordJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ChangePassword(ctx, request.(ChangePasswordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ChangePassword")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ChangePasswordResponseObject); ok {
+		if err := validResponse.VisitChangePasswordResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -621,34 +790,70 @@ func (sh *strictHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ResetPassword operation middleware
+func (sh *strictHandler) ResetPassword(w http.ResponseWriter, r *http.Request, userId int64) {
+	var request ResetPasswordRequestObject
+
+	request.UserId = userId
+
+	var body ResetPasswordJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResetPassword(ctx, request.(ResetPasswordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResetPassword")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResetPasswordResponseObject); ok {
+		if err := validResponse.VisitResetPasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"z9pQ3vhSzdREtuLV9ep/AQAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

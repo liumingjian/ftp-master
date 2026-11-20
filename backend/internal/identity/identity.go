@@ -119,8 +119,22 @@ func (s *Service) SignIn(ctx context.Context, username, password string, from ne
 	}
 	passwordOK := verifyPassword(hash, password)
 
+	lockState := 0
+	if found && status(row.Status) == statusActive {
+		lockState, err = s.attempt(ctx, row.ID, passwordOK)
+		if err != nil {
+			return Session{}, err
+		}
+		if lockState == 1 {
+			if err := s.audit.Record(ctx, audit.Event{UserID: row.ID, Username: row.Username, SourceIP: from, Action: "account_lock", Outcome: audit.OutcomeSuccess}); err != nil {
+				return Session{}, err
+			}
+		}
+	}
 	var reason failureReason
 	switch {
+	case lockState != 0:
+		reason = "locked"
 	case !found:
 		reason = reasonUnknownUser
 	case !passwordOK:

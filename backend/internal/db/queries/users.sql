@@ -11,3 +11,13 @@ INSERT INTO users (username, display_name, password_hash, is_administrator, stat
 SELECT @username, @display_name, @password_hash, true, 'active', @created_at
 WHERE NOT EXISTS (SELECT FROM users WHERE is_administrator)
 ON CONFLICT DO NOTHING;
+
+-- name: ChangePasswordWithAudit :execrows
+WITH changed AS (
+ UPDATE users SET password_hash = @new_hash
+ WHERE users.id = @target_id AND password_hash = @expected_hash
+ RETURNING users.id
+)
+INSERT INTO audit_events (occurred_at, user_id, username, source_ip, action, outcome, detail)
+SELECT @occurred_at, @actor_id, @actor_name, @source_ip, @action, 'success',
+ jsonb_build_object('target_user_id', changed.id) FROM changed;

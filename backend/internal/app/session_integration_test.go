@@ -169,7 +169,7 @@ func TestEveryProtectedOperationRefusesAnonymousRequests(t *testing.T) {
 			} {
 				anonymous := newBrowser(t, server)
 				anonymous.cookie = cookie
-				status, body := anonymous.do(method, "/api"+concrete, nil)
+				status, body := anonymous.do(method, "/api"+concrete, map[string]any{})
 				if status != http.StatusUnauthorized {
 					t.Errorf("%s %s with %s: status %d, want 401", method, path, name, status)
 					continue
