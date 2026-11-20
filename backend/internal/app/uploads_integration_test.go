@@ -355,10 +355,57 @@ func TestFolderBatchRemainsHiddenUntilEveryChildCompletes(t *testing.T) {
 		ID int64 `json:"id"`
 	}
 	decode(t, call("POST", "/api/tree", map[string]any{"name": "Batch destination"}, 201), &dir)
+	// Rejection must not reserve the requested root name.
+	call("POST", "/api/upload-batches", map[string]any{"parentId": dir.ID, "name": "Folder", "files": []any{map[string]any{"path": "blocked.exe", "size": 3}}}, 400)
+	call("POST", "/api/upload-batches", map[string]any{"parentId": dir.ID, "name": "Folder", "files": []any{map[string]any{"path": "large.txt", "size": 20000000001}}}, 400)
+	// A failed later session insert must roll back the hierarchy and earlier sessions.
+	conn, err := pgx.Connect(context.Background(), stores.config.MigrationDatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(context.Background())
+	_, err = conn.Exec(context.Background(), `CREATE FUNCTION refuse_batch_session() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.name='fail.txt' THEN RAISE EXCEPTION 'injected session failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER refuse_batch_session BEFORE INSERT ON upload_sessions FOR EACH ROW EXECUTE FUNCTION refuse_batch_session()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call("POST", "/api/upload-batches", map[string]any{"parentId": dir.ID, "name": "Folder", "files": []any{map[string]any{"path": "first.txt", "size": 3}, map[string]any{"path": "fail.txt", "size": 3}}}, 500)
+	_, err = conn.Exec(context.Background(), "DROP TRIGGER refuse_batch_session ON upload_sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := minio.New(stores.config.MinIOEndpoint, &minio.Options{Creds: credentials.NewStaticV4(stores.config.MinIOAccessKey, stores.config.MinIOSecretKey, "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for upload := range client.ListIncompleteUploads(context.Background(), stores.config.MinIOBucket, "", true) {
+		if upload.Err != nil {
+			t.Fatal(upload.Err)
+		}
+		t.Fatalf("failed setup leaked multipart upload %s", upload.Key)
+	}
+	// Empty-only manifests publish their complete directory hierarchy immediately.
+	call("POST", "/api/upload-batches", map[string]any{"parentId": dir.ID, "name": "Empty", "files": []any{}, "directories": []string{"nested/leaf"}}, 201)
+	var emptyNodes []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	decode(t, call("GET", fmt.Sprintf("/api/tree?parentId=%d", dir.ID), nil, 200), &emptyNodes)
+	var emptyID int64
+	for _, n := range emptyNodes {
+		if n.Name == "Empty" {
+			emptyID = n.ID
+		}
+	}
+	if emptyID == 0 {
+		t.Fatal("empty folder missing")
+	}
+	if data := call("GET", fmt.Sprintf("/api/tree?parentId=%d", emptyID), nil, 200); !strings.Contains(string(data), "nested") {
+		t.Fatal("empty nested directory missing")
+	}
 	var sessions []struct {
 		ID string `json:"id"`
 	}
-	decode(t, call("POST", "/api/upload-batches", map[string]any{"parentId": dir.ID, "name": "Folder", "files": []any{map[string]any{"path": "a.txt", "size": 3}, map[string]any{"path": "nested/b.txt", "size": 3}}}, 201), &sessions)
+	decode(t, call("POST", "/api/upload-batches", map[string]any{"parentId": dir.ID, "name": "Folder", "directories": []string{"empty/leaf"}, "files": []any{map[string]any{"path": "a.txt", "size": 3}, map[string]any{"path": "nested/b.txt", "size": 3}}}, 201), &sessions)
 	listing := fmt.Sprintf("/api/tree?parentId=%d", dir.ID)
 	for i, session := range sessions {
 		if data := call("GET", listing, nil, 200); strings.Contains(string(data), "Folder") {

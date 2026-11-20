@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { api } from './api/client'
 import { systemClock, type Clock } from './clock'
 
@@ -16,7 +15,7 @@ export function putPart(url: string, bytes: Blob, progress: (loaded: number) => 
     xhr.send(bytes)
   })
 }
-export function UploadRow({ parentId, completed, clock = systemClock, otherFolder = false, navigate }: { otherFolder?: boolean; navigate?: () => void; parentId: number; completed: () => void; clock?: Clock }) {
+export function UploadRow({ parentId, completed, clock = systemClock, onActivityChange }: { onActivityChange?: (active: boolean) => void; parentId: number; completed: () => void; clock?: Clock }) {
   const key = `ftp-upload:${parentId}`
   const [savedSession, setSession] = useState<Session | undefined>(() => { try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
   const fileRef = useRef<File>(undefined)
@@ -37,6 +36,9 @@ export function UploadRow({ parentId, completed, clock = systemClock, otherFolde
     window.addEventListener('beforeunload', leave)
     return () => window.removeEventListener('beforeunload', leave)
   }, [busy])
+ const activityCallback = useRef(onActivityChange); activityCallback.current=onActivityChange
+ const active= busy || !!savedSession || !!conflict
+ useEffect(()=>{activityCallback.current?.(active)},[active])
   function clear() { localStorage.removeItem(key); setSession(undefined); fileRef.current = undefined }
   async function upload(file: File) {
     if (savedSession && (savedSession.name !== file.name || savedSession.size !== file.size)) {
@@ -97,7 +99,6 @@ export function UploadRow({ parentId, completed, clock = systemClock, otherFolde
     finally { setBusy(false) }
   }
   return <>
-    {otherFolder && (busy || savedSession || conflict) && document.querySelector('.shell-header') && createPortal(<button onClick={navigate}>其他目录上传 1 · {row?.name ?? savedSession?.name}</button>, document.querySelector('.shell-header')!)}
     {offline && <p role="alert">网络已中断，已保存的分片会保留；网络恢复后自动继续上传。</p>}
     {savedSession && !busy && !conflict && <label>重新选择文件<input type="file" onChange={event => { const file = event.target.files?.[0]; if(file) void upload(file); event.target.value='' }} /></label>}
     <label>上传文件<input type="file" disabled={busy || !!conflict || !!savedSession} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = '' }} /></label>

@@ -1500,6 +1500,7 @@ export interface operations {
                     /** Format: int64 */
                     parentId: number;
                     name: string;
+                    directories?: string[];
                     files: {
                         path: string;
                         /** Format: int64 */

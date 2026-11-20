@@ -217,7 +217,7 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 		if choice != "new_version" && choice != "keep_both" {
 			return membershipFailure{400, "invalid collision choice"}, nil
 		}
-		if _, err = tx.Exec(ctx, "UPDATE upload_sessions SET collision=$2 WHERE id=$1", u.ID, choice); err != nil {
+		if err = sqlcdb.New(tx).SetUploadCollision(ctx, sqlcdb.SetUploadCollisionParams{ID: u.ID, Collision: choice}); err != nil {
 			return nil, err
 		}
 	}
@@ -246,14 +246,11 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	if u.State == "complete" {
 		return api.CompleteUpload200JSONResponse{FileId: *u.File, VersionId: *u.Version}, nil
 	}
-	var collision string
-	if err = tx.QueryRow(ctx, "SELECT collision FROM upload_sessions WHERE id=$1", u.ID).Scan(&collision); err != nil {
+	publication, err := sqlcdb.New(tx).GetUploadPublication(ctx, u.ID)
+	if err != nil {
 		return nil, err
 	}
-	var batchID, relativePath string
-	if err = tx.QueryRow(ctx, "SELECT coalesce(batch_id,''),relative_path FROM upload_sessions WHERE id=$1", u.ID).Scan(&batchID, &relativePath); err != nil {
-		return nil, err
-	}
+	collision, batchID, relativePath := publication.Collision, publication.BatchID, publication.RelativePath
 	var existing *sqlcdb.TreeNode
 	for i := range snap.Nodes {
 		n := &snap.Nodes[i]
@@ -350,26 +347,23 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	}
 	uploadPath := snap.Path(u.Parent) + "/" + u.Name
 	if batchID != "" {
-		var rootName string
-		if err = tx.QueryRow(ctx, "SELECT n.name FROM upload_batches b JOIN tree_nodes n ON n.id=b.root_id WHERE b.id=$1", batchID).Scan(&rootName); err != nil {
+		root, err := sqlcdb.New(tx).GetUploadBatchRoot(ctx, batchID)
+		if err != nil {
 			return nil, err
 		}
-		uploadPath = snap.Path(u.Parent) + "/" + rootName + "/" + relativePath
-		var parent int64
-		if err = tx.QueryRow(ctx, "SELECT root_id FROM upload_batches WHERE id=$1", batchID).Scan(&parent); err != nil {
-			return nil, err
-		}
+		uploadPath = snap.Path(u.Parent) + "/" + root.Name + "/" + relativePath
+		parent := root.ID
 		segments := strings.Split(relativePath, "/")
 		for _, segment := range segments[:len(segments)-1] {
 			var next int64
-			err = tx.QueryRow(ctx, "SELECT id FROM tree_nodes WHERE parent_id=$1 AND name=$2 AND NOT is_file AND deleted_at IS NULL", parent, segment).Scan(&next)
+			next, err = sqlcdb.New(tx).FindUploadDirectory(ctx, sqlcdb.FindUploadDirectoryParams{ParentID: parentID(&parent), Name: segment})
 			if errors.Is(err, pgx.ErrNoRows) {
 				n, e := sqlcdb.New(tx).CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&parent), Name: segment, IsFile: false})
 				if e != nil {
 					return nil, e
 				}
 				next = n.ID
-				if _, e = tx.Exec(ctx, "INSERT INTO upload_batch_nodes VALUES($1,$2)", next, batchID); e != nil {
+				if e = sqlcdb.New(tx).HideUploadBatchNode(ctx, sqlcdb.HideUploadBatchNodeParams{NodeID: next, BatchID: batchID}); e != nil {
 					return nil, e
 				}
 			} else if err != nil {
@@ -390,7 +384,7 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 		}
 	}
 	if batchID != "" {
-		if _, err = tx.Exec(ctx, "INSERT INTO upload_batch_nodes VALUES($1,$2)", node.ID, batchID); err != nil {
+		if err = sqlcdb.New(tx).HideUploadBatchNode(ctx, sqlcdb.HideUploadBatchNodeParams{NodeID: node.ID, BatchID: batchID}); err != nil {
 			return nil, err
 		}
 	}
@@ -415,15 +409,15 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 		return nil, err
 	}
 	if batchID != "" {
-		var ready bool
-		if err = tx.QueryRow(ctx, "SELECT count(*)=b.expected AND bool_and(s.state='complete') FROM upload_batches b JOIN upload_sessions s ON s.batch_id=b.id WHERE b.id=$1 GROUP BY b.expected", batchID).Scan(&ready); err != nil {
+		ready, err := q.UploadBatchReady(ctx, batchID)
+		if err != nil {
 			return nil, err
 		}
 		if ready {
-			if _, err = tx.Exec(ctx, "INSERT INTO grants(node_id,principal_kind,principal_id,rights,scope,creator) SELECT root_id,'user',owner_id,63,'subtree',true FROM upload_batches WHERE id=$1", batchID); err != nil {
+			if err = q.GrantUploadBatchCreator(ctx, batchID); err != nil {
 				return nil, err
 			}
-			if _, err = tx.Exec(ctx, "DELETE FROM upload_batch_nodes WHERE batch_id=$1", batchID); err != nil {
+			if err = q.RevealUploadBatch(ctx, batchID); err != nil {
 				return nil, err
 			}
 		}

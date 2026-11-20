@@ -140,3 +140,41 @@ test('offline uploads resume automatically and leave prompt is limited to runnin
  await expect(panel.getByRole('status',{name:'上传进度'})).toContainText('上传完成',{timeout:60000})
  expect(await page.evaluate("(()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented})()")).toBe(false)
 })
+
+test('folder PUT progress and active rows share one destination pill; empty drops survive',async({page})=>{
+ await page.goto('/sign-in');await signIn(page,ADMINISTRATOR_USERNAME,ADMINISTRATOR_PASSWORD)
+ const panel=page.getByRole('region',{name:'共享目录'}),name=`Review-${Date.now()}`
+ await panel.getByLabel('目录名称').fill(name);await panel.getByRole('button',{name:'创建目录'}).click();await panel.getByRole('button',{name,exact:true}).click()
+ let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve)
+ await page.route('**/*partNumber=2*',async route=>{await gate;await route.continue()})
+ // Chromium's drop-entry boundary carries directories that a FileList omits.
+ await panel.locator('input[webkitdirectory]:visible').evaluate(input=>{
+  const directory=(name:string,children:unknown[])=>({name,isFile:false,isDirectory:true,createReader:()=>{let read=false;return {readEntries:(done:(entries:unknown[])=>void)=>{done(read?[]:children);read=true}}}})
+  const file={name:'large.txt',isFile:true,isDirectory:false,file:(done:(file:File)=>void)=>done(new File([new Uint8Array(9*1024*1024)],'large.txt'))}
+  const root=directory('Batch',[file,directory('empty',[directory('leaf',[])])])
+  const event=new Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(event,'dataTransfer',{value:{items:[{webkitGetAsEntry:()=>root}]}});input.dispatchEvent(event)
+ })
+ await expect(panel.getByRole('status',{name:'文件夹上传进度'})).toContainText('8388608/9437184 字节')
+ await panel.getByLabel('上传文件',{exact:true}).setInputFiles({name:'single.txt',mimeType:'text/plain',buffer:Buffer.alloc(9*1024*1024)})
+ await expect(panel.getByRole('status',{name:'上传进度',exact:true})).toContainText('上传中')
+ await panel.getByRole('navigation',{name:'目录路径'}).getByRole('button',{name:'根目录',exact:true}).click()
+ const pill=page.locator('.shell-header summary').filter({hasText:'其他目录上传'})
+ await expect(pill).toHaveCount(1);await expect(pill).toHaveText('其他目录上传 2')
+ await pill.click();await page.locator('.shell-header').getByRole('button',{name,exact:true}).click()
+ await expect(pill).toHaveCount(0)
+ release()
+ await expect(panel.getByRole('status',{name:'文件夹上传进度'})).toContainText('上传完成')
+ await expect(panel.getByRole('status',{name:'上传进度',exact:true})).toContainText('上传完成')
+ await panel.getByRole('button',{name:'Batch',exact:true}).click();await panel.getByRole('button',{name:'empty',exact:true}).click();await expect(panel.getByRole('button',{name:'leaf',exact:true})).toBeVisible()
+ await panel.locator('input[webkitdirectory]:visible').evaluate(input=>{
+  const root={name:'OnlyEmpty',isFile:false,isDirectory:true,createReader:()=>({readEntries:(done:(entries:unknown[])=>void)=>done([])})}
+  const event=new Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(event,'dataTransfer',{value:{items:[{webkitGetAsEntry:()=>root}]}});input.dispatchEvent(event)
+ })
+ await expect(panel.getByRole('button',{name:'OnlyEmpty',exact:true})).toBeVisible()
+ await page.evaluate(()=>{Object.defineProperty(window,'showDirectoryPicker',{configurable:true,value:async()=>({name:'PickerEmpty',values:async function*(){yield {name:'NestedEmpty',kind:'directory',values:async function*(){}}}})})})
+ await panel.locator('input[webkitdirectory]:visible').click()
+ await expect(panel.getByRole('button',{name:'PickerEmpty',exact:true})).toBeVisible()
+ await panel.getByRole('button',{name:'PickerEmpty',exact:true}).click()
+ await expect(panel.getByRole('button',{name:'NestedEmpty',exact:true})).toBeVisible()
+
+})
