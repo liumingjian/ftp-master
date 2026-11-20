@@ -81,7 +81,7 @@ func (q *Queries) CreateInitialAdministrator(ctx context.Context, arg CreateInit
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id FROM users WHERE id = $1
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, session_epoch FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -96,12 +96,13 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.Status,
 		&i.CreatedAt,
 		&i.OrganizationID,
+		&i.SessionEpoch,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id FROM users WHERE lower(username) = lower($1)
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, session_epoch FROM users WHERE lower(username) = lower($1)
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -116,6 +117,76 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Status,
 		&i.CreatedAt,
 		&i.OrganizationID,
+		&i.SessionEpoch,
 	)
 	return i, err
+}
+
+const listManagedUsers = `-- name: ListManagedUsers :many
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, session_epoch FROM users WHERE status IN ('active','deactivated') ORDER BY username
+`
+
+func (q *Queries) ListManagedUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.Query(ctx, listManagedUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.DisplayName,
+			&i.PasswordHash,
+			&i.IsAdministrator,
+			&i.Status,
+			&i.CreatedAt,
+			&i.OrganizationID,
+			&i.SessionEpoch,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const moveUser = `-- name: MoveUser :execrows
+UPDATE users SET organization_id = $1 WHERE id = $2 AND status IN ('active', 'deactivated')
+`
+
+type MoveUserParams struct {
+	OrganizationID int64
+	ID             int64
+}
+
+func (q *Queries) MoveUser(ctx context.Context, arg MoveUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveUser, arg.OrganizationID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setUserStatus = `-- name: SetUserStatus :execrows
+UPDATE users SET status = $1, session_epoch = session_epoch + CASE WHEN $1 = 'deactivated' THEN 1 ELSE 0 END
+WHERE id = $2 AND status IN ('active', 'deactivated')
+`
+
+type SetUserStatusParams struct {
+	Status string
+	ID     int64
+}
+
+func (q *Queries) SetUserStatus(ctx context.Context, arg SetUserStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserStatus, arg.Status, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

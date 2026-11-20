@@ -421,6 +421,68 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/GroupMembers"
+  /users/{userId}/status:
+    patch:
+      operationId: setUserStatus
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: {type: integer, format: int64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, deactivated]
+      responses:
+        '204':
+          description: User changed.
+        default:
+          $ref: '#/components/responses/Unauthorized'
+  /users/{userId}/organization:
+    put:
+      operationId: moveUser
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: {type: integer, format: int64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [organizationId]
+              properties:
+                organizationId:
+                  type: integer
+                  format: int64
+      responses:
+        '204':
+          description: User changed.
+        default:
+          $ref: '#/components/responses/Unauthorized'
+  /managed-users:
+    get:
+      operationId: listManagedUsers
+      responses:
+        '200':
+          description: Active and deactivated Users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManagedUser'
+        default:
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     session:
@@ -438,6 +500,15 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    ManagedUser:
+      type: object
+      required: [id, username, displayName, status, organizationId]
+      properties:
+        id: {type: integer, format: int64}
+        username: {type: string}
+        displayName: {type: string}
+        status: {type: string}
+        organizationId: {type: integer, format: int64}
     Error:
       type: object
       required: [code, message]
@@ -461,7 +532,7 @@ components:
           maxLength: 1024
     CurrentUser:
       type: object
-      required: [id, username, displayName, isAdministrator]
+      required: [id, username, displayName, isAdministrator, organizationId]
       properties:
         id:
           type: integer
@@ -470,6 +541,7 @@ components:
           type: string
         displayName:
           type: string
+        organizationId: {type: integer, format: int64}
         isAdministrator:
           type: boolean
     Health:
