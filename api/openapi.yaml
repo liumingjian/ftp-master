@@ -12,6 +12,98 @@ servers:
 security:
   - session: []
 paths:
+  /tree:
+    get:
+      operationId: listTree
+      parameters:
+        - in: query
+          name: parentId
+          schema: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Visible children; traversable paths never reveal siblings.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/TreeNode'}}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createDirectory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                parentId: {type: integer, format: int64}
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    get:
+      operationId: getTreeNode
+      responses:
+        '200':
+          description: Visible item, including its effective Rights.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/grants:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    get:
+      operationId: listTreeGrants
+      responses:
+        '200':
+          description: Direct Grants.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/TreeGrant'}}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createTreeGrant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TreeGrantInput'}
+      responses:
+        '201':
+          description: Grant created and audited.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeGrant'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/grants/{grantId}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+      - in: path
+        name: grantId
+        required: true
+        schema: {type: integer, format: int64}
+    delete:
+      operationId: deleteTreeGrant
+      responses:
+        '204': {description: Grant revoked and audited.}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /registrations:
     post:
       operationId: register
@@ -624,6 +716,32 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    TreeNode:
+      type: object
+      required: [id, name, isFile, rights, traversable]
+      properties:
+        id: {type: integer, format: int64}
+        parentId: {type: integer, format: int64}
+        name: {type: string}
+        isFile: {type: boolean}
+        rights: {type: integer}
+        traversable: {type: boolean}
+    TreeGrantInput:
+      type: object
+      required: [principalKind, principalId, rights, scope]
+      properties:
+        principalKind: {type: string, enum: [user, organization, user_group]}
+        principalId: {type: integer, format: int64}
+        rights: {type: integer, minimum: 1, maximum: 63}
+        scope: {type: string, enum: [subtree, this_level_only]}
+    TreeGrant:
+      allOf:
+        - {$ref: '#/components/schemas/TreeGrantInput'}
+        - type: object
+          required: [id, creator]
+          properties:
+            id: {type: integer, format: int64}
+            creator: {type: boolean}
     ManagedUser:
       type: object
       required: [id, username, displayName, status, organizationId]

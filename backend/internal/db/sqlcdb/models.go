@@ -30,10 +30,28 @@ type GooseDbVersion struct {
 	Tstamp    pgtype.Timestamp
 }
 
+type Grant struct {
+	ID            int64
+	NodeID        int64
+	PrincipalKind string
+	PrincipalID   int64
+	Rights        int16
+	Scope         string
+	Creator       bool
+}
+
 type Organization struct {
 	ID       int64
 	Name     string
 	ParentID pgtype.Int8
+}
+
+type TreeNode struct {
+	ID        int64
+	ParentID  pgtype.Int8
+	Name      string
+	IsFile    bool
+	DeletedAt pgtype.Timestamptz
 }
 
 type User struct {
