@@ -4,8 +4,11 @@ import { ADMINISTRATOR_PASSWORD, ADMINISTRATOR_USERNAME, signIn } from './signin
 test('Administrator uploads CSV, corrects row errors and imports active Users', async ({ page }) => {
   await page.goto('/sign-in')
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
-  const organization = (await (await page.request.get('/api/organizations')).json())[0]
   const panel = page.getByRole('region', { name: '批量导入用户', exact: true })
+  await expect(panel).toBeVisible()
+  const organizations = await page.request.get('/api/organizations')
+  expect(organizations.ok()).toBe(true)
+  const organization = (await organizations.json())[0]
   const username = `import-${Date.now()}`
   const header = 'username,display_name,password,organization_id\n'
   const file = panel.getByLabel('用户 CSV 文件')
