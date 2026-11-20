@@ -83,6 +83,7 @@ type UploadSession struct {
 	FileID          pgtype.Int8
 	VersionID       pgtype.Int8
 	CreatedAt       pgtype.Timestamptz
+	Collision       string
 }
 
 type User struct {

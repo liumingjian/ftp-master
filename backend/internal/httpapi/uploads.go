@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"time"
 
@@ -205,7 +207,17 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	if u.State == "complete" {
 		return api.CompleteUpload200JSONResponse{FileId: *u.File, VersionId: *u.Version}, nil
 	}
+	if r.Params.Collision != nil {
+		choice := string(*r.Params.Collision)
+		if choice != "new_version" && choice != "keep_both" {
+			return membershipFailure{400, "invalid collision choice"}, nil
+		}
+		if _, err = tx.Exec(ctx, "UPDATE upload_sessions SET collision=$2 WHERE id=$1", u.ID, choice); err != nil {
+			return nil, err
+		}
+	}
 	err = sqlcdb.New(tx).MarkUploadCompleting(ctx, u.ID)
+
 	if err != nil {
 		return nil, err
 	}
@@ -228,6 +240,61 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	}
 	if u.State == "complete" {
 		return api.CompleteUpload200JSONResponse{FileId: *u.File, VersionId: *u.Version}, nil
+	}
+	var collision string
+	if err = tx.QueryRow(ctx, "SELECT collision FROM upload_sessions WHERE id=$1", u.ID).Scan(&collision); err != nil {
+		return nil, err
+	}
+	var existing *sqlcdb.TreeNode
+	for i := range snap.Nodes {
+		n := &snap.Nodes[i]
+		if n.ParentID.Int64 == u.Parent && n.Name == u.Name {
+			existing = n
+			break
+		}
+	}
+	overwrite := false
+	if existing != nil {
+		visible := snap.Permission(existing.ID).Rights.Has(permission.Browse) && snap.NavigationVisible(existing.ID)
+		if visible && collision == "" {
+			return membershipFailure{409, "upload_name_conflict"}, nil
+		}
+		overwrite = visible && collision == "new_version" && existing.IsFile
+		if visible && collision == "new_version" && !existing.IsFile {
+			return membershipFailure{409, "destination is a directory; keep both instead"}, nil
+		}
+		if !overwrite {
+			original := u.Name
+			for counter := 1; ; counter++ {
+				suffix := fmt.Sprintf(" (%d)", counter)
+				if !visible {
+					suffix = " (" + opaqueKey()[:12] + ")"
+				}
+				ext := filepath.Ext(original)
+				base := strings.TrimSuffix(original, ext)
+				limit := 255 - len(suffix) - len(ext)
+				if limit < 1 {
+					ext = ""
+					limit = 255 - len(suffix)
+				}
+				for len(base) > limit {
+					_, size := utf8.DecodeLastRuneInString(base)
+					base = base[:len(base)-size]
+				}
+				candidate := base + suffix + ext
+				used := false
+				for _, n := range snap.Nodes {
+					if n.ParentID.Int64 == u.Parent && n.Name == candidate {
+						used = true
+						break
+					}
+				}
+				if !used {
+					u.Name = candidate
+					break
+				}
+			}
+		}
 	}
 	core := minio.Core{Client: s.transfer.Client}
 	info, statErr := s.transfer.Client.StatObject(ctx, s.transfer.Bucket, u.Key, minio.StatObjectOptions{})
@@ -272,27 +339,29 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	if info.Size != u.Size || info.UserMetadata["Upload-Intent"] != u.ID && info.UserMetadata["upload-intent"] != u.ID {
 		return membershipFailure{409, "object integrity mismatch"}, nil
 	}
-	for _, n := range snap.Nodes {
-		if n.ParentID.Int64 == u.Parent && n.Name == u.Name {
-			return membershipFailure{409, "destination name unavailable"}, nil
-		}
-	}
 	q := sqlcdb.New(tx)
-	node, err := q.CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&u.Parent), Name: u.Name, IsFile: true})
-	if err != nil {
-		return nil, err
+	var node sqlcdb.TreeNode
+	if overwrite {
+		node = *existing
+	} else {
+		node, err = q.CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&u.Parent), Name: u.Name, IsFile: true})
+		if err != nil {
+			return nil, err
+		}
 	}
 	created, err := q.CreateFileVersion(ctx, sqlcdb.CreateFileVersionParams{FileID: node.ID, ObjectKey: u.Key, Size: u.Size, Format: strings.ToLower(strings.TrimPrefix(filepath.Ext(u.Name), ".")), CreatedBy: u.Owner, CreatedAt: pgtype.Timestamptz{Time: s.membership.Clock.Now(), Valid: true}})
 	version := created.ID
 	if err != nil {
 		return nil, err
 	}
-	_, err = q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: node.ID, PrincipalKind: "user", PrincipalID: u.Owner, Rights: 63, Scope: "subtree", Creator: true})
-	if err != nil {
-		return nil, err
+	if !overwrite {
+		_, err = q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: node.ID, PrincipalKind: "user", PrincipalID: u.Owner, Rights: 63, Scope: "subtree", Creator: true})
+		if err != nil {
+			return nil, err
+		}
 	}
 	infoReq := requestFrom(ctx)
-	err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: u.Owner, Username: infoReq.session.User.Username, SourceIP: infoReq.sourceIP, Action: "upload", Outcome: audit.OutcomeSuccess, ItemID: node.ID, ItemPath: snap.Path(u.Parent) + "/" + u.Name, Detail: map[string]any{"versionId": version, "size": u.Size}})
+	err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: u.Owner, Username: infoReq.session.User.Username, SourceIP: infoReq.sourceIP, Action: "upload", Outcome: audit.OutcomeSuccess, ItemID: node.ID, ItemPath: snap.Path(u.Parent) + "/" + u.Name, Detail: map[string]any{"versionId": version, "size": u.Size, "newVersion": overwrite}})
 	if err != nil {
 		return nil, err
 	}
