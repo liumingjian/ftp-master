@@ -20,3 +20,27 @@ test('browser sends real multipart bytes to public storage and shows in-place pr
   await expect(panel.getByRole('status', { name: '上传进度' })).toContainText('blocked extension')
   expect(storageResponses).toEqual([200, 200])
 })
+
+test('Office filenames download through extensionless links using the native browser manager', async ({ page }) => {
+  await page.goto('/sign-in')
+  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  const panel = page.getByRole('region', { name: '共享目录' })
+  const dir = `Download-${Date.now()}`
+  await panel.getByLabel('目录名称').fill(dir)
+  await panel.getByRole('button', { name: '创建目录' }).click()
+  await panel.getByRole('button', { name: dir, exact: true }).click()
+  const bytes = Buffer.from('immutable Office download bytes')
+  await panel.getByLabel('上传文件').setInputFiles({name: '报告.docx', mimeType: 'application/octet-stream', buffer: bytes})
+  await expect(panel.getByRole('status', {name: '上传进度'})).toContainText('上传完成')
+  const link = panel.getByRole('link', {name: '下载 报告.docx'})
+  const href = await link.getAttribute('href')
+  expect(new URL(href!, page.url()).pathname).not.toMatch(/\.(doc|docx|wps|xls|xlsx)$/i)
+  const pending = page.waitForEvent('download')
+  await link.click()
+  const download = await pending
+  expect(download.suggestedFilename()).toBe('报告.docx')
+  const stream = await download.createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
+  expect(Buffer.concat(chunks)).toEqual(bytes)
+})

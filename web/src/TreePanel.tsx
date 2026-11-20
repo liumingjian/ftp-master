@@ -93,6 +93,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
                 >
                   {n.name}
                 </button>
+                {n.isFile && !!(n.rights & 2) && <a href={`/api/tree/${n.id}/download`} download>下载 {n.name}</a>}
                 {n.traversable && "（仅通行）"}
                 <button onClick={()=>setInspectNode(n)}>查看有效权限</button>
                 {!!(n.rights & 32) && <button onClick={() => setGrantNode(n)}>管理权限</button>}

@@ -110,3 +110,21 @@ or NUL. Both operations retain stable IDs and direct Grants, change only
 metadata, and commit with an Audit Event containing `oldPath` and `newPath`.
 Inherited Rights are evaluated again against the destination. The browser's
 move picker navigates visible directories and enables destinations with Upload.
+
+## Single-file downloads
+
+`GET /api/tree/{id}/download` authorizes current Download and redirects (302)
+to a separately signed public MinIO GET capability, valid for 15 minutes.
+Optional `versionId` selects that file's immutable version; omit for latest.
+Invisible files return 404, visible files without Download return 403, and
+folders return 409. Invalid or unrelated versions never disclose bytes.
+The redirect has `Cache-Control: no-store`; the signed storage response forces
+an attachment with the current Unicode filename and octet-stream content type.
+Each issued redirect records one `download` Audit Event with stable item ID,
+current path, version ID and size. Issuance is audited, not completed receipt
+of bytes; existing capabilities survive permission revocation until expiry.
+
+The UI links only to the extensionless application endpoint and uses native
+browser downloads. No transfer body or progress travels through the app.
+Subsequent read flows can reuse `fileAccess` for current Right checks and
+`GetFileVersion` for file-bound immutable references (version 0 selects latest).
