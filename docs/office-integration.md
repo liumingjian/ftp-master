@@ -39,3 +39,31 @@ reporting. Missing sessions receive 401, and unknown permits or permits issued
 to another User receive 404. Expiry prevents initial retrieval, but does not
 hide the delivery state or undo a previously completed delivery. No Audit Event
 is added for retrieval or delivery checks; edit start already records the open.
+
+## Save receipt and payloads
+
+`POST saveUrl` uses `multipart/form-data`. Writer sends exactly one `filedata`
+part, one nonempty `filename` value and one 32-character hexadecimal `md5sum`
+value matching the file bytes. ET sends exactly one `file` part with
+`filename=""`, or one `file` form value; both preserve the raw field bytes.
+Duplicate or extra fields, nonempty ET filenames and malformed multipart bodies
+are refused. The save body is limited to 26 MiB including multipart overhead;
+each content field is limited to 25 MiB.
+
+The server parses OOXML ZIP/XML or legacy CFB Word/BIFF streams, verifies the
+actual document family against both request shape and permit base version,
+and records the actual `doc`, `docx`, `xls` or `xlsx` serialization. A `.wps`
+file may save a compatible Word serialization. Neither client filename nor
+MIME type determines the stored format. The current shared-tree name stays intact.
+
+HTTP 200 returns `{ "Success": true, "Message": "Saved", "Data": { ... } }`.
+`Data` includes `versionId`, `baseVersionId`, `permitId`, `format` and
+`staleSave`. Every failure, including authentication, decoding and storage
+failure, uses a non-2xx response with `{ "Success": false, "Message": "...",
+"Data": null }`. A fresh immutable content object is published with exactly
+one File Version and one `office_save` Audit Event in the same database
+transaction. Failed publication rolls back both and removes the unused object.
+The tree mutation lock serializes publication and current Modify checks;
+staleness always compares the latest version to the permit's original base,
+including on repeated saves. A delivered permit's initial retrieval expiry does
+not prevent later saves by its owner.
