@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -140,6 +141,54 @@ func (e TreeGrantInputScope) Valid() bool {
 	case TreeGrantInputScopeSubtree:
 		return true
 	case TreeGrantInputScopeThisLevelOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QueryAuditJSONBodyCategory.
+const (
+	Account QueryAuditJSONBodyCategory = "account"
+	Delete  QueryAuditJSONBodyCategory = "delete"
+	Grant   QueryAuditJSONBodyCategory = "grant"
+	Read    QueryAuditJSONBodyCategory = "read"
+	Session QueryAuditJSONBodyCategory = "session"
+	Write   QueryAuditJSONBodyCategory = "write"
+)
+
+// Valid indicates whether the value is a known member of the QueryAuditJSONBodyCategory enum.
+func (e QueryAuditJSONBodyCategory) Valid() bool {
+	switch e {
+	case Account:
+		return true
+	case Delete:
+		return true
+	case Grant:
+		return true
+	case Read:
+		return true
+	case Session:
+		return true
+	case Write:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QueryAudit200JSONResponseBodyEventsOutcome.
+const (
+	Failure QueryAudit200JSONResponseBodyEventsOutcome = "failure"
+	Success QueryAudit200JSONResponseBodyEventsOutcome = "success"
+)
+
+// Valid indicates whether the value is a known member of the QueryAudit200JSONResponseBodyEventsOutcome enum.
+func (e QueryAudit200JSONResponseBodyEventsOutcome) Valid() bool {
+	switch e {
+	case Failure:
+		return true
+	case Success:
 		return true
 	default:
 		return false
@@ -397,11 +446,36 @@ type UserGroups = []UserGroup
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
+<<<<<<< HEAD
 // StartOfficeEditJSONBody defines parameters for StartOfficeEdit.
 type StartOfficeEditJSONBody struct {
 	VersionId *int64 `json:"versionId,omitempty"`
 }
 
+=======
+// QueryAuditJSONBody defines parameters for QueryAudit.
+type QueryAuditJSONBody struct {
+	Action                *string                     `json:"action,omitempty"`
+	Category              *QueryAuditJSONBodyCategory `json:"category,omitempty"`
+	Directory             *string                     `json:"directory,omitempty"`
+	Export                *bool                       `json:"export,omitempty"`
+	FailuresOnly          *bool                       `json:"failuresOnly,omitempty"`
+	From                  time.Time                   `json:"from"`
+	IncludeSubdirectories *bool                       `json:"includeSubdirectories,omitempty"`
+	ItemId                *int64                      `json:"itemId,omitempty"`
+	OrganizationId        *int64                      `json:"organizationId,omitempty"`
+	Page                  *int                        `json:"page,omitempty"`
+	To                    time.Time                   `json:"to"`
+	UserIds               *[]int64                    `json:"userIds,omitempty"`
+}
+
+// QueryAuditJSONBodyCategory defines parameters for QueryAudit.
+type QueryAuditJSONBodyCategory string
+
+// QueryAudit200JSONResponseBodyEventsOutcome defines parameters for QueryAudit.
+type QueryAudit200JSONResponseBodyEventsOutcome string
+
+>>>>>>> codex/spec-1
 // ChangePasswordJSONBody defines parameters for ChangePassword.
 type ChangePasswordJSONBody struct {
 	CurrentPassword string `json:"currentPassword"`
@@ -474,8 +548,13 @@ type SetUserStatusJSONBody struct {
 // SetUserStatusJSONBodyStatus defines parameters for SetUserStatus.
 type SetUserStatusJSONBodyStatus string
 
+<<<<<<< HEAD
 // StartOfficeEditJSONRequestBody defines body for StartOfficeEdit for application/json ContentType.
 type StartOfficeEditJSONRequestBody StartOfficeEditJSONBody
+=======
+// QueryAuditJSONRequestBody defines body for QueryAudit for application/json ContentType.
+type QueryAuditJSONRequestBody QueryAuditJSONBody
+>>>>>>> codex/spec-1
 
 // CreateOrganizationJSONRequestBody defines body for CreateOrganization for application/json ContentType.
 type CreateOrganizationJSONRequestBody = OrganizationInput
@@ -543,8 +622,13 @@ type SetUserStatusJSONRequestBody SetUserStatusJSONBody
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
+<<<<<<< HEAD
 	// (POST /files/{id}/office-edits)
 	StartOfficeEdit(w http.ResponseWriter, r *http.Request, id int64)
+=======
+	// (POST /audit/query)
+	QueryAudit(w http.ResponseWriter, r *http.Request)
+>>>>>>> codex/spec-1
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -670,6 +754,7 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+<<<<<<< HEAD
 // StartOfficeEdit operation middleware
 func (siw *ServerInterfaceWrapper) StartOfficeEdit(w http.ResponseWriter, r *http.Request) {
 
@@ -687,6 +772,13 @@ func (siw *ServerInterfaceWrapper) StartOfficeEdit(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.StartOfficeEdit(w, r, id)
+=======
+// QueryAudit operation middleware
+func (siw *ServerInterfaceWrapper) QueryAudit(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryAudit(w, r)
+>>>>>>> codex/spec-1
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1632,7 +1724,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+<<<<<<< HEAD
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/files/{id}/office-edits", wrapper.StartOfficeEdit)
+=======
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/audit/query", wrapper.QueryAudit)
+>>>>>>> codex/spec-1
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads", wrapper.InitiateUpload)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads/{id}/parts", wrapper.IssueUploadParts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads/{id}/complete", wrapper.CompleteUpload)
@@ -1677,6 +1773,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 type UnauthorizedJSONResponse Error
 
+<<<<<<< HEAD
 type StartOfficeEditRequestObject struct {
 	Id   int64 `json:"id"`
 	Body *StartOfficeEditJSONRequestBody
@@ -1689,23 +1786,87 @@ type StartOfficeEditResponseObject interface {
 type StartOfficeEdit201JSONResponse OfficeEdit
 
 func (response StartOfficeEdit201JSONResponse) VisitStartOfficeEditResponse(w http.ResponseWriter) error {
+=======
+type QueryAuditRequestObject struct {
+	Body *QueryAuditJSONRequestBody
+}
+
+type QueryAuditResponseObject interface {
+	VisitQueryAuditResponse(w http.ResponseWriter) error
+}
+
+type QueryAudit200JSONResponse struct {
+	Directories []struct {
+		Exists bool   `json:"exists"`
+		Path   string `json:"path"`
+	} `json:"directories"`
+	Events []struct {
+		Action   string                                     `json:"action"`
+		Detail   map[string]interface{}                     `json:"detail"`
+		Id       int64                                      `json:"id"`
+		ItemId   *int64                                     `json:"itemId"`
+		Outcome  QueryAudit200JSONResponseBodyEventsOutcome `json:"outcome"`
+		Path     string                                     `json:"path"`
+		SourceIp string                                     `json:"sourceIp"`
+		Time     time.Time                                  `json:"time"`
+		UserId   *int64                                     `json:"userId"`
+		Username string                                     `json:"username"`
+	} `json:"events"`
+	Page  int `json:"page"`
+	Total int `json:"total"`
+}
+
+func (response QueryAudit200JSONResponse) VisitQueryAuditResponse(w http.ResponseWriter) error {
+>>>>>>> codex/spec-1
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+<<<<<<< HEAD
 	w.WriteHeader(201)
+=======
+	w.WriteHeader(200)
+>>>>>>> codex/spec-1
 	_, err := buf.WriteTo(w)
 	return err
 }
 
+<<<<<<< HEAD
 type StartOfficeEditdefaultJSONResponse struct {
+=======
+type QueryAudit200TextcsvResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response QueryAudit200TextcsvResponse) VisitQueryAuditResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/csv")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type QueryAuditdefaultJSONResponse struct {
+>>>>>>> codex/spec-1
 	Body       Error
 	StatusCode int
 }
 
+<<<<<<< HEAD
 func (response StartOfficeEditdefaultJSONResponse) VisitStartOfficeEditResponse(w http.ResponseWriter) error {
+=======
+func (response QueryAuditdefaultJSONResponse) VisitQueryAuditResponse(w http.ResponseWriter) error {
+>>>>>>> codex/spec-1
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3568,8 +3729,13 @@ func (response SetUserStatusdefaultJSONResponse) VisitSetUserStatusResponse(w ht
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
+<<<<<<< HEAD
 	// (POST /files/{id}/office-edits)
 	StartOfficeEdit(ctx context.Context, request StartOfficeEditRequestObject) (StartOfficeEditResponseObject, error)
+=======
+	// (POST /audit/query)
+	QueryAudit(ctx context.Context, request QueryAuditRequestObject) (QueryAuditResponseObject, error)
+>>>>>>> codex/spec-1
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
@@ -3725,6 +3891,7 @@ type strictHandler struct {
 	options     StrictHTTPServerOptions
 }
 
+<<<<<<< HEAD
 // StartOfficeEdit operation middleware
 func (sh *strictHandler) StartOfficeEdit(w http.ResponseWriter, r *http.Request, id int64) {
 	var request StartOfficeEditRequestObject
@@ -3732,6 +3899,13 @@ func (sh *strictHandler) StartOfficeEdit(w http.ResponseWriter, r *http.Request,
 	request.Id = id
 
 	var body StartOfficeEditJSONRequestBody
+=======
+// QueryAudit operation middleware
+func (sh *strictHandler) QueryAudit(w http.ResponseWriter, r *http.Request) {
+	var request QueryAuditRequestObject
+
+	var body QueryAuditJSONRequestBody
+>>>>>>> codex/spec-1
 	if err := runtime.BindJSONBody(r, &body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -3739,18 +3913,30 @@ func (sh *strictHandler) StartOfficeEdit(w http.ResponseWriter, r *http.Request,
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+<<<<<<< HEAD
 		return sh.ssi.StartOfficeEdit(ctx, request.(StartOfficeEditRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
 		handler = middleware(handler, "StartOfficeEdit")
+=======
+		return sh.ssi.QueryAudit(ctx, request.(QueryAuditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "QueryAudit")
+>>>>>>> codex/spec-1
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
+<<<<<<< HEAD
 	} else if validResponse, ok := response.(StartOfficeEditResponseObject); ok {
 		if err := validResponse.VisitStartOfficeEditResponse(w); err != nil {
+=======
+	} else if validResponse, ok := response.(QueryAuditResponseObject); ok {
+		if err := validResponse.VisitQueryAuditResponse(w); err != nil {
+>>>>>>> codex/spec-1
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4866,6 +5052,7 @@ func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, u
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
+<<<<<<< HEAD
 	"7D1rb9u4ln/lQLvA3gs4tpOmd3fST5m0cxvcPrJx2/1QFAUjHtucSKRKUk48Rf77gqTeomzFsZ0UN19m",
 	"GpvSeT94ziH9MwhFnAiOXKvg5GcgUSWCK7R/fOYk1XMh2V9Izd+h4Bq5Nv8kSRKxkGgm+OhPJbj5TIVz",
 	"jIn5139KnAYnwX+MypeP3Ldq9EZKIYO7u7tBQFGFkiXmJcFJ8GmOEoEp4AIWJGIUFCrFBIepkEA4kFCz",
@@ -4932,6 +5119,77 @@ var swaggerSpec = []string{
 	"BMeDK6KQWmV3mg3uXuvKAJ5Z6aaut7NNUqOfrodxV7t/oDMsvhcLm2/2ioXlpdLPB7FWhVVrQ9s4BOoT",
 	"69pDu5eosHrW9VeT6zZP/u72nK9Ee25iS6d8rdyANA/2AlH2cFitHR74NKP8RZKOixiyHHiS/6zIr6YZ",
 	"qvULMi6/sL+5Udzxtf6i4uw9T9He68c7Kpdofv1m+KhQLnJx2R9SCEYkYcHdt7v/DwAA//8=",
+=======
+	"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",
+>>>>>>> codex/spec-1
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

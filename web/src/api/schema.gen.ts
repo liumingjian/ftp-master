@@ -4,6 +4,7 @@
  */
 
 export interface paths {
+<<<<<<< HEAD
     "/files/{id}/office-edits": {
         parameters: {
             query?: never;
@@ -11,11 +12,22 @@ export interface paths {
             path: {
                 id: number;
             };
+=======
+    "/audit/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+>>>>>>> codex/spec-1
             cookie?: never;
         };
         get?: never;
         put?: never;
+<<<<<<< HEAD
         post: operations["startOfficeEdit"];
+=======
+        post: operations["queryAudit"];
+>>>>>>> codex/spec-1
         delete?: never;
         options?: never;
         head?: never;
@@ -705,6 +717,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+<<<<<<< HEAD
     startOfficeEdit: {
         parameters: {
             query?: never;
@@ -712,24 +725,89 @@ export interface operations {
             path: {
                 id: number;
             };
+=======
+    queryAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+>>>>>>> codex/spec-1
             cookie?: never;
         };
         requestBody: {
             content: {
                 "application/json": {
+<<<<<<< HEAD
                     /** Format: int64 */
                     versionId?: number;
+=======
+                    /** Format: date-time */
+                    from: string;
+                    /** Format: date-time */
+                    to: string;
+                    userIds?: number[];
+                    /** Format: int64 */
+                    organizationId?: number;
+                    directory?: string;
+                    /** @default true */
+                    includeSubdirectories?: boolean;
+                    action?: string;
+                    /** @enum {string} */
+                    category?: "session" | "read" | "write" | "delete" | "grant" | "account";
+                    failuresOnly?: boolean;
+                    /** Format: int64 */
+                    itemId?: number;
+                    /** @default 1 */
+                    page?: number;
+                    export?: boolean;
+>>>>>>> codex/spec-1
                 };
             };
         };
         responses: {
+<<<<<<< HEAD
             /** @description Edit Permit issued; gateway read expires after five minutes. */
             201: {
+=======
+            /** @description Paged events and historical directory suggestions, or all filtered events as CSV. No Audit Event is recorded. */
+            200: {
+>>>>>>> codex/spec-1
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+<<<<<<< HEAD
                     "application/json": components["schemas"]["OfficeEdit"];
+=======
+                    "application/json": {
+                        total: number;
+                        page: number;
+                        directories: {
+                            path: string;
+                            exists: boolean;
+                        }[];
+                        events: {
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: date-time */
+                            time: string;
+                            /** Format: int64 */
+                            userId: number | null;
+                            username: string;
+                            sourceIp: string;
+                            action: string;
+                            /** @enum {string} */
+                            outcome: "success" | "failure";
+                            /** Format: int64 */
+                            itemId: number | null;
+                            path: string;
+                            detail: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                    "text/csv": string;
+>>>>>>> codex/spec-1
                 };
             };
             default: components["responses"]["Unauthorized"];

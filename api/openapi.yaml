@@ -32,6 +32,67 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/OfficeEdit'}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /audit/query:
+    post:
+      operationId: queryAudit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: {type: string, format: date-time}
+                to: {type: string, format: date-time}
+                userIds: {type: array, items: {type: integer, format: int64}}
+                organizationId: {type: integer, format: int64}
+                directory: {type: string}
+                includeSubdirectories: {type: boolean, default: true}
+                action: {type: string}
+                category: {type: string, enum: [session, read, write, delete, grant, account]}
+                failuresOnly: {type: boolean}
+                itemId: {type: integer, format: int64}
+                page: {type: integer, minimum: 1, default: 1}
+                export: {type: boolean}
+      responses:
+        '200':
+          description: Paged events and historical directory suggestions, or all filtered events as CSV. No Audit Event is recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, total, page, directories]
+                properties:
+                  total: {type: integer}
+                  page: {type: integer}
+                  directories:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, exists]
+                      properties:
+                        path: {type: string}
+                        exists: {type: boolean}
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, time, userId, username, sourceIp, action, outcome, itemId, path, detail]
+                      properties:
+                        id: {type: integer, format: int64}
+                        time: {type: string, format: date-time}
+                        userId: {type: integer, format: int64, nullable: true}
+                        username: {type: string}
+                        sourceIp: {type: string}
+                        action: {type: string}
+                        outcome: {type: string, enum: [success, failure]}
+                        itemId: {type: integer, format: int64, nullable: true}
+                        path: {type: string}
+                        detail: {type: object, additionalProperties: true}
+            text/csv:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /uploads:
     post:
       operationId: initiateUpload
@@ -931,6 +992,236 @@ components:
         format: {type: string, enum: [doc, docx, wps, xls, xlsx]}
         expiresAt: {type: string, format: date-time}
         versionId: {type: integer, format: int64}
+    TreeNode:
+      type: object
+      required: [id, name, isFile, rights, traversable]
+      properties:
+        id: {type: integer, format: int64}
+        parentId: {type: integer, format: int64}
+        name: {type: string}
+        isFile: {type: boolean}
+        rights: {type: integer}
+        traversable: {type: boolean}
+    GrantImpact:
+      type: object
+      required: [changedUsers, coveredItems, warnings]
+      properties:
+        changedUsers: {type: integer}
+        coveredItems: {type: integer}
+        warnings: {type: array, items: {type: string}}
+    PermissionInspection:
+      type: object
+      required: [userId, rights, traversable, administrator, sources]
+      properties:
+        userId: {type: integer, format: int64}
+        rights: {type: integer}
+        traversable: {type: boolean}
+        administrator: {type: boolean}
+        sources: {type: array, items: {$ref: '#/components/schemas/SourcedGrant'}}
+    SourcedGrant:
+      type: object
+      required: [grant, sourceId, sourcePath, inherited]
+      properties:
+        grant: {$ref: '#/components/schemas/TreeGrant'}
+        sourceId: {type: integer, format: int64}
+        sourcePath: {type: string}
+        inherited: {type: boolean}
+    TreeGrantInput:
+      type: object
+      required: [principalKind, principalId, rights, scope]
+      properties:
+        principalKind: {type: string, enum: [user, organization, user_group]}
+        principalId: {type: integer, format: int64}
+        rights: {type: integer, minimum: 1, maximum: 63}
+        scope: {type: string, enum: [subtree, this_level_only]}
+    TreeGrant:
+      allOf:
+        - {$ref: '#/components/schemas/TreeGrantInput'}
+        - type: object
+          required: [id, creator]
+          properties:
+            id: {type: integer, format: int64}
+            creator: {type: boolean}
+    ManagedUser:
+      type: object
+      required: [id, username, displayName, status, organizationId]
+      properties:
+        id: {type: integer, format: int64}
+        username: {type: string}
+        displayName: {type: string}
+        status: {type: string}
+        organizationId: {type: integer, format: int64}
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable reason, e.g. unauthenticated, invalid_credentials.
+        message:
+          type: string
+    SignInRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 150
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    CurrentUser:
+      type: object
+      required: [id, username, displayName, isAdministrator, organizationId]
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        displayName:
+          type: string
+        organizationId: {type: integer, format: int64}
+        isAdministrator:
+          type: boolean
+    Health:
+      type: object
+      required: [status, database, objectStorage, cache, checkedAt, uptimeSeconds]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        database:
+          $ref: "#/components/schemas/DatabaseHealth"
+        objectStorage:
+          $ref: "#/components/schemas/DependencyHealth"
+        cache:
+          $ref: "#/components/schemas/DependencyHealth"
+        checkedAt:
+          type: string
+          format: date-time
+          description: When the service performed this check, by its Clock.
+        uptimeSeconds:
+          type: integer
+          format: int64
+          description: Whole seconds since the service instance started, by its Clock.
+    HealthStatus:
+      type: string
+      enum: [ok, degraded]
+    DependencyHealth:
+      type: object
+      description: >-
+        Whether a backing store answered. Failure details are logged by the
+        service, never returned, since this endpoint needs no sign-in.
+      required: [up]
+      properties:
+        up:
+          type: boolean
+    DatabaseHealth:
+      type: object
+      required: [up, schemaVersion]
+      properties:
+        up:
+          type: boolean
+        schemaVersion:
+          type: integer
+          format: int64
+          description: Latest migration version applied, as read from PostgreSQL; 0 when down.
+    OrganizationInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        parentId:
+          type: integer
+          format: int64
+          nullable: true
+    Organization:
+      type: object
+      required:
+      - id
+      - name
+      - parentId
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        parentId:
+          type: integer
+          format: int64
+          nullable: true
+    UserGroupInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+    UserGroup:
+      type: object
+      required:
+      - id
+      - name
+      - userIds
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        userIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+    GroupMembers:
+      type: object
+      required:
+      - userIds
+      properties:
+        userIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          uniqueItems: true
+    Organizations:
+      type: array
+      items:
+        "$ref": "#/components/schemas/Organization"
+    UserGroups:
+      type: array
+      items:
+        "$ref": "#/components/schemas/UserGroup"
+    RegistrationInput:
+      type: object
+      required: [username, displayName, organizationHint, password]
+      properties:
+        username: {type: string, minLength: 1, maxLength: 150}
+        displayName: {type: string, minLength: 1, maxLength: 150}
+        organizationHint: {type: string, minLength: 1, maxLength: 150}
+        password: {type: string, minLength: 1, maxLength: 1024}
+    Registration:
+      type: object
+      required: [id, username, displayName, organizationHint]
+      properties:
+        id: {type: integer, format: int64}
+        username: {type: string}
+        displayName: {type: string}
+        organizationHint: {type: string}
     TreeNode:
       type: object
       required: [id, name, isFile, rights, traversable]
