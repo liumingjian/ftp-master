@@ -60,6 +60,29 @@ func (s *Server) ListTree(ctx context.Context, r api.ListTreeRequestObject) (api
 			result = append(result, treeResponse(n, snap))
 		}
 	}
+	ids := make([]int64, 0, len(result))
+	for _, n := range result {
+		if n.IsFile && n.Rights&int(permission.Browse) != 0 {
+			ids = append(ids, n.Id)
+		}
+	}
+	versions, err := sqlcdb.New(s.membership.Pool).ListLatestTreeVersions(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	byFile := make(map[int64]sqlcdb.ListLatestTreeVersionsRow, len(versions))
+	for _, v := range versions {
+		byFile[v.FileID] = v
+	}
+	for i := range result {
+		if v, ok := byFile[result[i].Id]; ok {
+			result[i].LatestVersion = &struct {
+				Format string `json:"format"`
+				Id     int64  `json:"id"`
+				Size   int64  `json:"size"`
+			}{Format: v.Format, Id: v.ID, Size: v.Size}
+		}
+	}
 	return result, nil
 }
 func (s *Server) GetTreeNode(ctx context.Context, r api.GetTreeNodeRequestObject) (api.GetTreeNodeResponseObject, error) {

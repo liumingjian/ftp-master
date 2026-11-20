@@ -22,8 +22,9 @@ The storage contract for the Gateway/save handlers is `office_edit_permits`: `id
 
 ## Gateway delivery
 
-`GET documentUrl` returns HTTP 200 with `application/octet-stream`, an exact
-`Content-Length`, and `Cache-Control: no-store`. It never redirects, applies
+`GET documentUrl` returns HTTP 200 with `application/octet-stream`, `Cache-Control: no-store` and a streamed response without `Content-Length`. The response terminates only after delivery finalization, so a proxy cannot close
+the upstream connection upon reaching a declared length before the delivery
+transaction commits. It never redirects, applies
 ranges or transforms the selected immutable version. Missing/unknown permits
 return 404; expired or delivered permits return 410. Error bodies contain no
 document bytes. Filenames are presentation-only; the permit selects the version.
@@ -67,3 +68,40 @@ The tree mutation lock serializes publication and current Modify checks;
 staleness always compares the latest version to the permit's original base,
 including on repeated saves. A delivered permit's initial retrieval expiry does
 not prevent later saves by its owner.
+
+## File-browser presence and edit-link contract
+
+The dedicated ftp-master extension sets `data-ftp-office-plugin` on
+`document.documentElement` to its nonempty extension version (for example
+`0.1.0`). It must set the marker only on its configured ftp-master origin.
+The application observes attribute changes, including late injection and removal.
+An absent, empty or whitespace-only value means the plugin is unavailable.
+The marker controls presentation only; server authorization remains mandatory.
+
+`GET /api/tree` includes `latestVersion: {id, size, format}` for browsable files
+with content. Metadata comes from the latest immutable File Version in one
+batched query per listing. It is never inferred from the current filename.
+The browser shows an entry only for a file with Modify, a supported actual
+format (`doc`, `docx`, `wps`, `xls`, `xlsx`), and size at most 26,214,400 bytes.
+Missing metadata hides the entry. The explicit version is submitted to start,
+so a concurrent upload cannot silently change the document selected by a click.
+
+The entry is an anchor with `data-ftp-office-edit="1"`,
+`data-ftp-office-version="<versionId>"`, `target="_blank"`, `rel="noopener"`,
+and same-origin `href="/api/files/<fileId>/office-edits"`. The href identifies
+the POST edit-start endpoint, not a document download. The extension handles
+only clicks on these explicitly marked anchors on its configured origin. It
+prevents navigation, starts an edit with `{versionId}`, and uses the returned
+URLs to open its editor in a new tab. Application default navigation is also
+suppressed, so a marker without an active handler does not navigate to an API.
+Returning from the editor closes that tab and leaves the file browser intact.
+
+Ordinary downloads, including version downloads, use extensionless
+`/api/tree/<id>/download` paths and have no edit marker. Neither a filename
+suffix nor a document Gateway link grants permission to intercept an anchor.
+
+`web/e2e/office.spec.ts` tests the presence/eligibility matrix at the browser
+seam and simulates the extension click handler and WPS client for Writer and
+ET against real application endpoints and stores. Its small OOXML fixtures
+are structural documents for protocol acceptance, not target-machine WPS
+compatibility evidence; that remains wps-plugin#62.

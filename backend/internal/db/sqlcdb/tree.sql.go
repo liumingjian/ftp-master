@@ -140,6 +140,44 @@ func (q *Queries) ListGrants(ctx context.Context) ([]Grant, error) {
 	return items, nil
 }
 
+const listLatestTreeVersions = `-- name: ListLatestTreeVersions :many
+SELECT DISTINCT ON (file_id) file_id, id, size, format
+FROM file_versions WHERE file_id = ANY($1::bigint[])
+ORDER BY file_id, id DESC
+`
+
+type ListLatestTreeVersionsRow struct {
+	FileID int64
+	ID     int64
+	Size   int64
+	Format string
+}
+
+func (q *Queries) ListLatestTreeVersions(ctx context.Context, fileIds []int64) ([]ListLatestTreeVersionsRow, error) {
+	rows, err := q.db.Query(ctx, listLatestTreeVersions, fileIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLatestTreeVersionsRow
+	for rows.Next() {
+		var i ListLatestTreeVersionsRow
+		if err := rows.Scan(
+			&i.FileID,
+			&i.ID,
+			&i.Size,
+			&i.Format,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTreeNodes = `-- name: ListTreeNodes :many
 SELECT id, parent_id, name, is_file, deleted_at, recycle_root_id FROM tree_nodes WHERE deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM upload_batch_nodes b WHERE b.node_id=tree_nodes.id) ORDER BY id
 `
