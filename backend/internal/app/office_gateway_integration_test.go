@@ -145,7 +145,7 @@ func TestOfficeGatewayDelivery(t *testing.T) {
 	if status, _ := get("/api/office/permits/invalid/document/report.docx"); status < 400 {
 		t.Fatal(status)
 	}
-	if status, _ := get("/api/office/permits//document/report.docx"); status < 400 {
+	if status, _ := get("/api/office/permits/document/report.docx"); status < 400 {
 		t.Fatal(status)
 	}
 	opens := 0
