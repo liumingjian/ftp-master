@@ -317,6 +317,16 @@ type CreateDirectoryJSONBody struct {
 	ParentId *int64 `json:"parentId,omitempty"`
 }
 
+// MoveTreeNodeJSONBody defines parameters for MoveTreeNode.
+type MoveTreeNodeJSONBody struct {
+	ParentId *int64 `json:"parentId"`
+}
+
+// RenameTreeNodeJSONBody defines parameters for RenameTreeNode.
+type RenameTreeNodeJSONBody struct {
+	Name string `json:"name"`
+}
+
 // ImportUsersJSONBody defines parameters for ImportUsers.
 type ImportUsersJSONBody struct {
 	Csv string `json:"csv"`
@@ -363,6 +373,12 @@ type CreateDirectoryJSONRequestBody CreateDirectoryJSONBody
 
 // CreateTreeGrantJSONRequestBody defines body for CreateTreeGrant for application/json ContentType.
 type CreateTreeGrantJSONRequestBody = TreeGrantInput
+
+// MoveTreeNodeJSONRequestBody defines body for MoveTreeNode for application/json ContentType.
+type MoveTreeNodeJSONRequestBody MoveTreeNodeJSONBody
+
+// RenameTreeNodeJSONRequestBody defines body for RenameTreeNode for application/json ContentType.
+type RenameTreeNodeJSONRequestBody RenameTreeNodeJSONBody
 
 // CreateUserGroupJSONRequestBody defines body for CreateUserGroup for application/json ContentType.
 type CreateUserGroupJSONRequestBody = UserGroupInput
@@ -444,6 +460,12 @@ type ServerInterface interface {
 
 	// (DELETE /tree/{id}/grants/{grantId})
 	DeleteTreeGrant(w http.ResponseWriter, r *http.Request, id int64, grantId int64)
+
+	// (POST /tree/{id}/move)
+	MoveTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/rename)
+	RenameTreeNode(w http.ResponseWriter, r *http.Request, id int64)
 
 	// (GET /user-groups)
 	ListUserGroups(w http.ResponseWriter, r *http.Request)
@@ -880,6 +902,58 @@ func (siw *ServerInterfaceWrapper) DeleteTreeGrant(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// MoveTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) MoveTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MoveTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RenameTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) RenameTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenameTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListUserGroups operation middleware
 func (siw *ServerInterfaceWrapper) ListUserGroups(w http.ResponseWriter, r *http.Request) {
 
@@ -1149,6 +1223,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree", wrapper.ListTree)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree", wrapper.CreateDirectory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}", wrapper.GetTreeNode)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/rename", wrapper.RenameTreeNode)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/move", wrapper.MoveTreeNode)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/grants", wrapper.ListTreeGrants)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/grants", wrapper.CreateTreeGrant)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tree/{id}/grants/{grantId}", wrapper.DeleteTreeGrant)
@@ -2167,6 +2243,86 @@ func (response DeleteTreeGrantdefaultJSONResponse) VisitDeleteTreeGrantResponse(
 	return err
 }
 
+type MoveTreeNodeRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *MoveTreeNodeJSONRequestBody
+}
+
+type MoveTreeNodeResponseObject interface {
+	VisitMoveTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type MoveTreeNode200JSONResponse TreeNode
+
+func (response MoveTreeNode200JSONResponse) VisitMoveTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MoveTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response MoveTreeNodedefaultJSONResponse) VisitMoveTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenameTreeNodeRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *RenameTreeNodeJSONRequestBody
+}
+
+type RenameTreeNodeResponseObject interface {
+	VisitRenameTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type RenameTreeNode200JSONResponse TreeNode
+
+func (response RenameTreeNode200JSONResponse) VisitRenameTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenameTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RenameTreeNodedefaultJSONResponse) VisitRenameTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListUserGroupsRequestObject struct {
 }
 
@@ -2661,6 +2817,12 @@ type StrictServerInterface interface {
 
 	// (DELETE /tree/{id}/grants/{grantId})
 	DeleteTreeGrant(ctx context.Context, request DeleteTreeGrantRequestObject) (DeleteTreeGrantResponseObject, error)
+
+	// (POST /tree/{id}/move)
+	MoveTreeNode(ctx context.Context, request MoveTreeNodeRequestObject) (MoveTreeNodeResponseObject, error)
+
+	// (POST /tree/{id}/rename)
+	RenameTreeNode(ctx context.Context, request RenameTreeNodeRequestObject) (RenameTreeNodeResponseObject, error)
 
 	// (GET /user-groups)
 	ListUserGroups(ctx context.Context, request ListUserGroupsRequestObject) (ListUserGroupsResponseObject, error)
@@ -3278,6 +3440,72 @@ func (sh *strictHandler) DeleteTreeGrant(w http.ResponseWriter, r *http.Request,
 	}
 }
 
+// MoveTreeNode operation middleware
+func (sh *strictHandler) MoveTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request MoveTreeNodeRequestObject
+
+	request.Id = id
+
+	var body MoveTreeNodeJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MoveTreeNode(ctx, request.(MoveTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MoveTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MoveTreeNodeResponseObject); ok {
+		if err := validResponse.VisitMoveTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RenameTreeNode operation middleware
+func (sh *strictHandler) RenameTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request RenameTreeNodeRequestObject
+
+	request.Id = id
+
+	var body RenameTreeNodeJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RenameTreeNode(ctx, request.(RenameTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RenameTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RenameTreeNodeResponseObject); ok {
+		if err := validResponse.VisitRenameTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListUserGroups operation middleware
 func (sh *strictHandler) ListUserGroups(w http.ResponseWriter, r *http.Request) {
 	var request ListUserGroupsRequestObject
@@ -3501,55 +3729,58 @@ func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, u
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

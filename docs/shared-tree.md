@@ -37,3 +37,14 @@ Grant form and visibility in a separate browser context. Run it with:
 cd web
 E2E_BASE_URL=http://localhost:8088 pnpm test:e2e tree.spec.ts
 ```
+
+`POST /api/tree/{id}/rename` accepts `{name}` and requires Modify on the
+item. `POST /api/tree/{id}/move` accepts `{parentId}` and requires Delete on
+its source parent plus Upload on the destination. Moving a top-level item or
+moving to root (`parentId: null`) requires Administrator. A file cannot be a
+parent; cycles and destination name collisions return 409. Names cannot be
+blank, dot segments, longer than 255 characters, or contain slash, backslash
+or NUL. Both operations retain stable IDs and direct Grants, change only
+metadata, and commit with an Audit Event containing `oldPath` and `newPath`.
+Inherited Rights are evaluated again against the destination. The browser's
+move picker navigates visible directories and enables destinations with Upload.

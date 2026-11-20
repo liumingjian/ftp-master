@@ -155,3 +155,151 @@ func TestSharedTreeFiltersTraversalAndDropBoxAndAuditsGrants(t *testing.T) {
 	grant(hidden, "organization", 1, 1)
 	call(reader, "GET", fmt.Sprintf("/tree/%d", hidden), nil, 200)
 }
+
+func TestSharedTreeRenameMovePreservesIdentityAndRefusesCycles(t *testing.T) {
+	stores := startStores(t)
+	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
+	b := newBrowser(t, server)
+	signInAsAdministrator(t, b)
+	call := func(method, path string, body any, want int) []byte {
+		t.Helper()
+		status, data := b.do(method, "/api"+path, body)
+		if status != want {
+			t.Fatalf("%s %s: %d want %d %s", method, path, status, want, data)
+		}
+		return data
+	}
+	create := func(name string, parent int64) int64 {
+		body := map[string]any{"name": name}
+		if parent != 0 {
+			body["parentId"] = parent
+		}
+		var n struct {
+			ID int64 `json:"id"`
+		}
+		decode(t, call("POST", "/tree", body, 201), &n)
+		return n.ID
+	}
+	root := create("Source", 0)
+	target := create("Target", 0)
+	child := create("Original", root)
+	deep := create("Deep", child)
+	call("POST", fmt.Sprintf("/tree/%d/rename", child), map[string]any{"name": "Renamed"}, 200)
+	call("POST", fmt.Sprintf("/tree/%d/move", child), map[string]any{"parentId": deep}, 409)
+	call("POST", fmt.Sprintf("/tree/%d/move", child), map[string]any{"parentId": target}, 200)
+	var n struct {
+		ID       int64  `json:"id"`
+		ParentID int64  `json:"parentId"`
+		Name     string `json:"name"`
+	}
+	decode(t, call("GET", fmt.Sprintf("/tree/%d", child), nil, 200), &n)
+	if n.ID != child || n.ParentID != target || n.Name != "Renamed" {
+		t.Fatalf("unexpected moved item %+v", n)
+	}
+	create("Conflict", target)
+	call("POST", fmt.Sprintf("/tree/%d/rename", child), map[string]any{"name": "Conflict"}, 409)
+	for _, name := range []string{"..", "a/b", "a\\b", " ", "bad\x00name"} {
+		call("POST", fmt.Sprintf("/tree/%d/rename", child), map[string]any{"name": name}, 400)
+	}
+	events := readAuditEvents(t, stores.config.DatabaseURL)
+	rename, move := 0, 0
+	for _, e := range events {
+		if e.Action == "rename" {
+			rename++
+		}
+		if e.Action == "move" {
+			move++
+		}
+	}
+	if rename != 1 || move != 1 {
+		t.Fatalf("audit counts rename=%d move=%d", rename, move)
+	}
+}
+
+func TestSharedTreeMoveReevaluatesInheritedRightsAndKeepsDirectGrants(t *testing.T) {
+	stores := startStores(t)
+	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
+	admin := newBrowser(t, server)
+	signInAsAdministrator(t, admin)
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, stores.config.MigrationDatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	var uid int64
+	err = conn.QueryRow(ctx, `INSERT INTO users(username,display_name,password_hash,is_administrator,status,created_at) SELECT 'mover','Mover',password_hash,false,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`).Scan(&uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := newBrowser(t, server)
+	if status, _ := reader.signIn("mover", initialAdministratorPassword); status != 200 {
+		t.Fatal(status)
+	}
+	call := func(b *browser, method, path string, body any, want int) []byte {
+		t.Helper()
+		status, data := b.do(method, "/api"+path, body)
+		if status != want {
+			t.Fatalf("%s %s: %d want %d %s", method, path, status, want, data)
+		}
+		return data
+	}
+	create := func(name string, parent int64) int64 {
+		body := map[string]any{"name": name}
+		if parent != 0 {
+			body["parentId"] = parent
+		}
+		var n struct {
+			ID int64 `json:"id"`
+		}
+		decode(t, call(admin, "POST", "/tree", body, 201), &n)
+		return n.ID
+	}
+	grant := func(id int64, rights int) {
+		call(admin, "POST", fmt.Sprintf("/tree/%d/grants", id), map[string]any{"principalKind": "user", "principalId": uid, "rights": rights, "scope": "subtree"}, 201)
+	}
+	source := create("Source", 0)
+	dest := create("Destination", 0)
+	child := create("Child", source)
+	path := fmt.Sprintf("/tree/%d", child)
+	call(reader, "POST", path+"/rename", map[string]any{"name": "No"}, 404)
+	grant(child, 1)
+	call(reader, "POST", path+"/rename", map[string]any{"name": "No"}, 403)
+	grant(source, 8)
+	call(reader, "POST", path+"/rename", map[string]any{"name": "Renamed"}, 200)
+	call(reader, "POST", path+"/move", map[string]any{"parentId": dest}, 403)
+	grant(source, 16)
+	call(reader, "POST", path+"/move", map[string]any{"parentId": dest}, 404)
+	grant(dest, 1)
+	call(reader, "POST", path+"/move", map[string]any{"parentId": dest}, 403)
+	grant(dest, 4)
+	call(reader, "POST", path+"/move", map[string]any{"parentId": dest}, 200)
+	var n struct {
+		Rights int `json:"rights"`
+	}
+	decode(t, call(reader, "GET", path, nil, 200), &n)
+	if n.Rights != 5 {
+		t.Fatalf("direct Browse plus destination Upload expected; got %d", n.Rights)
+	}
+	call(reader, "POST", path+"/rename", map[string]any{"name": "Lost Modify"}, 403)
+	var oldPath, newPath string
+	err = conn.QueryRow(ctx, `SELECT detail->>'oldPath',detail->>'newPath' FROM audit_events WHERE action='move' AND item_id=$1`, child).Scan(&oldPath, &newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldPath != "/Source/Renamed" || newPath != "/Destination/Renamed" {
+		t.Fatalf("paths %q %q", oldPath, newPath)
+	}
+	// Deny audit writes to prove mutation and audit failure roll back together.
+	if _, err = conn.Exec(ctx, "REVOKE INSERT ON audit_events FROM ftp_master_app"); err != nil {
+		t.Fatal(err)
+	}
+	call(admin, "POST", path+"/rename", map[string]any{"name": "Must roll back"}, 500)
+	var actual struct {
+		Name string `json:"name"`
+	}
+	decode(t, call(admin, "GET", path, nil, 200), &actual)
+	if actual.Name != "Renamed" {
+		t.Fatalf("audit failure committed rename: %s", actual.Name)
+	}
+}
