@@ -743,6 +743,8 @@ export interface components {
             inherited: boolean;
         };
         TreeGrantInput: {
+            /** @description Create a Creator Grant; requires Grant on the parent directory and a User principal with all Rights. */
+            creator?: boolean;
             /** @enum {string} */
             principalKind: "user" | "organization" | "user_group";
             /** Format: int64 */

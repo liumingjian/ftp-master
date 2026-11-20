@@ -78,7 +78,7 @@ func (s *Server) applyGrantDraft(ctx context.Context, q *sqlcdb.Queries, snap *t
 		for _, g := range snap.Grants {
 			if g.ID == removeID && g.NodeID == id {
 				found = true
-				if g.Creator {
+				if g.Creator && !parentGrant(snap, id) {
 					return nil, membershipFailure{403, "Creator Grant requires directory administration"}
 				}
 			}

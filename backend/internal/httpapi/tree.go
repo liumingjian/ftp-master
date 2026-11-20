@@ -173,6 +173,11 @@ func (s *Server) DeleteTreeGrant(ctx context.Context, r api.DeleteTreeGrantReque
 		if err := treeAccess(snap, r.Id, permission.GrantRight); err != nil {
 			return nil, err
 		}
+		for _, g := range snap.Grants {
+			if g.ID == r.GrantId && g.NodeID == r.Id && g.Creator && !parentGrant(snap, r.Id) {
+				return nil, membershipFailure{403, "Creator Grant requires directory administration"}
+			}
+		}
 		n, e := q.DeleteGrant(ctx, sqlcdb.DeleteGrantParams{ID: r.GrantId, NodeID: r.Id})
 		if e == nil && n == 0 {
 			return nil, membershipFailure{404, "Grant not found"}
@@ -232,6 +237,21 @@ func createGrant(ctx context.Context, q *sqlcdb.Queries, snap *tree.Snapshot, id
 	if !exists {
 		return nil, membershipFailure{400, "principal not found"}
 	}
+	creator := body.Creator != nil && *body.Creator
+	node, _ := snap.Node(id)
+	if creator {
+		if !node.IsFile || kind != "user" || permission.Rights(body.Rights).Coherent() != permission.All {
+			return nil, membershipFailure{400, "Creator Grant requires a file, User and all Rights"}
+		}
+		if !parentGrant(snap, id) {
+			return nil, membershipFailure{403, "Creator Grant requires directory administration"}
+		}
+	}
+	if node.IsFile && !parentGrant(snap, id) {
+		if err := checkSharingAudience(ctx, q, snap, node.ParentID.Int64, kind, body.PrincipalId); err != nil {
+			return nil, err
+		}
+	}
 	if !snap.User.Administrator {
 		allowed := snap.Permission(id).Rights
 		node, _ := snap.Node(id)
@@ -250,11 +270,10 @@ func createGrant(ctx context.Context, q *sqlcdb.Queries, snap *tree.Snapshot, id
 			return nil, membershipFailure{403, "Grant exceeds delegated Rights or Scope"}
 		}
 	}
-	node, _ := snap.Node(id)
 	if node.IsFile {
 		scope = "subtree"
 	}
-	g, e := q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: id, PrincipalKind: kind, PrincipalID: body.PrincipalId, Rights: int16(permission.Rights(body.Rights).Coherent()), Scope: scope})
+	g, e := q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: id, PrincipalKind: kind, PrincipalID: body.PrincipalId, Rights: int16(permission.Rights(body.Rights).Coherent()), Scope: scope, Creator: creator})
 	return grantResponse(g), e
 }
 
