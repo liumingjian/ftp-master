@@ -116,7 +116,7 @@ export function AuditPanel() {
     }
   }
   return (
-    <section aria-label="审计记录" className="panel">
+    <section aria-label="审计记录" className="audit-panel">
       <h2>审计记录</h2>
       <form
         onSubmit={(e) => {
