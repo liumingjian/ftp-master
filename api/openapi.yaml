@@ -107,6 +107,38 @@ paths:
             text/csv:
               schema: {type: string}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /upload-batches:
+    post:
+      operationId: initiateUploadBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parentId, name, files]
+              properties:
+                parentId: {type: integer, format: int64}
+                name: {type: string}
+                files:
+                  type: array
+                  minItems: 1
+                  maxItems: 10000
+                  items:
+                    type: object
+                    required: [path, size]
+                    properties:
+                      path: {type: string}
+                      size: {type: integer, format: int64}
+      responses:
+        '201':
+          description: Sessions in the same order as the input manifest. Publication is atomic.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/UploadSession'}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /uploads:
     post:
       operationId: initiateUpload
@@ -125,6 +157,21 @@ paths:
   /uploads/{id}/parts:
     parameters:
       - {in: path, name: id, required: true, schema: {type: string}}
+    get:
+      operationId: listUploadParts
+      responses:
+        '200':
+          description: Authoritative stored multipart part numbers, read from object storage.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [number]
+                  properties:
+                    number: {type: integer}
+        default: {$ref: '#/components/responses/Unauthorized'}
     post:
       operationId: issueUploadParts
       requestBody:

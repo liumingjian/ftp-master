@@ -140,7 +140,7 @@ func (q *Queries) ListGrants(ctx context.Context) ([]Grant, error) {
 }
 
 const listTreeNodes = `-- name: ListTreeNodes :many
-SELECT id, parent_id, name, is_file, deleted_at FROM tree_nodes WHERE deleted_at IS NULL ORDER BY id
+SELECT id, parent_id, name, is_file, deleted_at FROM tree_nodes WHERE deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM upload_batch_nodes b WHERE b.node_id=tree_nodes.id) ORDER BY id
 `
 
 func (q *Queries) ListTreeNodes(ctx context.Context) ([]TreeNode, error) {

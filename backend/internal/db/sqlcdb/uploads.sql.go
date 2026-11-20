@@ -92,7 +92,7 @@ func (q *Queries) GetUploadPolicy(ctx context.Context) ([]string, error) {
 }
 
 const getUploadSessionForUpdate = `-- name: GetUploadSessionForUpdate :one
-SELECT id, owner_id, parent_id, name, size, object_key, storage_upload_id, part_size, part_count, state, file_id, version_id, created_at, collision FROM upload_sessions WHERE id=$1 FOR UPDATE
+SELECT id, owner_id, parent_id, name, size, object_key, storage_upload_id, part_size, part_count, state, file_id, version_id, created_at, collision, batch_id, relative_path FROM upload_sessions WHERE id=$1 FOR UPDATE
 `
 
 func (q *Queries) GetUploadSessionForUpdate(ctx context.Context, id string) (UploadSession, error) {
@@ -113,6 +113,8 @@ func (q *Queries) GetUploadSessionForUpdate(ctx context.Context, id string) (Upl
 		&i.VersionID,
 		&i.CreatedAt,
 		&i.Collision,
+		&i.BatchID,
+		&i.RelativePath,
 	)
 	return i, err
 }

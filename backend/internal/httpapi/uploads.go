@@ -245,10 +245,14 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	if err = tx.QueryRow(ctx, "SELECT collision FROM upload_sessions WHERE id=$1", u.ID).Scan(&collision); err != nil {
 		return nil, err
 	}
+	var batchID, relativePath string
+	if err = tx.QueryRow(ctx, "SELECT coalesce(batch_id,''),relative_path FROM upload_sessions WHERE id=$1", u.ID).Scan(&batchID, &relativePath); err != nil {
+		return nil, err
+	}
 	var existing *sqlcdb.TreeNode
 	for i := range snap.Nodes {
 		n := &snap.Nodes[i]
-		if n.ParentID.Int64 == u.Parent && n.Name == u.Name {
+		if batchID == "" && n.ParentID.Int64 == u.Parent && n.Name == u.Name {
 			existing = n
 			break
 		}
@@ -339,6 +343,37 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	if info.Size != u.Size || info.UserMetadata["Upload-Intent"] != u.ID && info.UserMetadata["upload-intent"] != u.ID {
 		return membershipFailure{409, "object integrity mismatch"}, nil
 	}
+	uploadPath := snap.Path(u.Parent) + "/" + u.Name
+	if batchID != "" {
+		var rootName string
+		if err = tx.QueryRow(ctx, "SELECT n.name FROM upload_batches b JOIN tree_nodes n ON n.id=b.root_id WHERE b.id=$1", batchID).Scan(&rootName); err != nil {
+			return nil, err
+		}
+		uploadPath = snap.Path(u.Parent) + "/" + rootName + "/" + relativePath
+		var parent int64
+		if err = tx.QueryRow(ctx, "SELECT root_id FROM upload_batches WHERE id=$1", batchID).Scan(&parent); err != nil {
+			return nil, err
+		}
+		segments := strings.Split(relativePath, "/")
+		for _, segment := range segments[:len(segments)-1] {
+			var next int64
+			err = tx.QueryRow(ctx, "SELECT id FROM tree_nodes WHERE parent_id=$1 AND name=$2 AND NOT is_file AND deleted_at IS NULL", parent, segment).Scan(&next)
+			if errors.Is(err, pgx.ErrNoRows) {
+				n, e := sqlcdb.New(tx).CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&parent), Name: segment, IsFile: false})
+				if e != nil {
+					return nil, e
+				}
+				next = n.ID
+				if _, e = tx.Exec(ctx, "INSERT INTO upload_batch_nodes VALUES($1,$2)", next, batchID); e != nil {
+					return nil, e
+				}
+			} else if err != nil {
+				return nil, err
+			}
+			parent = next
+		}
+		u.Parent = parent
+	}
 	q := sqlcdb.New(tx)
 	var node sqlcdb.TreeNode
 	if overwrite {
@@ -346,6 +381,11 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	} else {
 		node, err = q.CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&u.Parent), Name: u.Name, IsFile: true})
 		if err != nil {
+			return nil, err
+		}
+	}
+	if batchID != "" {
+		if _, err = tx.Exec(ctx, "INSERT INTO upload_batch_nodes VALUES($1,$2)", node.ID, batchID); err != nil {
 			return nil, err
 		}
 	}
@@ -361,13 +401,27 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 		}
 	}
 	infoReq := requestFrom(ctx)
-	err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: u.Owner, Username: infoReq.session.User.Username, SourceIP: infoReq.sourceIP, Action: "upload", Outcome: audit.OutcomeSuccess, ItemID: node.ID, ItemPath: snap.Path(u.Parent) + "/" + u.Name, Detail: map[string]any{"versionId": version, "size": u.Size, "newVersion": overwrite}})
+	err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: u.Owner, Username: infoReq.session.User.Username, SourceIP: infoReq.sourceIP, Action: "upload", Outcome: audit.OutcomeSuccess, ItemID: node.ID, ItemPath: uploadPath, Detail: map[string]any{"versionId": version, "size": u.Size, "newVersion": overwrite}})
 	if err != nil {
 		return nil, err
 	}
 	err = q.PublishUploadReceipt(ctx, sqlcdb.PublishUploadReceiptParams{ID: u.ID, FileID: pgtype.Int8{Int64: node.ID, Valid: true}, VersionID: pgtype.Int8{Int64: version, Valid: true}})
 	if err != nil {
 		return nil, err
+	}
+	if batchID != "" {
+		var ready bool
+		if err = tx.QueryRow(ctx, "SELECT count(*)=b.expected AND bool_and(s.state='complete') FROM upload_batches b JOIN upload_sessions s ON s.batch_id=b.id WHERE b.id=$1 GROUP BY b.expected", batchID).Scan(&ready); err != nil {
+			return nil, err
+		}
+		if ready {
+			if _, err = tx.Exec(ctx, "INSERT INTO grants(node_id,principal_kind,principal_id,rights,scope,creator) SELECT root_id,'user',owner_id,63,'subtree',true FROM upload_batches WHERE id=$1", batchID); err != nil {
+				return nil, err
+			}
+			if _, err = tx.Exec(ctx, "DELETE FROM upload_batch_nodes WHERE batch_id=$1", batchID); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
@@ -387,5 +441,55 @@ func (e membershipFailure) VisitGetUploadPolicyResponse(w http.ResponseWriter) e
 	return e.write(w)
 }
 func (e membershipFailure) VisitSetUploadPolicyResponse(w http.ResponseWriter) error {
+	return e.write(w)
+}
+
+// ListUploadParts consults storage on every resume: browser progress is advisory.
+func (s *Server) ListUploadParts(ctx context.Context, r api.ListUploadPartsRequestObject) (api.ListUploadPartsResponseObject, error) {
+	tx, err := s.membership.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	u, _, err := s.loadUpload(ctx, tx, r.Id)
+	if err != nil {
+		f, e := membershipError(err)
+		return f, e
+	}
+	out := api.ListUploadParts200JSONResponse{}
+	if u.State == "complete" {
+		for n := 1; n <= u.Count; n++ {
+			out = append(out, struct {
+				Number int `json:"number"`
+			}{n})
+		}
+		return out, nil
+	}
+	core := minio.Core{Client: s.transfer.Client}
+	marker := 0
+	for {
+		listed, e := core.ListObjectParts(ctx, s.transfer.Bucket, u.Key, u.StorageID, marker, 1000)
+		if e != nil {
+			return nil, e
+		}
+		for _, p := range listed.ObjectParts {
+			expected := u.PartSize
+			if p.PartNumber == u.Count {
+				expected = u.Size - int64(u.Count-1)*u.PartSize
+			}
+			if p.PartNumber >= 1 && p.PartNumber <= u.Count && p.Size == expected {
+				out = append(out, struct {
+					Number int `json:"number"`
+				}{p.PartNumber})
+			}
+		}
+		if !listed.IsTruncated {
+			break
+		}
+		marker = listed.NextPartNumberMarker
+	}
+	return out, nil
+}
+func (e membershipFailure) VisitListUploadPartsResponse(w http.ResponseWriter) error {
 	return e.write(w)
 }

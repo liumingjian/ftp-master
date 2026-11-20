@@ -1,3 +1,4 @@
+import {FolderUpload} from './FolderUpload';
 import { UploadRow, UploadPolicyEditor } from "./UploadRow";
 import { useEffect, useState } from "react";
 import { GrantsPanel, PermissionInspection } from "./GrantsPanel";
@@ -16,6 +17,10 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
  const [destinationPath, setDestinationPath] = useState<Node[]>([]);
  const [revision, setRevision] = useState(0);
   const current = path.at(-1);
+  const [uploadPaths, setUploadPaths] = useState<Node[][]>([]);
+  useEffect(() => {
+    if(current && (current.rights & 4)) setUploadPaths(previous => previous.some(p => p.at(-1)?.id === current.id) ? previous : [...previous,path]);
+  }, [current?.id]);
   useEffect(() => {
     let live = true;
     api
@@ -82,7 +87,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
           {current && !(current.rights & 1) && (
             <p>此目录内容不可浏览；仅显示可访问的路径。</p>
           )}
-          {current && (current.rights & 4) !== 0 && <UploadRow key={current.id} parentId={current.id} completed={() => setRevision(v => v + 1)} />}
+          {uploadPaths.map(target => <div key={target.at(-1)!.id} hidden={target.at(-1)!.id !== current?.id}><UploadRow parentId={target.at(-1)!.id} otherFolder={target.at(-1)!.id !== current?.id} navigate={() => setPath(target)} completed={() => setRevision(v => v + 1)} /><FolderUpload otherFolder={target.at(-1)!.id !== current?.id} navigate={() => setPath(target)} parentId={target.at(-1)!.id} completed={() => setRevision(v => v + 1)} /></div>)}
           {administrator && <UploadPolicyEditor />}
           <ul>
             {nodes.map((n) => (
