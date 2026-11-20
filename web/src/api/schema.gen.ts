@@ -186,6 +186,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Atomically import active Users from UTF-8 CSV (at most 1000 data records and 2 MiB). */
+        post: operations["importUsers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -940,6 +957,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ManagedUser"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    importUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    csv: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Every User was created and audited. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        created: number;
+                    };
+                };
+            };
+            /** @description No Users created. Row is the one-based CSV record number including the header. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        errors: {
+                            row: number;
+                            message: string;
+                        }[];
+                    };
                 };
             };
             default: components["responses"]["Unauthorized"];
