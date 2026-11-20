@@ -708,6 +708,47 @@ paths:
                   $ref: '#/components/schemas/ManagedUser'
         default:
           $ref: '#/components/responses/Unauthorized'
+  /users/import:
+    post:
+      operationId: importUsers
+      description: Atomically import active Users from UTF-8 CSV (at most 1000 data records and 2 MiB).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csv]
+              properties:
+                csv: {type: string, maxLength: 2097152}
+      responses:
+        '201':
+          description: Every User was created and audited.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created]
+                properties:
+                  created: {type: integer}
+        '422':
+          description: No Users created. Row is the one-based CSV record number including the header.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [errors]
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      required: [row, message]
+                      properties:
+                        row: {type: integer}
+                        message: {type: string}
+        default:
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     session:
