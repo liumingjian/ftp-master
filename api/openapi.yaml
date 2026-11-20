@@ -68,6 +68,40 @@ paths:
             application/octet-stream:
               schema: {type: string, format: binary}
         default: {$ref: "#/components/responses/Unauthorized"}
+  /office/permits/{permitId}/save:
+    parameters:
+      - {name: permitId, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: saveOffice
+      description: Writer multipart filedata, md5sum and filename; ET multipart single file (empty filename or form value).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                filedata: {type: string, format: binary}
+                md5sum: {type: string}
+                filename: {type: string}
+                file: {type: string, format: binary}
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema: &officeReceipt
+                type: object
+                required: [Success, Message, Data]
+                properties:
+                  Success: {type: boolean}
+                  Message: {type: string}
+                  Data: {type: object, nullable: true, additionalProperties: true}
+        default:
+          description: Failed; file unchanged.
+          content:
+            application/json:
+              schema: *officeReceipt
   /office/permits/{permitId}/delivery:
     parameters:
       - {name: permitId, in: path, required: true, schema: {type: string}}
@@ -1198,6 +1232,7 @@ components:
       type: object
       required: [principalKind, principalId, rights, scope]
       properties:
+        creator: {type: boolean, description: 'Create a Creator Grant; requires Grant on the parent directory and a User principal with all Rights.'}
         principalKind: {type: string, enum: [user, organization, user_group]}
         principalId: {type: integer, format: int64}
         rights: {type: integer, minimum: 1, maximum: 63}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"strings"
 
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/health"
@@ -63,7 +64,32 @@ func NewHandler(checker *health.Checker, identityService *identity.Service, opti
 				writeError(w, http.StatusInternalServerError, "internal", "internal error")
 			},
 		})
-	return api.HandlerWithOptions(strict, api.StdHTTPServerOptions{BaseURL: BasePath}), nil
+	handler := api.HandlerWithOptions(strict, api.StdHTTPServerOptions{BaseURL: BasePath})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasPrefix(r.URL.Path, BasePath+"/office/permits/") && strings.HasSuffix(r.URL.Path, "/save") {
+			r.Body = http.MaxBytesReader(w, r.Body, 26*1024*1024)
+			recorder := &officeResponseBuffer{header: make(http.Header), Code: 200}
+			handler.ServeHTTP(recorder, r)
+			if recorder.Code >= 400 {
+				var receipt map[string]any
+				if json.Unmarshal(recorder.Body.Bytes(), &receipt) != nil || receipt["Success"] != false {
+					message := "save failed"
+					if m, ok := receipt["message"].(string); ok {
+						message = m
+					}
+					writeOfficeReceipt(w, recorder.Code, message)
+					return
+				}
+			}
+			for k, v := range recorder.Header() {
+				w.Header()[k] = v
+			}
+			w.WriteHeader(recorder.Code)
+			_, _ = w.Write(recorder.Body.Bytes())
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}), nil
 }
 
 // GetHealth reports whether the backing stores are reachable. Failure
