@@ -20,6 +20,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["initiateUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/uploads/{id}/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["issueUploadParts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/uploads/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/upload-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getUploadPolicy"];
+        put: operations["setUploadPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree": {
         parameters: {
             query?: never;
@@ -86,6 +154,24 @@ export interface paths {
         put?: never;
         /** @description Requires Delete on the source parent and Upload on the destination. Null destination means root and requires Administrator. Returns 409 for name conflicts or cycles. */
         post: operations["moveTreeNode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/grant-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["getGrantDraft"];
+        put?: never;
+        post: operations["saveGrantDraft"];
         delete?: never;
         options?: never;
         head?: never;
@@ -390,6 +476,13 @@ export interface components {
             rights: number;
             traversable: boolean;
         };
+        SourcedGrant: {
+            grant: components["schemas"]["TreeGrant"];
+            /** Format: int64 */
+            sourceId: number;
+            sourcePath: string;
+            inherited: boolean;
+        };
         TreeGrantInput: {
             /** @enum {string} */
             principalKind: "user" | "organization" | "user_group";
@@ -500,6 +593,35 @@ export interface components {
             displayName: string;
             organizationHint: string;
         };
+        UploadInput: {
+            /** Format: int64 */
+            parentId: number;
+            name: string;
+            /** Format: int64 */
+            size: number;
+        };
+        UploadSession: {
+            id: string;
+            /** Format: int64 */
+            partSize: number;
+            partCount: number;
+        };
+        PartInput: {
+            numbers: number[];
+        };
+        PartURLs: {
+            number: number;
+            url: string;
+        }[];
+        UploadReceipt: {
+            /** Format: int64 */
+            fileId: number;
+            /** Format: int64 */
+            versionId: number;
+        };
+        UploadPolicy: {
+            blockedExtensions: string[];
+        };
     };
     responses: {
         /** @description There is no valid session for an active User. */
@@ -586,6 +708,127 @@ export interface operations {
                         }[];
                     };
                     "text/csv": string;
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    initiateUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadInput"];
+            };
+        };
+        responses: {
+            /** @description Successful transfer operation. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadSession"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    issueUploadParts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartInput"];
+            };
+        };
+        responses: {
+            /** @description Successful transfer operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartURLs"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    completeUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful transfer operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadReceipt"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getUploadPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful transfer operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadPolicy"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    setUploadPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadPolicy"];
+            };
+        };
+        responses: {
+            /** @description Successful transfer operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadPolicy"];
                 };
             };
             default: components["responses"]["Unauthorized"];
@@ -721,6 +964,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TreeNode"];
                 };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getGrantDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Direct and inherited Grants with their sources */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourcedGrant"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    saveGrantDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    add: components["schemas"]["TreeGrantInput"][];
+                    remove: number[];
+                };
+            };
+        };
+        responses: {
+            /** @description Draft committed atomically */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Unauthorized"];
         };

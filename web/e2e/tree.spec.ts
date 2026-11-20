@@ -44,9 +44,14 @@ test("Administrator grants a directory and another User can browse it", async ({
   await panel.getByLabel("目录名称").fill(name);
   await panel.getByRole("button", { name: "创建目录" }).click();
   await panel.getByRole("button", { name, exact: true }).click();
-  await panel.getByLabel("主体 ID").fill(userId);
-  await panel.getByRole("button", { name: "保存授权" }).click();
-  await expect(panel.getByRole("status")).toHaveText("授权已保存");
+  await panel.getByRole("button", { name: "管理当前权限" }).click();
+  const permissions = page.getByRole("region", {name: "权限管理"});
+  await permissions.getByLabel("主体 ID").fill(userId);
+  await permissions.getByLabel("修改", {exact:true}).check();
+  await permissions.getByRole("button", {name:"添加到草稿"}).click();
+  await expect(permissions.getByRole("cell", {name:"11（待保存）"})).toBeVisible();
+  await permissions.getByRole("button", { name: "保存全部授权" }).click();
+  await expect(permissions.getByRole("status")).toHaveText("授权已保存");
   const context = await browser.newContext();
   const reader = await context.newPage();
   await reader.goto("/sign-in");

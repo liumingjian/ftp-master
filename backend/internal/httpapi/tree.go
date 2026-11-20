@@ -160,39 +160,7 @@ func (s *Server) ListTreeGrants(ctx context.Context, r api.ListTreeGrantsRequest
 }
 func (s *Server) CreateTreeGrant(ctx context.Context, r api.CreateTreeGrantRequestObject) (api.CreateTreeGrantResponseObject, error) {
 	out, err := s.changeTree(ctx, "grant_change", r.Id, func(q *sqlcdb.Queries, snap *tree.Snapshot) (any, error) {
-		if err := treeAccess(snap, r.Id, permission.GrantRight); err != nil {
-			return nil, err
-		}
-		if r.Body == nil || r.Body.Rights < 1 || r.Body.Rights > 63 || r.Body.PrincipalId <= 0 {
-			return nil, membershipFailure{400, "invalid Grant"}
-		}
-		kind := string(r.Body.PrincipalKind)
-		scope := string(r.Body.Scope)
-		if (kind != "user" && kind != "organization" && kind != "user_group") || (scope != "subtree" && scope != "this_level_only") {
-			return nil, membershipFailure{400, "invalid principal or Scope"}
-		}
-		exists := false
-		switch kind {
-		case "user":
-			_, e := q.GetUser(ctx, r.Body.PrincipalId)
-			exists = e == nil
-		case "organization":
-			rows, e := q.ListOrganizations(ctx)
-			if e != nil {
-				return nil, e
-			}
-			for _, v := range rows {
-				exists = exists || v.ID == r.Body.PrincipalId
-			}
-		case "user_group":
-			_, e := q.GetUserGroup(ctx, r.Body.PrincipalId)
-			exists = e == nil
-		}
-		if !exists {
-			return nil, membershipFailure{400, "principal not found"}
-		}
-		g, e := q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: r.Id, PrincipalKind: kind, PrincipalID: r.Body.PrincipalId, Rights: int16(permission.Rights(r.Body.Rights).Coherent()), Scope: scope})
-		return grantResponse(g), e
+		return createGrant(ctx, q, snap, r.Id, r.Body)
 	})
 	if err != nil {
 		f, e := membershipError(err)
@@ -230,6 +198,64 @@ func (e membershipFailure) VisitCreateTreeGrantResponse(w http.ResponseWriter) e
 }
 func (e membershipFailure) VisitDeleteTreeGrantResponse(w http.ResponseWriter) error {
 	return e.write(w)
+}
+
+func createGrant(ctx context.Context, q *sqlcdb.Queries, snap *tree.Snapshot, id int64, body *api.TreeGrantInput) (any, error) {
+	if err := treeAccess(snap, id, permission.GrantRight); err != nil {
+		return nil, err
+	}
+	if body == nil || body.Rights < 1 || body.Rights > 63 || body.PrincipalId <= 0 {
+		return nil, membershipFailure{400, "invalid Grant"}
+	}
+	kind := string(body.PrincipalKind)
+	scope := string(body.Scope)
+	if (kind != "user" && kind != "organization" && kind != "user_group") || (scope != "subtree" && scope != "this_level_only") {
+		return nil, membershipFailure{400, "invalid principal or Scope"}
+	}
+	exists := false
+	switch kind {
+	case "user":
+		_, e := q.GetUser(ctx, body.PrincipalId)
+		exists = e == nil
+	case "organization":
+		rows, e := q.ListOrganizations(ctx)
+		if e != nil {
+			return nil, e
+		}
+		for _, v := range rows {
+			exists = exists || v.ID == body.PrincipalId
+		}
+	case "user_group":
+		_, e := q.GetUserGroup(ctx, body.PrincipalId)
+		exists = e == nil
+	}
+	if !exists {
+		return nil, membershipFailure{400, "principal not found"}
+	}
+	if !snap.User.Administrator {
+		allowed := snap.Permission(id).Rights
+		node, _ := snap.Node(id)
+		if !node.IsFile && scope == "subtree" {
+			allowed = 0
+			for _, source := range GrantSources(snap, id) {
+				g := source.Grant
+				if string(g.Scope) != "subtree" {
+					continue
+				}
+				resolved := permission.Evaluate(snap.User, []permission.Node{{Grants: []permission.Grant{{Principal: permission.Principal{Kind: permission.PrincipalKind(g.PrincipalKind), ID: g.PrincipalId}, Rights: permission.Rights(g.Rights), Scope: permission.Subtree}}}}, nil)
+				allowed |= resolved.Rights
+			}
+		}
+		if !allowed.Has(permission.Rights(body.Rights).Coherent()) {
+			return nil, membershipFailure{403, "Grant exceeds delegated Rights or Scope"}
+		}
+	}
+	node, _ := snap.Node(id)
+	if node.IsFile {
+		scope = "subtree"
+	}
+	g, e := q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: id, PrincipalKind: kind, PrincipalID: body.PrincipalId, Rights: int16(permission.Rights(body.Rights).Coherent()), Scope: scope})
+	return grantResponse(g), e
 }
 
 func validTreeName(name string) bool {
