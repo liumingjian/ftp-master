@@ -104,6 +104,31 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/OfficeEdit'}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/versions:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: listFileVersions
+      responses:
+        '200':
+          description: All retained File Versions, newest first. Requires Browse.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/FileVersion'}}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/versions/{versionId}/restore:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+      - {in: path, name: versionId, required: true, schema: {type: integer, format: int64, minimum: 1}}
+    post:
+      operationId: restoreFileVersion
+      responses:
+        '201':
+          description: Appended a new File Version sharing the immutable content. Requires Modify.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadReceipt'}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /tree/{id}/download:
     parameters:
       - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
@@ -1392,6 +1417,16 @@ components:
         properties:
           number: {type: integer}
           url: {type: string}
+    FileVersion:
+      type: object
+      required: [id, size, format, createdBy, username, createdAt]
+      properties:
+        id: {type: integer, format: int64}
+        size: {type: integer, format: int64}
+        format: {type: string}
+        createdBy: {type: integer, format: int64}
+        username: {type: string}
+        createdAt: {type: string, format: date-time}
     UploadReceipt:
       type: object
       required: [fileId, versionId]
