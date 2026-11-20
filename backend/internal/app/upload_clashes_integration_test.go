@@ -29,6 +29,11 @@ func TestUploadClashesPreserveVersionsAndKeepBoth(t *testing.T) {
 		}
 		return data
 	}
+	conn, err := pgx.Connect(context.Background(), stores.config.MigrationDatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(context.Background())
 	var dir struct {
 		ID int64 `json:"id"`
 	}
@@ -62,7 +67,18 @@ func TestUploadClashesPreserveVersionsAndKeepBoth(t *testing.T) {
 	decode(t, call("POST", upload("first"), nil, 200), &original)
 	path := upload("second")
 	call("POST", path, nil, 409)
-	receipt := call("POST", path+"?collision=new_version", nil, 200)
+	_, err = conn.Exec(context.Background(), `CREATE FUNCTION refuse_clash_version() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected metadata failure'; END $$; CREATE TRIGGER refuse_clash_version BEFORE INSERT ON file_versions FOR EACH ROW EXECUTE FUNCTION refuse_clash_version()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call("POST", path+"?collision=new_version", nil, 500)
+	_, err = conn.Exec(context.Background(), "DROP TRIGGER refuse_clash_version ON file_versions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The selection and completed object survive failed metadata publication.
+	receipt := call("POST", path, nil, 200)
+
 	decode(t, receipt, &replacement)
 	if original.FileID != replacement.FileID || original.VersionID == replacement.VersionID {
 		t.Fatal("overwrite must append a version", original, replacement)
@@ -104,11 +120,6 @@ func TestUploadClashesPreserveVersionsAndKeepBoth(t *testing.T) {
 	if !contents["first"] || !contents["second"] || !contents["third"] {
 		t.Fatal(contents)
 	}
-	conn, err := pgx.Connect(context.Background(), stores.config.MigrationDatabaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close(context.Background())
 	var userID int64
 	err = conn.QueryRow(context.Background(), `INSERT INTO users(username,display_name,password_hash,is_administrator,status,created_at) SELECT 'dropper','Dropper',password_hash,false,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`).Scan(&userID)
 	if err != nil {
