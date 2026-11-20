@@ -113,6 +113,18 @@ move picker navigates visible directories and enables destinations with Upload.
 
 ## Single-file downloads
 
+`GET /api/tree/zip?ids=ID,ID` expands visible selected directories, includes only
+files with current Download, and deduplicates overlapping selections. The latest
+immutable versions stream through the application into a ZIP; full tree paths
+are preserved with unsafe ZIP name components sanitized. Authorized content
+above 10,000,000,000 bytes returns 413 before streaming. `preflight=true` performs
+the same metadata check and returns 204 without an Audit Event. The native GET
+rechecks independently. The browser only displays the size-limit refusal.
+Packing records one `zip_download` event with `detail.files: [{id,path}]` using
+historical unsanitized tree paths. A failed storage stream aborts the response;
+it never appends a JSON error to a partial archive. ZIP generation uses bounded
+buffers and retains only entry metadata in memory.
+
 `GET /api/tree/{id}/download` authorizes current Download and redirects (302)
 to a separately signed public MinIO GET capability, valid for 15 minutes.
 Optional `versionId` selects that file's immutable version; omit for latest.

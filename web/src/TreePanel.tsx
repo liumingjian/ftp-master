@@ -1,4 +1,5 @@
 import { BrowseTools, CopyItemLink, PreviewButton } from "./BrowseTools";
+import { ZipDownload } from "./ZipDownload";
 import { VersionsPanel } from "./VersionsPanel";
 import {FolderUpload} from './FolderUpload';
 import { UploadRow, UploadPolicyEditor } from "./UploadRow";
@@ -114,6 +115,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
           )}
           {uploadPaths.map(target => <div key={target.at(-1)!.id} hidden={target.at(-1)!.id !== current?.id}><UploadRow parentId={target.at(-1)!.id} otherFolder={target.at(-1)!.id !== current?.id} navigate={() => setPath(target)} completed={() => setRevision(v => v + 1)} /><FolderUpload otherFolder={target.at(-1)!.id !== current?.id} navigate={() => setPath(target)} parentId={target.at(-1)!.id} completed={() => setRevision(v => v + 1)} /></div>)}
           {administrator && <UploadPolicyEditor />}
+          <ZipDownload nodes={nodes}/>
           <ul>
             {nodes.map((n) => (
               <li key={n.id}>
