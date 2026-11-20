@@ -12,7 +12,11 @@ services:
       POSTGRES_USER: ftpmaster
       POSTGRES_PASSWORD: ftpmaster
     ports: ["${FTP_MASTER_POSTGRES_PORT:-5432}:5432"]
-    volumes: [postgres:/var/lib/postgresql/data]
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      # Runs only on an empty data directory; after pulling this, an existing
+      # stack needs `docker compose -f deploy/local/docker-compose.yml down -v`.
+      - ./postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ftpmaster -d ftpmaster"]
       interval: 2s
@@ -47,7 +51,14 @@ services:
       context: ../..
       dockerfile: backend/Dockerfile
     environment:
-      DATABASE_URL: postgres://ftpmaster:ftpmaster@postgres:5432/ftpmaster?sslmode=disable
+      DATABASE_URL: postgres://ftp_master_app:ftp_master_app@postgres:5432/ftpmaster?sslmode=disable
+      MIGRATION_DATABASE_URL: postgres://ftpmaster:ftpmaster@postgres:5432/ftpmaster?sslmode=disable
+      # Local stack only: the first Administrator, created while none exists.
+      INITIAL_ADMINISTRATOR_USERNAME: admin
+      INITIAL_ADMINISTRATOR_PASSWORD: admin-local-only
+      # The web container's Nginx; its X-Forwarded-For names the client.
+      # Requests to the app's own published port are recorded by peer address.
+      TRUSTED_PROXIES: 172.30.88.80
       REDIS_ADDR: redis:6379
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ftpmaster
@@ -70,8 +81,17 @@ services:
       context: ../..
       dockerfile: web/Dockerfile
     ports: ["${FTP_MASTER_WEB_PORT:-8088}:80"]
+    networks:
+      default:
+        ipv4_address: 172.30.88.80
     depends_on:
       app: { condition: service_healthy }
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.88.0/24
 
 volumes:
   postgres:

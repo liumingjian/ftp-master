@@ -8,6 +8,7 @@
     "check:api": "node scripts/check-api-types.mjs",
     "check:clock": "node scripts/check-clock.mjs",
     "typecheck": "tsc -b && pnpm check:clock",
+    "test:unit": "node --test 'src/**/*.test.ts'",
     "build": "pnpm check:api && pnpm typecheck && vite build",
     "preview": "vite preview",
     "test:e2e": "playwright test"

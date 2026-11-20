@@ -4,16 +4,20 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/liumingjian/ftp-master/backend/internal/app"
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
+	"github.com/liumingjian/ftp-master/backend/internal/httpapi"
 )
 
 func main() {
@@ -24,11 +28,24 @@ func main() {
 }
 
 func run() error {
+	trustedProxies, err := prefixes(os.Getenv("TRUSTED_PROXIES"))
+	if err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	cfg := app.Config{
-		DatabaseURL:    env("DATABASE_URL", "postgres://ftpmaster:ftpmaster@localhost:5432/ftpmaster?sslmode=disable"),
+		DatabaseURL:          env("DATABASE_URL", "postgres://ftp_master_app:ftp_master_app@localhost:5432/ftpmaster?sslmode=disable"),
+		MigrationDatabaseURL: env("MIGRATION_DATABASE_URL", "postgres://ftpmaster:ftpmaster@localhost:5432/ftpmaster?sslmode=disable"),
+		InitialAdministrator: app.InitialAdministrator{
+			Username: os.Getenv("INITIAL_ADMINISTRATOR_USERNAME"),
+			Password: os.Getenv("INITIAL_ADMINISTRATOR_PASSWORD"),
+		},
+		HTTP: httpapi.Options{
+			TrustedProxies:        trustedProxies,
+			InsecureSessionCookie: envBool("INSECURE_SESSION_COOKIE"),
+		},
 		RedisAddr:      env("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:  os.Getenv("REDIS_PASSWORD"),
 		MinIOEndpoint:  env("MINIO_ENDPOINT", "localhost:9000"),
@@ -79,4 +96,29 @@ func env(key, fallback string) string {
 func envBool(key string) bool {
 	v, _ := strconv.ParseBool(os.Getenv(key))
 	return v
+}
+
+// prefixes parses a comma-separated list of addresses or CIDR prefixes.
+func prefixes(list string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, item := range strings.Split(list, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if !strings.Contains(item, "/") {
+			addr, err := netip.ParseAddr(item)
+			if err != nil {
+				return nil, fmt.Errorf("TRUSTED_PROXIES: %w", err)
+			}
+			out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+			continue
+		}
+		prefix, err := netip.ParsePrefix(item)
+		if err != nil {
+			return nil, fmt.Errorf("TRUSTED_PROXIES: %w", err)
+		}
+		out = append(out, prefix.Masked())
+	}
+	return out, nil
 }

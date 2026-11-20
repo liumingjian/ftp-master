@@ -59,3 +59,58 @@ body {
   color: #d1242f;
   font-weight: 600;
 }
+
+.shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shell-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sign-in {
+  display: flex;
+  justify-content: center;
+  padding-top: 15vh;
+}
+
+.sign-in-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 320px;
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+}
+
+.sign-in-form h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sign-in-form h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.sign-in-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #59636e;
+}
+
+.sign-in-form input {
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.sign-in-form p {
+  margin: 0;
+}

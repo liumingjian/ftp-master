@@ -7,11 +7,16 @@ info:
     and frontend client types are generated from this file (ADR 0004).
 servers:
   - url: /api
+# Every operation requires a signed-in, active User unless it opts out with
+# `security: []`. Only sign-in, Registration and health checks may opt out.
+security:
+  - session: []
 paths:
   /health:
     get:
       operationId: getHealth
       summary: Report whether the service and its backing stores are reachable.
+      security: []
       responses:
         "200":
           description: Every backing store is reachable.
@@ -25,8 +30,111 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+  /session:
+    get:
+      operationId: getSession
+      summary: Return the signed-in User of the current session.
+      responses:
+        "200":
+          description: The session is valid; its idle expiry is extended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: signIn
+      summary: Sign in with username and password, starting a session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignInRequest"
+      responses:
+        "200":
+          description: Signed in. The session cookie is set.
+          headers:
+            Set-Cookie:
+              description: The HttpOnly session cookie.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "401":
+          description: The username and password do not identify an active User.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: signOut
+      summary: Sign out, ending the current session immediately.
+      responses:
+        "204":
+          description: Signed out. The session cookie is cleared.
+          headers:
+            Set-Cookie:
+              description: Expires the session cookie.
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: ftp_master_session
+      description: >-
+        HttpOnly cookie set by signIn. A session ends after 2 hours without
+        activity; every authenticated request extends it.
+  responses:
+    Unauthorized:
+      description: There is no valid session for an active User.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable reason, e.g. unauthenticated, invalid_credentials.
+        message:
+          type: string
+    SignInRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 150
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    CurrentUser:
+      type: object
+      required: [id, username, displayName, isAdministrator]
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        displayName:
+          type: string
+        isAdministrator:
+          type: boolean
     Health:
       type: object
       required: [status, database, objectStorage, cache, checkedAt, uptimeSeconds]

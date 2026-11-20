@@ -13,6 +13,7 @@ import (
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/app"
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 )
 
 func TestHealthReadsSchemaVersionFromAFreshDatabase(t *testing.T) {
@@ -32,9 +33,9 @@ func TestHealthReadsSchemaVersionFromAFreshDatabase(t *testing.T) {
 	if !health.Database.Up || !health.ObjectStorage.Up || !health.Cache.Up {
 		t.Errorf("a store is reported down: %+v", health)
 	}
-	// Migrations ran forward from empty: the baseline migration is version 1.
-	if health.Database.SchemaVersion != 1 {
-		t.Errorf("SchemaVersion = %d, want 1", health.Database.SchemaVersion)
+	// Migrations ran forward from empty to the newest one.
+	if latest := latestMigration(t); health.Database.SchemaVersion != latest {
+		t.Errorf("SchemaVersion = %d, want %d", health.Database.SchemaVersion, latest)
 	}
 	if want := time.Date(2026, 11, 19, 9, 0, 42, 0, time.UTC); !health.CheckedAt.Equal(want) {
 		t.Errorf("CheckedAt = %v, want %v", health.CheckedAt, want)
@@ -72,9 +73,21 @@ func TestMigrationsAreSafeToRunOnEveryStartup(t *testing.T) {
 	second := startService(t, stores.config, clk)
 	status, health := getHealth(t, second)
 
-	if status != http.StatusOK || health.Database.SchemaVersion != 1 {
+	if status != http.StatusOK || health.Database.SchemaVersion != latestMigration(t) {
 		t.Fatalf("restarted service: status %d, body %+v", status, health)
 	}
+}
+
+func latestMigration(t *testing.T) int64 {
+	t.Helper()
+	latest, err := db.LatestVersion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest < 1 {
+		t.Fatalf("no migrations found")
+	}
+	return latest
 }
 
 func startService(t *testing.T, cfg app.Config, clk clock.Clock) *httptest.Server {

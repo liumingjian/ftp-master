@@ -46,6 +46,9 @@ jobs:
       - name: Build (fails if client types are stale against the contract)
         working-directory: web
         run: pnpm build
+      - name: Unit tests
+        working-directory: web
+        run: pnpm test:unit
 
   e2e:
     name: Playwright end-to-end

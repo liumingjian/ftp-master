@@ -37,10 +37,10 @@ build: check-generated
 
 test: test-unit test-integration test-e2e
 
-## test-unit: backend unit tests (fast, no Docker) and frontend typecheck
+## test-unit: backend unit tests (fast, no Docker), frontend typecheck and unit tests
 test-unit:
 	cd backend && go test ./...
-	cd web && pnpm typecheck
+	cd web && pnpm typecheck && pnpm test:unit
 
 ## test-integration: HTTP API against real PostgreSQL, MinIO and Redis (needs Docker)
 test-integration:

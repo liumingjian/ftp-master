@@ -7,11 +7,19 @@ package api
 
 import (
 	"bytes"
+	"compress/flate"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"path"
+	"strings"
 	"time"
+
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/oapi-codegen/runtime"
 )
 
 // Defines values for HealthStatus.
@@ -32,6 +40,14 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// CurrentUser defines model for CurrentUser.
+type CurrentUser struct {
+	DisplayName     string `json:"displayName"`
+	Id              int64  `json:"id"`
+	IsAdministrator bool   `json:"isAdministrator"`
+	Username        string `json:"username"`
+}
+
 // DatabaseHealth defines model for DatabaseHealth.
 type DatabaseHealth struct {
 	// SchemaVersion Latest migration version applied, as read from PostgreSQL; 0 when down.
@@ -42,6 +58,13 @@ type DatabaseHealth struct {
 // DependencyHealth Whether a backing store answered. Failure details are logged by the service, never returned, since this endpoint needs no sign-in.
 type DependencyHealth struct {
 	Up bool `json:"up"`
+}
+
+// Error defines model for Error.
+type Error struct {
+	// Code Stable machine-readable reason, e.g. unauthenticated, invalid_credentials.
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // Health defines model for Health.
@@ -64,11 +87,32 @@ type Health struct {
 // HealthStatus defines model for HealthStatus.
 type HealthStatus string
 
+// SignInRequest defines model for SignInRequest.
+type SignInRequest struct {
+	Password string `json:"password"`
+	Username string `json:"username"`
+}
+
+// Unauthorized defines model for Unauthorized.
+type Unauthorized = Error
+
+// SignInJSONRequestBody defines body for SignIn for application/json ContentType.
+type SignInJSONRequestBody = SignInRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// SignOut Sign out, ending the current session immediately.
+	// (DELETE /session)
+	SignOut(w http.ResponseWriter, r *http.Request)
+	// GetSession Return the signed-in User of the current session.
+	// (GET /session)
+	GetSession(w http.ResponseWriter, r *http.Request)
+	// SignIn Sign in with username and password, starting a session.
+	// (POST /session)
+	SignIn(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -85,6 +129,48 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SignOut operation middleware
+func (siw *ServerInterfaceWrapper) SignOut(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SignOut(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSession operation middleware
+func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SignIn operation middleware
+func (siw *ServerInterfaceWrapper) SignIn(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SignIn(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -215,9 +301,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/health", wrapper.GetHealth)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/session", wrapper.SignOut)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/session", wrapper.GetSession)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/session", wrapper.SignIn)
 
 	return m
 }
+
+type UnauthorizedJSONResponse Error
 
 type GetHealthRequestObject struct {
 }
@@ -254,11 +345,138 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	return err
 }
 
+type SignOutRequestObject struct {
+}
+
+type SignOutResponseObject interface {
+	VisitSignOutResponse(w http.ResponseWriter) error
+}
+
+type SignOut204ResponseHeaders struct {
+	SetCookie *string
+}
+
+type SignOut204Response struct {
+	Headers SignOut204ResponseHeaders
+}
+
+func (response SignOut204Response) VisitSignOutResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(204)
+	return nil
+}
+
+type SignOut401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SignOut401JSONResponse) VisitSignOutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionRequestObject struct {
+}
+
+type GetSessionResponseObject interface {
+	VisitGetSessionResponse(w http.ResponseWriter) error
+}
+
+type GetSession200JSONResponse CurrentUser
+
+func (response GetSession200JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSession401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetSession401JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SignInRequestObject struct {
+	Body *SignInJSONRequestBody
+}
+
+type SignInResponseObject interface {
+	VisitSignInResponse(w http.ResponseWriter) error
+}
+
+type SignIn200ResponseHeaders struct {
+	SetCookie *string
+}
+
+type SignIn200JSONResponse struct {
+	Body    CurrentUser
+	Headers SignIn200ResponseHeaders
+}
+
+func (response SignIn200JSONResponse) VisitSignInResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SignIn401JSONResponse Error
+
+func (response SignIn401JSONResponse) VisitSignInResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+	// SignOut Sign out, ending the current session immediately.
+	// (DELETE /session)
+	SignOut(ctx context.Context, request SignOutRequestObject) (SignOutResponseObject, error)
+	// GetSession Return the signed-in User of the current session.
+	// (GET /session)
+	GetSession(ctx context.Context, request GetSessionRequestObject) (GetSessionResponseObject, error)
+	// SignIn Sign in with username and password, starting a session.
+	// (POST /session)
+	SignIn(ctx context.Context, request SignInRequestObject) (SignInResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -322,4 +540,204 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	} else if response != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
 	}
+}
+
+// SignOut operation middleware
+func (sh *strictHandler) SignOut(w http.ResponseWriter, r *http.Request) {
+	var request SignOutRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SignOut(ctx, request.(SignOutRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SignOut")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SignOutResponseObject); ok {
+		if err := validResponse.VisitSignOutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSession operation middleware
+func (sh *strictHandler) GetSession(w http.ResponseWriter, r *http.Request) {
+	var request GetSessionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSession(ctx, request.(GetSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSessionResponseObject); ok {
+		if err := validResponse.VisitGetSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SignIn operation middleware
+func (sh *strictHandler) SignIn(w http.ResponseWriter, r *http.Request) {
+	var request SignInRequestObject
+
+	var body SignInJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SignIn(ctx, request.(SignInRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SignIn")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SignInResponseObject); ok {
+		if err := validResponse.VisitSignInResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
+// Stored as a slice of fixed-width chunks rather than one concatenated
+// const string: with thousands of chunks the chained `+` fold is several
+// times slower for the Go compiler than parsing a slice literal.
+var swaggerSpec = []string{
+	"xFdbb9tGE/0rg/2+hxagKSVx+qA8OZc2RoPGtZz2wTCCNXdEbkzOMrNDO2qg/17MUtaNEpwUSfsmkcu5",
+	"nHPmsp9NEZo2EJJEM/lsGGMbKGL6845sJ1Vg/xc6/V8EEiTRn7Zta19Y8YFGH2IgfRaLChurv/7PODMT",
+	"87/R2viofxtHr5gDm8VikRmHsWDfqhEzMRcVMoKPQAFube0dRIzRB4JZYLAEthB/i/AuIudGv1+aVI8v",
+	"OmYk0Xf6t+XQIovv83A+trWd/2Yb1L8yb9FMTBT2VJpFZnzKbha4sWImxpP8dGyy+3OeBEvkdDCeuMaT",
+	"j8JWAm8Yuw6hRkt6qIvItN/VIjOMHzvPiuel+t04nm3FOXR2tYooXH/AQtTXSyv22kZ8jbaWaph5j9Af",
+	"yNH3HG1D/sYKRoHGl5yohNv+JCR60WVgIzBaBzMODZyFKCXj9Pc3z2AMdxUSuHBHucm+BLyu3YfXDiRd",
+	"a7KdqPfmjS2SQyrm68y3U/uzQqmQwcK1LW48lRAlMIKleIeMLoefra87RnAo1tcRLCPUoSzRwfUcpEKI",
+	"yLe+wAwIb5GBUTomRSV6KhCk8hGQXBs8CRCiS9qNvqQjn1DZJuNLAdiXcF81A36L4HCY+1TsdY3Q2KLy",
+	"hEdKYHrAaGOgDDAvc+hScSOJlrEm5SlV3fuC0eljW8d8TeS6WhqM0ZZfIO8U3Pr8vrQO6bawRYUPdZKB",
+	"CBaZKSosbtCdyF5F0Cat0CKrbNH1TKZPM+XeS4QXdShutpTtrOCR+FSbA1DcshAfjHm7YBfZEoypBF6C",
+	"+rUpR7HSxYe+7M9P+7OpGjWVKRaBXNwHVqgVqfR6pfc1dp6iWH0YxXKSz0HcDnWEHbUs09iAchebbCmL",
+	"TZZ3EzkssukKJqSuUY/hRr1hydah2/hyzerUl3RK5/ixwyhDlbY2xrvAaXo09tMbpFLF/Gj8+DgzjafV",
+	"gz2mN6fE5rdPxw98utsv1uNjFc4QBJUJFh17mU9VEMvp0M/XIfuvRdq3VM+hCOHGK+ui/MYERw4nq8mM",
+	"qg47E2R4DFXoOMKdlyp00k9rL/NnoM1zDlvdBrjHFPCTJBteVDNenfc+TWZ6eMxM2veNjYL8/j7gVX62",
+	"9b/ivN8mPM3CMJULFa2nUtUcOi4QwgyEO6nSWqGankl71DuA1xcXZ3BydprDc1vcIDmoLLkaOYKlNAV1",
+	"A3JQ1B5JQKPoB0eJhJwyS5MyNZSZrxF+OHl5DuPx+PjH1Ey91Muc7l2enJ2azNzej2gzzh/l49QYWiTb",
+	"ejMxT/Jx/iQRLFUiblSt+maJSZgqyzTCT52ZmF9Qlv0h297oHo/H32yRu+9Aw03uVSJ8e+76tEgUlQ6i",
+	"XNN7On7yL4RyIlCjjQKBcBhRR5sxbRSJmVxeZSZ2TWN5bibmHNvAoitPWio2O6HqQhvflvFeFDvGR1v1",
+	"VqPgkDntOG87GfJ2vGfM+5LQQegkhyTzZVEui1ZHWo1Wdx2TmQqtQ07GpihHL/oiG9h89an1Gr4M7OWr",
+	"xWzf5Nf8jsePDhG1Sma0dadIkK9A1nw0m0zbikKpQRT9Yr8KxjcNOm8F63mS0SH9T1et4rsVwOadY/99",
+	"Zh117K80z5JUvKsRUJGe65u+BypN3wDE87Sk9vwlfRx5Slem1PeGgCanbYiyX4unPYKpWT8Pbv7NwNse",
+	"rYvtsSbc4eK/Y25ZWJ4O1VVE+YqaUhurifoPi+q7X73hfpFIDe1+lQAXgIKATzeC2Xz/NfxA00z17Clt",
+	"BPvNZ/36qLVuNwS5Y3RjUbm8WqgL5NuE++Vn03FtJmakg3Jxtfg7AAD//w==",
+}
+
+// decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
+// after base64-decoding and flate-decompressing the embedded blob.
+func decodeSpec() ([]byte, error) {
+	encoded := strings.Join(swaggerSpec, "")
+	compressed, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("error base64 decoding spec: %w", err)
+	}
+	zr := flate.NewReader(bytes.NewReader(compressed))
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(zr); err != nil {
+		return nil, fmt.Errorf("read flate: %w", err)
+	}
+	if err := zr.Close(); err != nil {
+		return nil, fmt.Errorf("close flate reader: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+var rawSpec = decodeSpecCached()
+
+// a naive cache of the decoded OpenAPI spec
+func decodeSpecCached() func() ([]byte, error) {
+	data, err := decodeSpec()
+	return func() ([]byte, error) {
+		return data, err
+	}
+}
+
+// Constructs a synthetic filesystem for resolving external references when loading openapi specifications.
+func PathToRawSpec(pathToFile string) map[string]func() ([]byte, error) {
+	res := make(map[string]func() ([]byte, error))
+	if len(pathToFile) > 0 {
+		res[pathToFile] = rawSpec
+	}
+
+	return res
+}
+
+// GetSpec returns the OpenAPI specification corresponding to the generated
+// code in this file. External references in the spec are resolved through
+// PathToRawSpec; externally-referenced files must be embedded in their
+// corresponding Go packages (via the import-mapping feature). URL-based
+// external refs are not supported.
+func GetSpec() (swagger *openapi3.T, err error) {
+	resolvePath := PathToRawSpec("")
+
+	loader := openapi3.NewLoader()
+	loader.IsExternalRefsAllowed = true
+	loader.ReadFromURIFunc = func(loader *openapi3.Loader, url *url.URL) ([]byte, error) {
+		pathToFile := url.String()
+		pathToFile = path.Clean(pathToFile)
+		getSpec, ok := resolvePath[pathToFile]
+		if !ok {
+			err1 := fmt.Errorf("path not found: %s", pathToFile)
+			return nil, err1
+		}
+		return getSpec()
+	}
+	var specData []byte
+	specData, err = rawSpec()
+	if err != nil {
+		return
+	}
+	swagger, err = loader.LoadFromData(specData)
+	if err != nil {
+		return
+	}
+	return
+}
+
+// GetSpecJSON returns the raw JSON bytes of the embedded OpenAPI
+// specification: decompressed but not unmarshaled. External references
+// are not resolved here; the bytes are the spec exactly as embedded by
+// codegen. The result is cached at package init time, so repeated calls
+// are cheap.
+func GetSpecJSON() ([]byte, error) {
+	return rawSpec()
+}
+
+// GetSwagger returns the OpenAPI specification corresponding to the
+// generated code in this file.
+//
+// Deprecated: GetSwagger predates kin-openapi renaming openapi3.Swagger
+// to openapi3.T. Use [GetSpec] instead. This wrapper is retained for
+// backwards compatibility.
+func GetSwagger() (*openapi3.T, error) {
+	return GetSpec()
 }

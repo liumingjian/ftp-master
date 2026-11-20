@@ -4,6 +4,8 @@ package app_test
 
 import (
 	"context"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,6 +24,16 @@ const (
 	minioImage    = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
 )
 
+// The Administrator every test service creates on its first start.
+const (
+	initialAdministratorUsername = "admin"
+	initialAdministratorPassword = "correct horse battery staple"
+)
+
+// applicationRoleScript creates the login role the service connects as; the
+// local stack runs the same script.
+var applicationRoleScript = filepath.Join("..", "..", "..", "deploy", "local", "postgres", "10-application-role.sql")
+
 // stores are real, empty PostgreSQL, MinIO and Redis instances for one test.
 type stores struct {
 	config app.Config
@@ -36,16 +48,22 @@ func startStores(t *testing.T) stores {
 		postgres.WithDatabase("ftpmaster"),
 		postgres.WithUsername("ftpmaster"),
 		postgres.WithPassword("ftpmaster"),
+		postgres.WithInitScripts(applicationRoleScript),
 		postgres.BasicWaitStrategies(),
 	)
 	testcontainers.CleanupContainer(t, pg)
 	if err != nil {
 		t.Fatalf("start PostgreSQL: %v", err)
 	}
-	databaseURL, err := pg.ConnectionString(ctx, "sslmode=disable")
+	ownerURL, err := pg.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		t.Fatal(err)
 	}
+	applicationURL, err := url.Parse(ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applicationURL.User = url.UserPassword("ftp_master_app", "ftp_master_app")
 
 	rd, err := redis.Run(ctx, redisImage)
 	testcontainers.CleanupContainer(t, rd)
@@ -69,7 +87,12 @@ func startStores(t *testing.T) stores {
 
 	return stores{
 		config: app.Config{
-			DatabaseURL:    databaseURL,
+			DatabaseURL:          applicationURL.String(),
+			MigrationDatabaseURL: ownerURL,
+			InitialAdministrator: app.InitialAdministrator{
+				Username: initialAdministratorUsername,
+				Password: initialAdministratorPassword,
+			},
 			RedisAddr:      strings.TrimPrefix(redisURL, "redis://"),
 			MinIOEndpoint:  minioEndpoint,
 			MinIOAccessKey: "ftpmaster",
