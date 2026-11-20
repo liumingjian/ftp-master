@@ -88,11 +88,12 @@ type TreeNode struct {
 }
 
 type UploadBatch struct {
-	ID       string
-	OwnerID  int64
-	ParentID int64
-	RootID   int64
-	Expected int32
+	ID        string
+	OwnerID   int64
+	ParentID  int64
+	RootID    int64
+	Expected  int32
+	CreatedAt pgtype.Timestamptz
 }
 
 type UploadBatchNode struct {

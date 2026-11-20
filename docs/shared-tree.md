@@ -186,3 +186,36 @@ The scheduled cleanup seam (#21) must queue removed keys in `storage_gc` and use
 `recycle.Collect` to remove only unreferenced content. Pruning one version must
 never remove bytes still referenced by a restored version. Retention remains the
 scheduler's responsibility; version history itself does not prune on read.
+
+## Scheduled retention
+
+Each service instance runs `internal/scheduler.Jobs.Run` at startup and hourly;
+shutdown cancels and joins the worker before closing its stores. The wakeup
+cadence uses a ticker; all age decisions use the injected Clock. The public Run
+seam also permits an operator or test to trigger a pass without waiting.
+The Shared Tree transaction advisory lock serializes concurrent passes with
+publication, restore and purge. Failures roll back metadata; durable storage GC
+is retried on the next pass.
+
+Recycle Entries expire at 30 days and each automatic purge records an
+`automatic_purge` Audit Event. Each file retains its latest 20 version IDs;
+an older version with an unexpired Office edit permit remains pinned until the
+permit expires. Completed upload receipts retain historical version IDs after
+pruning, without pinning their original object bytes. Shared immutable references
+remain protected by the GC check against retained versions and unfinished uploads.
+
+Unfinished uploads and hidden folder batches expire 24 hours after creation.
+This is an absolute lifetime, including a transfer left open in a browser.
+Batch timestamps are Clock-stamped at reservation. Legacy batches without an
+intent timestamp conservatively start aging at the first scheduler pass.
+Abandoned storage multipart IDs are queued for idempotent abort, and provisional
+folder metadata and completed hidden child content are queued for collection.
+Metadata cleanup commits before storage operations; a failed storage operation
+leaves durable retry work.
+
+The scheduler creates the current and following UTC month partitions and retires
+only complete months whose exclusive upper bound is at least 180 days old.
+An owner-defined function grants only this bounded partition operation to the
+application role; Audit Events remain append-only for that role. Partition creation
+and retirement share a separate advisory transaction lock, including on-demand
+partition creation by Audit recorders.
