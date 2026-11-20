@@ -167,6 +167,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tree/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["searchTree"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["previewFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree/{id}/download": {
         parameters: {
             query?: never;
@@ -751,6 +785,8 @@ export interface components {
             inherited: boolean;
         };
         TreeGrantInput: {
+            /** @description Create a Creator Grant; requires Grant on the parent directory and a User principal with all Rights. */
+            creator?: boolean;
             /** @enum {string} */
             principalKind: "user" | "organization" | "user_group";
             /** Format: int64 */
@@ -1172,6 +1208,61 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UploadReceipt"];
                 };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    searchTree: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Files matching the literal case-insensitive name query with current Browse. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNode"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    previewFile: {
+        parameters: {
+            query?: never;
+            header?: {
+                Range?: string;
+            };
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Safe inline immutable content, requires Browse and produces no Audit Event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Partial media content. */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Unauthorized"];
         };

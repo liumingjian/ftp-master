@@ -170,6 +170,25 @@ references. A storage failure leaves the queue intact; object removal is
 idempotent. `ListRecycleEntries` exposes Clock-stamped deletion times for the
 30-day scheduler retention policy.
 
+## Creator sharing and administration
+
+Every file Grant write (legacy create, draft save and draft preview) checks the
+intended audience against the original snapshot when the editor lacks Grant on
+the parent directory. Each User principal and every current member of an
+Organization (including descendants) or User Group must already see the parent.
+Visibility includes Traversable Ancestors and explicitly accessible Drop Boxes;
+it is not inferred from the proposed file Grant. Inactive members cannot see the
+parent and therefore cannot be included by a restricted editor. Membership
+changes after a Grant is saved follow normal principal membership semantics.
+
+Only holders of Grant on the parent (or Administrators) can revoke a Creator
+Grant through either deletion interface. `TreeGrantInput.creator: true` creates
+a file-only User Grant of all Rights and requires that same parent authority.
+Transfer is a single draft removing the old Creator Grant and adding its
+replacement with `creator: true`; preview, audit and rollback use the ordinary
+atomic draft path. The Chinese permission editor exposes Creator markers,
+removal and transfer controls and the parent-audience restriction. Existing
+self-Grant-loss and broad-subtree warnings retain their original meanings.
 ## File Versions
 
 `GET /api/tree/{id}/versions` requires Browse and lists all retained versions,
@@ -186,3 +205,24 @@ The scheduled cleanup seam (#21) must queue removed keys in `storage_gc` and use
 `recycle.Collect` to remove only unreferenced content. Pruning one version must
 never remove bytes still referenced by a restored version. Retention remains the
 scheduler's responsibility; version history itself does not prune on read.
+
+## Search, preview and copied links
+
+`GET /api/tree/search?q=literal` matches file names case-insensitively across
+all live files with current Browse, including files reached through Traversable
+Ancestors. Directories, Drop Box contents without Browse and hidden siblings do
+not appear. Queries are literal substrings, not SQL wildcard expressions.
+
+`GET /api/tree/{id}/preview` requires Browse (Download is independent), selects
+the latest immutable File Version, and streams passive image, PDF, plain text,
+audio and video types. Range requests return ordinary 206/416 responses through
+Go's ServeContent and MinIO's seekable immutable object. An explicit format
+allowlist rejects HTML, SVG and unknown types with 415. Content-Type is pinned,
+content sniffing is disabled, caching is disabled and a restrictive CSP applies. Text and media are sandboxed;
+PDF uses the browser's isolated native viewer without sandbox to permit rendering.
+Neither search nor preview creates an Audit Event.
+
+The browser copies `/#item=ID` links. After sign-in the application resolves the
+stable ID through the authenticated tree endpoint, opens directories or file
+previews, and reports unavailable items without revealing their existence.
+Renames and moves preserve these links; Grants are evaluated anew on every read.
