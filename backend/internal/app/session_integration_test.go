@@ -184,7 +184,7 @@ func TestEveryProtectedOperationRefusesAnonymousRequests(t *testing.T) {
 	}
 
 	// Only sign-in, Registration and health checks may be reached signed out.
-	want := map[string]bool{"signIn": true, "getHealth": true}
+	want := map[string]bool{"signIn": true, "register": true, "getHealth": true}
 	for id := range public {
 		if !want[id] {
 			t.Errorf("operation %s is reachable without sign-in", id)
@@ -203,8 +203,8 @@ func signInAsAdministrator(t *testing.T, b *browser) api.CurrentUser {
 	return user
 }
 
-// Only an active User may sign in or keep a session. Nothing in the service
-// changes a User's status yet, so the test does it as the schema owner.
+// Only an active User may sign in or keep a session. Change the fixture's
+// status as the schema owner so the same credentials exercise each case.
 func TestOnlyAnActiveUserIsAuthenticated(t *testing.T) {
 	stores := startStores(t)
 	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
@@ -216,11 +216,15 @@ func TestOnlyAnActiveUserIsAuthenticated(t *testing.T) {
 		t.Errorf("live session of a deactivated User: status %d, want 401", status)
 	}
 
-	for _, s := range []string{"deactivated", "pending"} {
+	for s, expected := range map[string]int{
+		"deactivated": http.StatusUnauthorized,
+		"pending":     http.StatusForbidden,
+		"rejected":    http.StatusUnauthorized,
+	} {
 		setAdministratorStatus(t, stores.config.MigrationDatabaseURL, s)
 		status, _ := newBrowser(t, server).signIn(initialAdministratorUsername, initialAdministratorPassword)
-		if status != http.StatusUnauthorized {
-			t.Errorf("sign in as a %s User: status %d, want 401", s, status)
+		if status != expected {
+			t.Errorf("sign in as a %s User: status %d, want %d", s, status, expected)
 		}
 	}
 }
