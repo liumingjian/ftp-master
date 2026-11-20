@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { api } from './api/client'
 import { pathAfterSignIn } from './navigation'
+import { unreachableText } from './requestOnMount'
 
 export function SignInPage() {
   const [username, setUsername] = useState('')
@@ -20,7 +21,7 @@ export function SignInPage() {
       }
       setError(response.status === 401 ? '用户名或密码错误' : `登录失败（HTTP ${response.status}）`)
     } catch (err: unknown) {
-      setError(`无法连接服务（${String(err)}）`)
+      setError(unreachableText(String(err)))
     }
     setPassword('')
     setSubmitting(false)

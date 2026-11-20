@@ -5,12 +5,11 @@ package audit
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/netip"
+	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
@@ -57,14 +56,19 @@ type Event struct {
 type Recorder struct {
 	queries *sqlcdb.Queries
 	clock   clock.Clock
+
+	mu sync.Mutex
+	// partitioned holds the months ("2006-01", UTC) this Recorder has made
+	// sure have a partition, so it asks the database once per month.
+	partitioned map[string]bool
 }
 
 // NewRecorder returns a Recorder writing through queries.
 func NewRecorder(queries *sqlcdb.Queries, clk clock.Clock) *Recorder {
-	return &Recorder{queries: queries, clock: clk}
+	return &Recorder{queries: queries, clock: clk, partitioned: map[string]bool{}}
 }
 
-// Record appends e to the audit log at the current time. Callers must treat
+// Record writes e as an Audit Event at the current time. Callers must treat
 // an error as the action not having been recorded.
 func (r *Recorder) Record(ctx context.Context, e Event) error {
 	detail := e.Detail
@@ -91,33 +95,27 @@ func (r *Recorder) Record(ctx context.Context, e Event) error {
 		params.SourceIp = &ip
 	}
 
-	err = r.queries.InsertAuditEvent(ctx, params)
-	if isMissingPartition(err) {
-		// First event of a month nobody prepared a partition for.
-		if err := r.EnsurePartition(ctx, now); err != nil {
-			return err
-		}
-		err = r.queries.InsertAuditEvent(ctx, params)
+	if err := r.EnsurePartition(ctx, now); err != nil {
+		return err
 	}
-	if err != nil {
+	if err := r.queries.InsertAuditEvent(ctx, params); err != nil {
 		return fmt.Errorf("record audit event %s: %w", e.Action, err)
 	}
 	return nil
 }
 
 // EnsurePartition creates the month partition holding time at, if missing.
+// Each month is asked about once per Recorder.
 func (r *Recorder) EnsurePartition(ctx context.Context, at time.Time) error {
-	if err := r.queries.EnsureAuditPartition(ctx, pgtype.Timestamptz{Time: at, Valid: true}); err != nil {
-		return fmt.Errorf("create audit partition for %s: %w", at.UTC().Format("2006-01"), err)
+	month := at.UTC().Format("2006-01")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.partitioned[month] {
+		return nil
 	}
+	if err := r.queries.EnsureAuditPartition(ctx, pgtype.Timestamptz{Time: at, Valid: true}); err != nil {
+		return fmt.Errorf("create audit partition for %s: %w", month, err)
+	}
+	r.partitioned[month] = true
 	return nil
-}
-
-// isMissingPartition reports whether err is PostgreSQL refusing a row because
-// no partition covers it.
-func isMissingPartition(err error) bool {
-	var pgErr *pgconn.PgError
-	// check_violation is also raised by the outcome CHECK; only the partition
-	// routing failure names no constraint.
-	return errors.As(err, &pgErr) && pgErr.Code == "23514" && pgErr.ConstraintName == ""
 }

@@ -3,11 +3,14 @@
 package app_test
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
@@ -198,4 +201,39 @@ func signInAsAdministrator(t *testing.T, b *browser) api.CurrentUser {
 		t.Fatalf("sign in as the initial Administrator: status %d", status)
 	}
 	return user
+}
+
+// Only an active User may sign in or keep a session. Nothing in the service
+// changes a User's status yet, so the test does it as the schema owner.
+func TestOnlyAnActiveUserIsAuthenticated(t *testing.T) {
+	stores := startStores(t)
+	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
+	browser := newBrowser(t, server)
+	signInAsAdministrator(t, browser)
+
+	setAdministratorStatus(t, stores.config.MigrationDatabaseURL, "deactivated")
+	if status, _ := browser.getSession(); status != http.StatusUnauthorized {
+		t.Errorf("live session of a deactivated User: status %d, want 401", status)
+	}
+
+	for _, s := range []string{"deactivated", "pending"} {
+		setAdministratorStatus(t, stores.config.MigrationDatabaseURL, s)
+		status, _ := newBrowser(t, server).signIn(initialAdministratorUsername, initialAdministratorPassword)
+		if status != http.StatusUnauthorized {
+			t.Errorf("sign in as a %s User: status %d, want 401", s, status)
+		}
+	}
+}
+
+func setAdministratorStatus(t *testing.T, ownerURL, status string) {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, `UPDATE users SET status = $1 WHERE lower(username) = lower($2)`, status, initialAdministratorUsername); err != nil {
+		t.Fatalf("set status %s: %v", status, err)
+	}
 }

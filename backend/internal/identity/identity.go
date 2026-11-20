@@ -24,6 +24,12 @@ type User struct {
 	IsAdministrator bool
 }
 
+// Session is a User's live sign-in session and the token that names it.
+type Session struct {
+	User  User
+	Token string
+}
+
 var (
 	// ErrInvalidCredentials means the username and password do not identify
 	// an active User. Callers must not reveal which part was wrong.
@@ -32,7 +38,21 @@ var (
 	ErrUnauthenticated = errors.New("unauthenticated")
 )
 
-const statusActive = "active"
+// status is a User's lifecycle state (users.status: pending, active or
+// deactivated). Only an active User may sign in or keep a session.
+type status string
+
+const statusActive status = "active"
+
+// failureReason is why a sign-in was refused. It goes into the Audit Event's
+// detail only: the caller is never told which part was wrong.
+type failureReason string
+
+const (
+	reasonUnknownUser   failureReason = "unknown_user"
+	reasonWrongPassword failureReason = "wrong_password"
+	reasonNotActive     failureReason = "not_active"
+)
 
 // Service signs Users in and out and authenticates sessions.
 type Service struct {
@@ -84,14 +104,13 @@ func (s *Service) EnsureInitialAdministrator(ctx context.Context, username, pass
 	return nil
 }
 
-// SignIn checks the credentials and starts a session, returning its token.
-// Both outcomes are recorded as Audit Events; if the record cannot be written
-// the sign-in fails.
-func (s *Service) SignIn(ctx context.Context, username, password string, from netip.Addr) (User, string, error) {
+// SignIn checks the credentials and starts a session. Both outcomes are
+// recorded as Audit Events; if the record cannot be written the sign-in fails.
+func (s *Service) SignIn(ctx context.Context, username, password string, from netip.Addr) (Session, error) {
 	row, err := s.queries.GetUserByUsername(ctx, username)
 	found := err == nil
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return User{}, "", fmt.Errorf("look up user: %w", err)
+		return Session{}, fmt.Errorf("look up user: %w", err)
 	}
 
 	hash := s.decoyHash
@@ -100,83 +119,86 @@ func (s *Service) SignIn(ctx context.Context, username, password string, from ne
 	}
 	passwordOK := verifyPassword(hash, password)
 
-	var reason string
+	var reason failureReason
 	switch {
 	case !found:
-		reason = "unknown_user"
+		reason = reasonUnknownUser
 	case !passwordOK:
-		reason = "wrong_password"
-	case row.Status != statusActive:
-		reason = "not_active"
+		reason = reasonWrongPassword
+	case status(row.Status) != statusActive:
+		reason = reasonNotActive
 	}
 	if reason != "" {
-		event := audit.Event{
-			Username: username, SourceIP: from,
-			Action: audit.ActionSignIn, Outcome: audit.OutcomeFailure,
-			Detail: map[string]any{"reason": reason},
-		}
+		actor := User{Username: username}
 		if found {
-			event.UserID, event.Username = row.ID, row.Username
+			actor = userFromRow(row)
 		}
+		event := signInEvent(actor, from, audit.OutcomeFailure)
+		event.Detail = map[string]any{"reason": reason}
 		if err := s.audit.Record(ctx, event); err != nil {
-			return User{}, "", err
+			return Session{}, err
 		}
-		return User{}, "", ErrInvalidCredentials
+		return Session{}, ErrInvalidCredentials
 	}
 
-	token, err := s.sessions.create(ctx, row.ID)
+	user := userFromRow(row)
+	token, err := s.sessions.create(ctx, user.ID)
 	if err != nil {
-		return User{}, "", err
+		return Session{}, err
 	}
-	err = s.audit.Record(ctx, audit.Event{
-		UserID: row.ID, Username: row.Username, SourceIP: from,
-		Action: audit.ActionSignIn, Outcome: audit.OutcomeSuccess,
-	})
-	if err != nil {
+	if err := s.audit.Record(ctx, signInEvent(user, from, audit.OutcomeSuccess)); err != nil {
 		// An unrecorded sign-in must not be usable.
 		if revokeErr := s.sessions.revoke(ctx, token); revokeErr != nil {
 			err = errors.Join(err, revokeErr)
 		}
-		return User{}, "", err
+		return Session{}, err
 	}
-	return userFromRow(row), token, nil
+	return Session{User: user, Token: token}, nil
 }
 
-// Authenticate returns the active User whose live session token is, and
-// extends the session. It returns ErrUnauthenticated otherwise.
-func (s *Service) Authenticate(ctx context.Context, token string) (User, error) {
+// Authenticate returns the session token names if it is live and belongs to
+// an active User, and extends it. It returns ErrUnauthenticated otherwise.
+func (s *Service) Authenticate(ctx context.Context, token string) (Session, error) {
 	userID, ok, err := s.sessions.resolve(ctx, token)
 	if err != nil {
-		return User{}, err
+		return Session{}, err
 	}
 	if !ok {
-		return User{}, ErrUnauthenticated
+		return Session{}, ErrUnauthenticated
 	}
 	row, err := s.queries.GetUser(ctx, userID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return User{}, ErrUnauthenticated
+		return Session{}, ErrUnauthenticated
 	}
 	if err != nil {
-		return User{}, fmt.Errorf("load session user: %w", err)
+		return Session{}, fmt.Errorf("load session user: %w", err)
 	}
-	if row.Status != statusActive {
-		return User{}, ErrUnauthenticated
+	if status(row.Status) != statusActive {
+		return Session{}, ErrUnauthenticated
 	}
-	return userFromRow(row), nil
+	return Session{User: userFromRow(row), Token: token}, nil
 }
 
-// SignOut ends user's session token immediately and records it. The session
-// ends first: if the record then fails, the caller sees an error, but an
-// unrecorded sign-out leaves less exposed than a recorded one that left the
-// session alive.
-func (s *Service) SignOut(ctx context.Context, user User, token string, from netip.Addr) error {
-	if err := s.sessions.revoke(ctx, token); err != nil {
+// SignOut ends session immediately and records it. The session ends first:
+// if the record then fails, the caller sees an error, but an unrecorded
+// sign-out leaves less exposed than a recorded one that left the session alive.
+func (s *Service) SignOut(ctx context.Context, session Session, from netip.Addr) error {
+	if err := s.sessions.revoke(ctx, session.Token); err != nil {
 		return err
 	}
 	return s.audit.Record(ctx, audit.Event{
-		UserID: user.ID, Username: user.Username, SourceIP: from,
+		UserID: session.User.ID, Username: session.User.Username, SourceIP: from,
 		Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess,
 	})
+}
+
+// signInEvent describes a sign-in attempt by actor; actor.ID is zero for an
+// unknown username.
+func signInEvent(actor User, from netip.Addr, outcome audit.Outcome) audit.Event {
+	return audit.Event{
+		UserID: actor.ID, Username: actor.Username, SourceIP: from,
+		Action: audit.ActionSignIn, Outcome: outcome,
+	}
 }
 
 func userFromRow(row sqlcdb.User) User {

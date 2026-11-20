@@ -1,35 +1,23 @@
-import { useEffect, useState } from 'react'
 import { api, type CurrentUser } from './api/client'
 import { HealthPanel } from './HealthPanel'
 import { SIGN_IN_PATH } from './navigation'
+import { unreachableText, useRequestOnMount, type Unreachable } from './requestOnMount'
 
-type State = { kind: 'checking' } | { kind: 'signed-in'; user: CurrentUser } | { kind: 'unreachable'; message: string }
+type State = { kind: 'checking' } | { kind: 'signed-in'; user: CurrentUser } | Unreachable
 
 /** The frame of every signed-in page. Without a session it leaves for sign-in. */
 export function SignedInShell() {
-  const [state, setState] = useState<State>({ kind: 'checking' })
-
-  useEffect(() => {
-    let cancelled = false
-    api
-      .GET('/session')
-      .then(({ data, response }) => {
-        if (cancelled) return
-        if (data) setState({ kind: 'signed-in', user: data })
-        // 401 has already sent the browser to sign-in.
-        else if (response.status !== 401) setState({ kind: 'unreachable', message: `HTTP ${response.status}` })
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setState({ kind: 'unreachable', message: String(err) })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const state = useRequestOnMount<State>({ kind: 'checking' }, async () => {
+    const { data, response } = await api.GET('/session')
+    if (data) return { kind: 'signed-in', user: data }
+    // 401 has already sent the browser to sign-in.
+    if (response.status === 401) return undefined
+    return { kind: 'unreachable', message: `HTTP ${response.status}` }
+  })
 
   if (state.kind === 'checking') return null
   if (state.kind === 'unreachable') {
-    return <p className="bad">无法连接服务（{state.message}）</p>
+    return <p className="bad">{unreachableText(state.message)}</p>
   }
 
   return (

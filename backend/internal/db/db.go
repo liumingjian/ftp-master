@@ -43,21 +43,3 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	return nil
 }
-
-// LatestVersion is the version of the newest migration this build carries:
-// the schema version a fully migrated database reports.
-func LatestVersion() (int64, error) {
-	names, err := fs.Glob(migrations, "migrations/*.sql")
-	if err != nil {
-		return 0, err
-	}
-	var latest int64
-	for _, name := range names {
-		version, err := goose.NumericComponent(name)
-		if err != nil {
-			return 0, fmt.Errorf("migration %s: %w", name, err)
-		}
-		latest = max(latest, version)
-	}
-	return latest, nil
-}

@@ -28,7 +28,7 @@ func main() {
 }
 
 func run() error {
-	trustedProxies, err := prefixes(os.Getenv("TRUSTED_PROXIES"))
+	trustedProxies, err := parseTrustedProxies(os.Getenv("TRUSTED_PROXIES"))
 	if err != nil {
 		return err
 	}
@@ -98,8 +98,9 @@ func envBool(key string) bool {
 	return v
 }
 
-// prefixes parses a comma-separated list of addresses or CIDR prefixes.
-func prefixes(list string) ([]netip.Prefix, error) {
+// parseTrustedProxies parses TRUSTED_PROXIES: a comma-separated list of
+// addresses or CIDR prefixes.
+func parseTrustedProxies(list string) ([]netip.Prefix, error) {
 	var out []netip.Prefix
 	for _, item := range strings.Split(list, ",") {
 		item = strings.TrimSpace(item)

@@ -17,7 +17,7 @@ import (
 // choose its recorded address.
 func sourceIP(r *http.Request, trustedProxies []netip.Prefix) netip.Addr {
 	peer := peerAddr(r)
-	if !peer.IsValid() || !contains(trustedProxies, peer) {
+	if !peer.IsValid() || !anyContains(trustedProxies, peer) {
 		return peer
 	}
 	values := r.Header.Values("X-Forwarded-For")
@@ -44,7 +44,8 @@ func peerAddr(r *http.Request) netip.Addr {
 	return addr.Unmap()
 }
 
-func contains(prefixes []netip.Prefix, addr netip.Addr) bool {
+// anyContains reports whether addr lies in any of prefixes.
+func anyContains(prefixes []netip.Prefix, addr netip.Addr) bool {
 	for _, p := range prefixes {
 		if p.Contains(addr) {
 			return true

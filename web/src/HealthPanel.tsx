@@ -1,29 +1,15 @@
-import { useEffect, useState } from 'react'
 import { api, type Health } from './api/client'
+import { unreachableText, useRequestOnMount, type Unreachable } from './requestOnMount'
 
-type State = { kind: 'loading' } | { kind: 'loaded'; health: Health } | { kind: 'unreachable'; message: string }
+type State = { kind: 'loading' } | { kind: 'loaded'; health: Health } | Unreachable
 
 export function HealthPanel() {
-  const [state, setState] = useState<State>({ kind: 'loading' })
-
-  useEffect(() => {
-    let cancelled = false
-    api
-      .GET('/health')
-      .then(({ data, error, response }) => {
-        if (cancelled) return
-        // 503 still carries a Health body describing which store is down.
-        const health = data ?? error
-        if (health) setState({ kind: 'loaded', health })
-        else setState({ kind: 'unreachable', message: `HTTP ${response.status}` })
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setState({ kind: 'unreachable', message: String(err) })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const state = useRequestOnMount<State>({ kind: 'loading' }, async () => {
+    const { data, error, response } = await api.GET('/health')
+    // 503 still carries a Health body describing which store is down.
+    const health = data ?? error
+    return health ? { kind: 'loaded', health } : { kind: 'unreachable', message: `HTTP ${response.status}` }
+  })
 
   return (
     <section className="health" aria-labelledby="health-title">
@@ -38,7 +24,7 @@ function HealthView({ state }: { state: State }) {
   if (state.kind === 'unreachable') {
     return (
       <p className="bad" data-testid="health-status">
-        无法连接服务（{state.message}）
+        {unreachableText(state.message)}
       </p>
     )
   }

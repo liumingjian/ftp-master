@@ -20,7 +20,8 @@ const (
 	argonSaltLen   = 16
 )
 
-var b64 = base64.RawStdEncoding
+// phcBase64 is the unpadded standard Base64 the PHC string format uses.
+var phcBase64 = base64.RawStdEncoding
 
 // hashPassword returns password hashed with Argon2id under a random salt, in
 // the PHC string format: $argon2id$v=19$m=…,t=…,p=…$salt$key.
@@ -31,7 +32,7 @@ func hashPassword(password string) (string, error) {
 	}
 	key := argon2.IDKey([]byte(password), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen)
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		argon2.Version, argonMemoryKiB, argonTime, argonThreads, b64.EncodeToString(salt), b64.EncodeToString(key)), nil
+		argon2.Version, argonMemoryKiB, argonTime, argonThreads, phcBase64.EncodeToString(salt), phcBase64.EncodeToString(key)), nil
 }
 
 // verifyPassword reports whether password matches hash. A malformed hash
@@ -51,11 +52,11 @@ func verifyPassword(hash, password string) bool {
 		memory == 0 || iterations == 0 || threads == 0 {
 		return false
 	}
-	salt, err := b64.DecodeString(parts[4])
+	salt, err := phcBase64.DecodeString(parts[4])
 	if err != nil {
 		return false
 	}
-	want, err := b64.DecodeString(parts[5])
+	want, err := phcBase64.DecodeString(parts[5])
 	if err != nil || len(want) == 0 {
 		return false
 	}

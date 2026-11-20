@@ -7,13 +7,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/pressly/goose/v3"
 
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/app"
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
-	"github.com/liumingjian/ftp-master/backend/internal/db"
 )
 
 func TestHealthReadsSchemaVersionFromAFreshDatabase(t *testing.T) {
@@ -80,9 +82,19 @@ func TestMigrationsAreSafeToRunOnEveryStartup(t *testing.T) {
 
 func latestMigration(t *testing.T) int64 {
 	t.Helper()
-	latest, err := db.LatestVersion()
+	// The schema version a fully migrated database reports: the newest
+	// migration this build carries.
+	names, err := filepath.Glob("../db/migrations/*.sql")
 	if err != nil {
 		t.Fatal(err)
+	}
+	var latest int64
+	for _, name := range names {
+		version, err := goose.NumericComponent(name)
+		if err != nil {
+			t.Fatalf("migration %s: %v", name, err)
+		}
+		latest = max(latest, version)
 	}
 	if latest < 1 {
 		t.Fatalf("no migrations found")
