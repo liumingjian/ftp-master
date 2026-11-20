@@ -94,6 +94,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tree/{id}/grant-draft/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["previewGrantDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/permission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["inspectPermission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree/{id}/grants": {
         parameters: {
             query?: never;
@@ -391,6 +427,19 @@ export interface components {
             isFile: boolean;
             rights: number;
             traversable: boolean;
+        };
+        GrantImpact: {
+            changedUsers: number;
+            coveredItems: number;
+            warnings: string[];
+        };
+        PermissionInspection: {
+            /** Format: int64 */
+            userId: number;
+            rights: number;
+            traversable: boolean;
+            administrator: boolean;
+            sources: components["schemas"]["SourcedGrant"][];
         };
         SourcedGrant: {
             grant: components["schemas"]["TreeGrant"];
@@ -709,6 +758,61 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    previewGrantDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    add: components["schemas"]["TreeGrantInput"][];
+                    remove: number[];
+                };
+            };
+        };
+        responses: {
+            /** @description Exact effective Rights changes; validation runs in a rolled-back transaction */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrantImpact"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    inspectPermission: {
+        parameters: {
+            query?: {
+                userId?: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own Effective Permission or Administrator inspection of another User */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionInspection"];
+                };
             };
             default: components["responses"]["Unauthorized"];
         };

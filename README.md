@@ -92,3 +92,16 @@ parsing where recovery is ambiguous. Any validation or storage failure creates n
 Users or import Audit Events. Each successful User creation and its `account_import`
 Audit Event commit in the same transaction. Passwords are hashed with the sign-in
 policy and never included in Audit Events or validation responses.
+
+Grant draft previews use the same validation and Effective Permission evaluator as
+saving. `changedUsers` counts distinct active Users whose Rights change on at least
+one item (Administrators retain every Right); `coveredItems` counts distinct items
+reached by added or removed Grants, including redundant Grants. Preview writes and
+Audit Events are rolled back. A subsequent save validates against its current state.
+A broad subtree warning requires an added Organization/User Group subtree Grant
+with at least **50 active Users** and **100 covered items** (both inclusive).
+This-level-only and file Grants never trigger that warning. Self-revocation warns
+only when the editor actually loses their Grant Right after all drafted changes.
+Permission inspection defaults to the signed-in User; inspecting any other User
+requires an Administrator. Sources retain stable Grant and item IDs with current
+paths and direct/inherited attribution.

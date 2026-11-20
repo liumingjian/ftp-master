@@ -45,51 +45,7 @@ func (s *Server) GetGrantDraft(ctx context.Context, r api.GetGrantDraftRequestOb
 }
 func (s *Server) SaveGrantDraft(ctx context.Context, r api.SaveGrantDraftRequestObject) (api.SaveGrantDraftResponseObject, error) {
 	_, err := s.changeTree(ctx, "grant_change", r.Id, func(q *sqlcdb.Queries, snap *tree.Snapshot) (any, error) {
-		if err := treeAccess(snap, r.Id, permission.GrantRight); err != nil {
-			return nil, err
-		}
-		if r.Body == nil || len(r.Body.Add) > 100 || len(r.Body.Remove) > 100 {
-			return nil, membershipFailure{400, "invalid draft"}
-		}
-		info := requestFrom(ctx)
-		record := func(detail any) error {
-			return audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: info.session.User.ID, Username: info.session.User.Username, SourceIP: info.sourceIP, ItemID: r.Id, ItemPath: snap.Path(r.Id), Action: audit.Action("grant_change"), Outcome: audit.OutcomeSuccess, Detail: map[string]any{"change": detail}})
-		}
-		// Authorize the complete draft against the original snapshot so self-revocation remains atomic.
-		for _, id := range r.Body.Remove {
-			found := false
-			for _, g := range snap.Grants {
-				if g.ID == id && g.NodeID == r.Id {
-					found = true
-					if g.Creator {
-						return nil, membershipFailure{403, "Creator Grant requires directory administration"}
-					}
-				}
-			}
-			if !found {
-				return nil, membershipFailure{404, "direct Grant not found"}
-			}
-			count, e := q.DeleteGrant(ctx, sqlcdb.DeleteGrantParams{ID: id, NodeID: r.Id})
-			if e != nil {
-				return nil, e
-			}
-			if count == 0 {
-				return nil, membershipFailure{400, "duplicate removal"}
-			}
-			if e = record(map[string]any{"removed": id}); e != nil {
-				return nil, e
-			}
-		}
-		for _, input := range r.Body.Add {
-			value, e := createGrant(ctx, q, snap, r.Id, &input)
-			if e != nil {
-				return nil, e
-			}
-			if e = record(value); e != nil {
-				return nil, e
-			}
-		}
-		return map[string]any{"added": len(r.Body.Add), "removed": len(r.Body.Remove)}, nil
+		return s.applyGrantDraft(ctx, q, snap, r.Id, r.Body, true)
 	})
 	if err != nil {
 		f, e := membershipError(err)
@@ -100,4 +56,55 @@ func (s *Server) SaveGrantDraft(ctx context.Context, r api.SaveGrantDraftRequest
 func (e membershipFailure) VisitGetGrantDraftResponse(w http.ResponseWriter) error { return e.write(w) }
 func (e membershipFailure) VisitSaveGrantDraftResponse(w http.ResponseWriter) error {
 	return e.write(w)
+}
+
+func (s *Server) applyGrantDraft(ctx context.Context, q *sqlcdb.Queries, snap *tree.Snapshot, id int64, body *api.SaveGrantDraftJSONRequestBody, auditing bool) (any, error) {
+	if err := treeAccess(snap, id, permission.GrantRight); err != nil {
+		return nil, err
+	}
+	if body == nil || len(body.Add) > 100 || len(body.Remove) > 100 {
+		return nil, membershipFailure{400, "invalid draft"}
+	}
+	info := requestFrom(ctx)
+	record := func(detail any) error {
+		if !auditing {
+			return nil
+		}
+		return audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: info.session.User.ID, Username: info.session.User.Username, SourceIP: info.sourceIP, ItemID: id, ItemPath: snap.Path(id), Action: audit.Action("grant_change"), Outcome: audit.OutcomeSuccess, Detail: map[string]any{"change": detail}})
+	}
+	// Authorize the complete draft against the original snapshot so self-revocation remains atomic.
+	for _, removeID := range body.Remove {
+		found := false
+		for _, g := range snap.Grants {
+			if g.ID == removeID && g.NodeID == id {
+				found = true
+				if g.Creator {
+					return nil, membershipFailure{403, "Creator Grant requires directory administration"}
+				}
+			}
+		}
+		if !found {
+			return nil, membershipFailure{404, "direct Grant not found"}
+		}
+		count, e := q.DeleteGrant(ctx, sqlcdb.DeleteGrantParams{ID: removeID, NodeID: id})
+		if e != nil {
+			return nil, e
+		}
+		if count == 0 {
+			return nil, membershipFailure{400, "duplicate removal"}
+		}
+		if e = record(map[string]any{"removed": removeID}); e != nil {
+			return nil, e
+		}
+	}
+	for _, input := range body.Add {
+		value, e := createGrant(ctx, q, snap, id, &input)
+		if e != nil {
+			return nil, e
+		}
+		if e = record(value); e != nil {
+			return nil, e
+		}
+	}
+	return map[string]any{"added": len(body.Add), "removed": len(body.Remove)}, nil
 }

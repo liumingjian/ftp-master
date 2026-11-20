@@ -139,6 +139,42 @@ paths:
       responses:
         '204': {description: Draft committed atomically}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/grant-draft/preview:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer, format: int64}}
+    post:
+      operationId: previewGrantDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [add, remove]
+              properties:
+                add: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/TreeGrantInput'}}
+                remove: {type: array, maxItems: 100, items: {type: integer, format: int64}}
+      responses:
+        '200':
+          description: Exact effective Rights changes; validation runs in a rolled-back transaction
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GrantImpact'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/permission:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: inspectPermission
+      parameters:
+        - {name: userId, in: query, schema: {type: integer, format: int64}}
+      responses:
+        '200':
+          description: Own Effective Permission or Administrator inspection of another User
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionInspection'}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /tree/{id}/grants:
     parameters:
       - in: path
@@ -805,6 +841,22 @@ components:
         isFile: {type: boolean}
         rights: {type: integer}
         traversable: {type: boolean}
+    GrantImpact:
+      type: object
+      required: [changedUsers, coveredItems, warnings]
+      properties:
+        changedUsers: {type: integer}
+        coveredItems: {type: integer}
+        warnings: {type: array, items: {type: string}}
+    PermissionInspection:
+      type: object
+      required: [userId, rights, traversable, administrator, sources]
+      properties:
+        userId: {type: integer, format: int64}
+        rights: {type: integer}
+        traversable: {type: boolean}
+        administrator: {type: boolean}
+        sources: {type: array, items: {$ref: '#/components/schemas/SourcedGrant'}}
     SourcedGrant:
       type: object
       required: [grant, sourceId, sourcePath, inherited]

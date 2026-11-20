@@ -322,6 +322,18 @@ func TestGrantDraftAtomicSaveAndInheritedSources(t *testing.T) {
 	if status != 200 {
 		t.Fatal(status, string(data))
 	}
+	status, data = b.do("POST", path+"/preview", map[string]any{"add": []any{map[string]any{"principalKind": "user", "principalId": 1, "rights": 1, "scope": "subtree"}}, "remove": []int64{}})
+	if status != 200 {
+		t.Fatal(status, string(data))
+	}
+	var impact struct {
+		ChangedUsers int `json:"changedUsers"`
+		CoveredItems int `json:"coveredItems"`
+	}
+	decode(t, data, &impact)
+	if impact.ChangedUsers != 0 || impact.CoveredItems != 1 {
+		t.Fatalf("administrator Rights do not change: %+v", impact)
+	}
 	// Invalid second principal must roll back the first creation and its audit.
 	before := len(readAuditEvents(t, stores.config.DatabaseURL))
 	status, data = b.do("POST", path, map[string]any{"add": []any{map[string]any{"principalKind": "user", "principalId": 1, "rights": 1, "scope": "subtree"}, map[string]any{"principalKind": "user", "principalId": 999999, "rights": 1, "scope": "subtree"}}, "remove": []int64{}})
@@ -372,11 +384,41 @@ func TestGrantDraftDelegationAndScope(t *testing.T) {
 	}
 	decode(t, call(admin, "POST", "/api/tree", map[string]any{"name": "Area"}, 201), &root)
 	decode(t, call(admin, "POST", "/api/tree", map[string]any{"name": "Child", "parentId": root.ID}, 201), &child)
+	var unrelated struct {
+		ID int64 `json:"id"`
+	}
+	decode(t, call(admin, "POST", "/api/tree", map[string]any{"name": "Unrelated"}, 201), &unrelated)
+	call(admin, "POST", fmt.Sprintf("/api/tree/%d/grants", unrelated.ID), map[string]any{"principalKind": "user", "principalId": 1, "rights": 1, "scope": "subtree"}, 201)
 	grant := map[string]any{"principalKind": "user", "principalId": uid, "rights": 63, "scope": "this_level_only"}
 	call(admin, "POST", fmt.Sprintf("/api/tree/%d/grants", root.ID), grant, 201)
 	path := fmt.Sprintf("/api/tree/%d/grant-draft", root.ID)
 	call(delegated, "GET", path, nil, 200)
 	call(delegated, "GET", fmt.Sprintf("/api/tree/%d/grant-draft", child.ID), nil, 404)
+	call(delegated, "GET", fmt.Sprintf("/api/tree/%d/permission?userId=1", root.ID), nil, 403)
+	var inspection struct {
+		Rights  int `json:"rights"`
+		Sources []struct {
+			Grant struct {
+				ID int64 `json:"id"`
+			} `json:"grant"`
+		} `json:"sources"`
+	}
+	decode(t, call(admin, "GET", fmt.Sprintf("/api/tree/%d/permission?userId=%d", root.ID, uid), nil, 200), &inspection)
+	if inspection.Rights != 63 || len(inspection.Sources) != 1 {
+		t.Fatalf("inspection: %+v", inspection)
+	}
+	removal := map[string]any{"add": []any{}, "remove": []int64{inspection.Sources[0].Grant.ID}}
+	var preview struct {
+		ChangedUsers int      `json:"changedUsers"`
+		CoveredItems int      `json:"coveredItems"`
+		Warnings     []string `json:"warnings"`
+	}
+	decode(t, call(delegated, "POST", path+"/preview", removal, 200), &preview)
+	if preview.ChangedUsers != 1 || preview.CoveredItems != 1 || len(preview.Warnings) != 1 || preview.Warnings[0] != "self_grant_loss" {
+		t.Fatalf("preview: %+v", preview)
+	}
+	// Preview must not save the removal.
+	call(delegated, "GET", path, nil, 200)
 	grant["scope"] = "subtree"
 	call(delegated, "POST", path, map[string]any{"add": []any{grant}, "remove": []int64{}}, 403)
 	grant["scope"] = "this_level_only"
@@ -399,4 +441,134 @@ func TestGrantDraftDelegationAndScope(t *testing.T) {
 	if len(sources) != 1 || !sources[0].Inherited || sources[0].SourcePath != "/Area" {
 		t.Fatalf("inheritance: %+v", sources)
 	}
+}
+
+func TestGrantPreviewMatchesSavedEffectivePermission(t *testing.T) {
+	stores := startStores(t)
+	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
+	b := newBrowser(t, server)
+	signInAsAdministrator(t, b)
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, stores.config.MigrationDatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	var uid int64
+	err = conn.QueryRow(ctx, `INSERT INTO users(username,display_name,password_hash,is_administrator,status,created_at) SELECT 'impact','Impact',password_hash,false,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`).Scan(&uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, data := b.do("POST", "/api/tree", map[string]any{"name": "Impact"})
+	if status != 201 {
+		t.Fatal(status, string(data))
+	}
+	var n struct {
+		ID int64 `json:"id"`
+	}
+	decode(t, data, &n)
+	path := fmt.Sprintf("/api/tree/%d", n.ID)
+	draft := map[string]any{"add": []any{map[string]any{"principalKind": "user", "principalId": uid, "rights": 3, "scope": "subtree"}}, "remove": []int64{}}
+	var before, after struct {
+		Rights int `json:"rights"`
+	}
+	status, data = b.do("GET", fmt.Sprintf("%s/permission?userId=%d", path, uid), nil)
+	if status != 200 {
+		t.Fatal(status, string(data))
+	}
+	decode(t, data, &before)
+	status, data = b.do("POST", path+"/grant-draft/preview", draft)
+	if status != 200 {
+		t.Fatal(status, string(data))
+	}
+	var impact struct {
+		ChangedUsers int      `json:"changedUsers"`
+		CoveredItems int      `json:"coveredItems"`
+		Warnings     []string `json:"warnings"`
+	}
+	decode(t, data, &impact)
+	if impact.ChangedUsers != 1 || impact.CoveredItems != 1 || len(impact.Warnings) != 0 {
+		t.Fatalf("impact: %+v", impact)
+	}
+	status, data = b.do("POST", path+"/grant-draft", draft)
+	if status != 204 {
+		t.Fatal(status, string(data))
+	}
+	status, data = b.do("GET", fmt.Sprintf("%s/permission?userId=%d", path, uid), nil)
+	if status != 200 {
+		t.Fatal(status, string(data))
+	}
+	decode(t, data, &after)
+	if before.Rights != 0 || after.Rights != 3 {
+		t.Fatalf("saved Rights before=%d after=%d", before.Rights, after.Rights)
+	}
+	status, data = b.do("POST", path+"/grant-draft/preview", draft)
+	if status != 200 {
+		t.Fatal(status, string(data))
+	}
+	decode(t, data, &impact)
+	if impact.ChangedUsers != 0 {
+		t.Fatalf("redundant grant changes no Rights: %+v", impact)
+	}
+}
+
+func TestGrantPreviewBroadWarningThresholds(t *testing.T) {
+	stores := startStores(t)
+	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
+	b := newBrowser(t, server)
+	signInAsAdministrator(t, b)
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, stores.config.MigrationDatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	var org int64
+	if err = conn.QueryRow(ctx, `INSERT INTO organizations(name) VALUES ('Large') RETURNING id`).Scan(&org); err != nil {
+		t.Fatal(err)
+	}
+	_, err = conn.Exec(ctx, `INSERT INTO users(username,display_name,password_hash,is_administrator,status,created_at,organization_id) SELECT 'large'||g,'Large',u.password_hash,false,'active',u.created_at,$1 FROM generate_series(1,50) g CROSS JOIN LATERAL (SELECT password_hash,created_at FROM users WHERE is_administrator LIMIT 1) u`, org)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, data := b.do("POST", "/api/tree", map[string]any{"name": "Broad"})
+	if status != 201 {
+		t.Fatal(status, string(data))
+	}
+	var n struct {
+		ID int64 `json:"id"`
+	}
+	decode(t, data, &n)
+	_, err = conn.Exec(ctx, `INSERT INTO tree_nodes(parent_id,name,is_file) SELECT $1,'Child'||g,false FROM generate_series(1,99) g`, n.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := fmt.Sprintf("/api/tree/%d/grant-draft/preview", n.ID)
+	check := func(scope string, want bool) {
+		t.Helper()
+		status, data := b.do("POST", path, map[string]any{"add": []any{map[string]any{"principalKind": "organization", "principalId": org, "rights": 1, "scope": scope}}, "remove": []int64{}})
+		if status != 200 {
+			t.Fatal(status, string(data))
+		}
+		var result struct {
+			Warnings []string `json:"warnings"`
+		}
+		decode(t, data, &result)
+		if (len(result.Warnings) > 0) != want {
+			t.Fatalf("scope %s: %s", scope, data)
+		}
+	}
+	check("subtree", true)
+	check("this_level_only", false)
+	if _, err = conn.Exec(ctx, `UPDATE users SET status='deactivated' WHERE username='large50'`); err != nil {
+		t.Fatal(err)
+	}
+	check("subtree", false)
+	if _, err = conn.Exec(ctx, `UPDATE users SET status='active' WHERE username='large50'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Exec(ctx, `DELETE FROM tree_nodes WHERE parent_id=$1 AND name='Child99'`, n.ID); err != nil {
+		t.Fatal(err)
+	}
+	check("subtree", false)
 }
