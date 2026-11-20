@@ -1,3 +1,4 @@
+import { VersionsPanel } from "./VersionsPanel";
 import { UploadRow, UploadPolicyEditor } from "./UploadRow";
 import { useEffect, useState } from "react";
 import { GrantsPanel, PermissionInspection } from "./GrantsPanel";
@@ -15,6 +16,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
     await loadRecycle();setRevision(v=>v+1);
   }
   async function deleteNode(id:number) {const {response}=await api.DELETE("/tree/{id}",{params:{path:{id}}});setMessage(response.ok?"已移入回收站":`HTTP ${response.status}`);setRevision(v=>v+1);}
+  const [versionNode,setVersionNode]=useState<Node>();
   const [inspectNode,setInspectNode]=useState<Node>();
   const [grantNode, setGrantNode] = useState<Node>();
   const [path, setPath] = useState<Node[]>([]);
@@ -62,6 +64,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
     if(response.ok) setMoving(undefined);
     setRevision(v=>v+1);
   }
+  if (versionNode) return <VersionsPanel node={versionNode} close={()=>{setVersionNode(undefined);setRevision(v=>v+1);}}/>;
   if (inspectNode) return <section><h3>{inspectNode.name}</h3><button onClick={()=>setInspectNode(undefined)}>返回目录</button><PermissionInspection node={inspectNode} administrator={administrator}/></section>;
   if (grantNode) return <GrantsPanel administrator={administrator} node={grantNode} close={() => setGrantNode(undefined)} />;
   return (
@@ -104,6 +107,7 @@ export function TreePanel({ administrator }: { administrator: boolean }) {
                 >
                   {n.name}
                 </button>
+                {n.isFile && !!(n.rights & 1) && <button onClick={()=>setVersionNode(n)}>文件版本</button>}
                 {n.isFile && !!(n.rights & 2) && <a href={`/api/tree/${n.id}/download`} download>下载 {n.name}</a>}
                 {!!(n.rights & 16) && <button onClick={()=>void deleteNode(n.id)}>删除 {n.name}</button>}
                 {n.traversable && "（仅通行）"}

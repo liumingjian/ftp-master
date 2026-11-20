@@ -86,6 +86,103 @@ func TestUploadClashesPreserveVersionsAndKeepBoth(t *testing.T) {
 	if !bytes.Equal(receipt, call("POST", path, nil, 200)) {
 		t.Fatal("retry changed receipt")
 	}
+	// Version history is public metadata; restoration appends instead of rewriting.
+	historyPath := fmt.Sprintf("/api/tree/%d/versions", original.FileID)
+	var history []struct {
+		ID        int64     `json:"id"`
+		Username  string    `json:"username"`
+		CreatedAt time.Time `json:"createdAt"`
+	}
+	decode(t, call("GET", historyPath, nil, 200), &history)
+	if len(history) != 2 || history[0].ID != replacement.VersionID || history[1].ID != original.VersionID || history[0].Username == "" || history[0].CreatedAt.IsZero() {
+		t.Fatalf("history: %+v", history)
+	}
+	var readerID int64
+	err = conn.QueryRow(context.Background(), `INSERT INTO users(username,display_name,password_hash,status,created_at) SELECT 'history-reader','Reader',password_hash,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`).Scan(&readerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	historyReader := newBrowser(t, server)
+	if status, _ := historyReader.signIn("history-reader", initialAdministratorPassword); status != 200 {
+		t.Fatal(status)
+	}
+	if status, _ := historyReader.do("GET", historyPath, nil); status != 404 {
+		t.Fatalf("hidden history: %d", status)
+	}
+	grantPath := fmt.Sprintf("/api/tree/%d/grants", original.FileID)
+	call("POST", grantPath, map[string]any{"principalKind": "user", "principalId": readerID, "rights": 1, "scope": "subtree"}, 201)
+	if status, _ := historyReader.do("GET", historyPath, nil); status != 200 {
+		t.Fatalf("Browse history: %d", status)
+	}
+	if status, _ := historyReader.do("POST", fmt.Sprintf("%s/%d/restore", historyPath, original.VersionID), nil); status != 403 {
+		t.Fatalf("Browse restore: %d", status)
+	}
+	if status, _ := historyReader.do("GET", fmt.Sprintf("/api/tree/%d/download?versionId=%d", original.FileID, original.VersionID), nil); status != 403 {
+		t.Fatalf("Browse download: %d", status)
+	}
+	call("POST", fmt.Sprintf("%s/%d/restore", historyPath, 99999999), nil, 404)
+
+	// A failed Audit Event must roll back the appended File Version.
+	_, err = conn.Exec(context.Background(), `CREATE FUNCTION refuse_restore_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='restore_version' THEN RAISE EXCEPTION 'injected audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER refuse_restore_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION refuse_restore_audit()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call("POST", fmt.Sprintf("%s/%d/restore", historyPath, original.VersionID), nil, 500)
+	_, err = conn.Exec(context.Background(), "DROP TRIGGER refuse_restore_audit ON audit_events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decode(t, call("GET", historyPath, nil, 200), &history)
+	if len(history) != 2 {
+		t.Fatal("failed audit left a version")
+	}
+
+	var restored struct {
+		FileId    int64 `json:"fileId"`
+		VersionId int64 `json:"versionId"`
+	}
+	decode(t, call("POST", fmt.Sprintf("%s/%d/restore", historyPath, original.VersionID), nil, 201), &restored)
+	if restored.FileId != original.FileID || restored.VersionId <= replacement.VersionID {
+		t.Fatalf("restore: %+v", restored)
+	}
+	decode(t, call("GET", historyPath, nil, 200), &history)
+	if len(history) != 3 || history[0].ID != restored.VersionId {
+		t.Fatalf("restored history: %+v", history)
+	}
+	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/tree/%d/download", server.URL, original.FileID), nil)
+	req.AddCookie(b.cookie)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredBytes, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if string(restoredBytes) != "first" {
+		t.Fatalf("restored bytes: %s", restoredBytes)
+	}
+
+	// Historical download remains immutable after restoration.
+	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/tree/%d/download?versionId=%d", server.URL, original.FileID, replacement.VersionID), nil)
+	req.AddCookie(b.cookie)
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	priorBytes, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if string(priorBytes) != "second" {
+		t.Fatalf("prior version changed: %s", priorBytes)
+	}
+	restores := 0
+	for _, event := range readAuditEvents(t, stores.config.DatabaseURL) {
+		if event.Action == "restore_version" {
+			restores++
+		}
+	}
+	if restores != 1 {
+		t.Fatalf("restore audit count: %d", restores)
+	}
+
 	decode(t, call("POST", upload("third")+"?collision=keep_both", nil, 200), &renamed)
 	if renamed.FileID == original.FileID {
 		t.Fatal("keep both reused file")

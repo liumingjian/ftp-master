@@ -111,6 +111,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tree/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["listFileVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tree/{id}/versions/{versionId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                versionId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restoreFileVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tree/{id}/download": {
         parameters: {
             query?: never;
@@ -800,6 +837,18 @@ export interface components {
             number: number;
             url: string;
         }[];
+        FileVersion: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            size: number;
+            format: string;
+            /** Format: int64 */
+            createdBy: number;
+            username: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
         UploadReceipt: {
             /** Format: int64 */
             fileId: number;
@@ -978,6 +1027,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OfficeEdit"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    listFileVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All retained File Versions, newest first. Requires Browse. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileVersion"][];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    restoreFileVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                versionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Appended a new File Version sharing the immutable content. Requires Modify. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadReceipt"];
                 };
             };
             default: components["responses"]["Unauthorized"];
