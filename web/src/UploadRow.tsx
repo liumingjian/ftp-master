@@ -17,6 +17,7 @@ function putPart(url: string, bytes: Blob, progress: (loaded: number) => void) {
 export function UploadRow({ parentId, completed, clock = systemClock }: { parentId: number; completed: () => void; clock?: Clock }) {
   const [row, setRow] = useState<Row>()
   const [busy, setBusy] = useState(false)
+  const [conflict, setConflict] = useState<string>()
   async function upload(file: File) {
     setBusy(true)
     const start = clock.now()
@@ -37,16 +38,33 @@ export function UploadRow({ parentId, completed, clock = systemClock }: { parent
         sent += part.size
       }
       const finish = await api.POST('/uploads/{id}/complete', { params: { path: { id: session.id } } })
-      if (!finish.data) throw new Error(finish.error?.message ?? '发布失败')
+      if (!finish.data) {
+        if (finish.error?.message === 'upload_name_conflict') { setConflict(session.id); setRow(previous => previous && ({ ...previous, status: '同名文件已存在' })); return }
+        throw new Error(finish.error?.message ?? '发布失败')
+      }
       setRow({ name: file.name, total: file.size, bytes: file.size, speed: file.size / Math.max((clock.now() - start) / 1000, 0.001), status: '上传完成' })
       completed()
     } catch (error) {
       setRow(previous => previous && ({ ...previous, status: error instanceof Error ? error.message : '上传失败' }))
     } finally { setBusy(false) }
   }
+  async function resolve(collision: 'new_version' | 'keep_both') {
+    if (!conflict) return
+    setBusy(true)
+    try {
+      const finish = await api.POST('/uploads/{id}/complete', { params: { path: { id: conflict }, query: { collision } } })
+      if (!finish.data) throw new Error(finish.error?.message ?? '发布失败')
+      setConflict(undefined)
+      setRow(previous => previous && ({ ...previous, status: '上传完成' }))
+      completed()
+    } catch (error) { setRow(previous => previous && ({ ...previous, status: error instanceof Error ? error.message : '上传失败' })) }
+    finally { setBusy(false) }
+  }
   return <>
-    <label>上传文件<input type="file" disabled={busy} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = '' }} /></label>
+
+    <label>上传文件<input type="file" disabled={busy || !!conflict} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = '' }} /></label>
     {row && <div role="status" aria-label="上传进度" className="upload-row">
+      {conflict && <><button disabled={busy} onClick={() => void resolve('new_version')}>存为新版本</button><button disabled={busy} onClick={() => void resolve('keep_both')}>保留两者</button></>}
       <span>{row.name} · {row.status}</span>
       <progress aria-label="文件上传进度" value={row.bytes} max={row.total || 1} />
       <span>{Math.round(row.bytes / (row.total || 1) * 100)}% · {(row.speed / 1024 / 1024).toFixed(1)} MB/s · 剩余 {row.speed > 0 ? Math.ceil((row.total - row.bytes) / row.speed) : '—'} 秒</span>

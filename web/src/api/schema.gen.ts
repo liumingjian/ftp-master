@@ -679,7 +679,10 @@ export interface operations {
     };
     completeUpload: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Resolve a visible name clash; hidden clashes always keep both silently. */
+                collision?: "new_version" | "keep_both";
+            };
             header?: never;
             path: {
                 id: string;

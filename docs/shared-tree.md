@@ -110,3 +110,16 @@ or NUL. Both operations retain stable IDs and direct Grants, change only
 metadata, and commit with an Audit Event containing `oldPath` and `newPath`.
 Inherited Rights are evaluated again against the destination. The browser's
 move picker navigates visible directories and enables destinations with Upload.
+
+### Same-name uploads
+
+Completion returns `409` with `message: upload_name_conflict` for a visible
+clash. Retry with `?collision=new_version` or `?collision=keep_both`. The choice
+is durable before storage completion; a retry without the query reuses it.
+New-version requires Upload on the destination, appends an immutable version to
+the existing file identity, and preserves its Creator Grants. Keep-both creates
+a new identity and Creator Grant, using `name (1).ext` and subsequent free names.
+A hidden clash always creates a new file with a random suffix, even if the caller
+requests new-version; the response never identifies the hidden item. A directory
+clash supports keep-both only. Publication, version, audit and receipt commit
+atomically under the tree mutation lock, and completed retries return one receipt.
