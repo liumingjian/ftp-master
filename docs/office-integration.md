@@ -1,6 +1,6 @@
 # Office integration contract
 
-ADR 0005 defines the authorization and delivery model. All URLs below are same-origin relative URLs. Clients use the returned URLs; they do not construct routes.
+[ADR 0005](adr/0005-office-editing-via-wps-plugin.md) defines the supported editing flows and the authorization and delivery model. All URLs below are same-origin relative URLs. Clients use the returned URLs.
 
 ## Start an edit
 
@@ -32,7 +32,8 @@ Concurrent requests serialize on the permit row through the transfer and its
 commit, so only one complete transfer consumes it. A failed write, canceled
 request, failed flush or failed transaction leaves delivery unconfirmed. Network
 completion means every byte was accepted and flushed by the HTTP server; it
-cannot prove that WPS parsed or displayed those bytes.
+cannot prove that WPS parsed or displayed those bytes. On macOS, the native
+host must also confirm that it staged the Work Copy successfully before opening it.
 
 `GET deliveryCheckUrl` returns `{ "delivered": false }` or
 `{ "delivered": true }`. It waits for an in-flight transfer to finish before
@@ -89,12 +90,32 @@ so a concurrent upload cannot silently change the document selected by a click.
 The entry is an anchor with `data-ftp-office-edit="1"`,
 `data-ftp-office-version="<versionId>"`, `target="_blank"`, `rel="noopener"`,
 and same-origin `href="/api/files/<fileId>/office-edits"`. The href identifies
-the POST edit-start endpoint, not a document download. The extension handles
-only clicks on these explicitly marked anchors on its configured origin. It
-prevents navigation, starts an edit with `{versionId}`, and uses the returned
-URLs to open its editor in a new tab. Application default navigation is also
-suppressed, so a marker without an active handler does not navigate to an API.
-Returning from the editor closes that tab and leaves the file browser intact.
+the POST edit-start endpoint. The extension handles only trusted unmodified
+primary clicks on these explicitly marked anchors on its configured origin.
+It prevents navigation and posts `{versionId}`. The application also
+suppresses default navigation to the API if the marker is present without an
+active handler. The file browser remains open.
+
+## Chrome desktop editing on macOS
+
+The extension uses the browser session for edit start, delivery check and
+save. It resolves the returned relative URLs against the configured origin.
+The native host receives the resolved Document Gateway URL and the
+information it needs to stage the Work Copy. Keep session credentials in
+Chrome and handle the Gateway URL as a temporary secret. The host may launch
+only a fully staged Work Copy after the extension confirms delivery.
+
+The User saves to disk in WPS and submits from Chrome. The extension submits a
+stable copy of the on-disk bytes using the appropriate Writer or ET payload.
+The browser reports the created File Version from the HTTP 200 receipt and
+refreshes the file browser so the User can reopen that version. The native
+host and extension maintain separate state for each Work Copy, including
+when multiple edits overlap. See the
+[submission ticket](https://github.com/liumingjian/wps-plugin/issues/61) for
+recovery, retry and the full 25 MiB transport criteria.
+
+Kylin with Qaxbrowser continues to open the embedded WPS editor in a new tab
+and uses the same server contract. Returning closes that editor tab.
 
 Ordinary downloads, including version downloads, use extensionless
 `/api/tree/<id>/download` paths and have no edit marker. Neither a filename
@@ -104,4 +125,5 @@ suffix nor a document Gateway link grants permission to intercept an anchor.
 seam and simulates the extension click handler and WPS client for Writer and
 ET against real application endpoints and stores. Its small OOXML fixtures
 are structural documents for protocol acceptance, not target-machine WPS
-compatibility evidence; that remains wps-plugin#62.
+compatibility evidence. See the
+[target-machine acceptance ticket](https://github.com/liumingjian/wps-plugin/issues/62).
