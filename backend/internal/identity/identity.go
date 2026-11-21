@@ -19,6 +19,7 @@ import (
 // User is a signed-in, active User.
 type User struct {
 	ID              int64
+	OrganizationID  int64
 	Username        string
 	DisplayName     string
 	IsAdministrator bool
@@ -39,13 +40,17 @@ var (
 )
 
 // status is a User's lifecycle state (users.status: pending, active or
-// deactivated). Only an active User may sign in or keep a session.
+// deactivated or rejected). Only an active User may sign in or keep a session.
 type status string
 
 const statusActive status = "active"
+const statusPending status = "pending"
+
+// ErrPendingRegistration is disclosed only after the password has verified.
+var ErrPendingRegistration = errors.New("registration pending approval")
 
 // failureReason is why a sign-in was refused. It goes into the Audit Event's
-// detail only: the caller is never told which part was wrong.
+// detail only. A verified pending Registration also receives its pending notice.
 type failureReason string
 
 const (
@@ -119,8 +124,22 @@ func (s *Service) SignIn(ctx context.Context, username, password string, from ne
 	}
 	passwordOK := verifyPassword(hash, password)
 
+	lockState := 0
+	if found && status(row.Status) == statusActive {
+		lockState, err = s.attempt(ctx, row.ID, passwordOK)
+		if err != nil {
+			return Session{}, err
+		}
+		if lockState == 1 {
+			if err := s.audit.Record(ctx, audit.Event{UserID: row.ID, Username: row.Username, SourceIP: from, Action: "account_lock", Outcome: audit.OutcomeSuccess}); err != nil {
+				return Session{}, err
+			}
+		}
+	}
 	var reason failureReason
 	switch {
+	case lockState != 0:
+		reason = "locked"
 	case !found:
 		reason = reasonUnknownUser
 	case !passwordOK:
@@ -138,11 +157,14 @@ func (s *Service) SignIn(ctx context.Context, username, password string, from ne
 		if err := s.audit.Record(ctx, event); err != nil {
 			return Session{}, err
 		}
+		if found && passwordOK && status(row.Status) == statusPending {
+			return Session{}, ErrPendingRegistration
+		}
 		return Session{}, ErrInvalidCredentials
 	}
 
 	user := userFromRow(row)
-	token, err := s.sessions.create(ctx, user.ID)
+	token, err := s.sessions.create(ctx, user.ID, row.SessionEpoch)
 	if err != nil {
 		return Session{}, err
 	}
@@ -159,7 +181,7 @@ func (s *Service) SignIn(ctx context.Context, username, password string, from ne
 // Authenticate returns the session token names if it is live and belongs to
 // an active User, and extends it. It returns ErrUnauthenticated otherwise.
 func (s *Service) Authenticate(ctx context.Context, token string) (Session, error) {
-	userID, ok, err := s.sessions.resolve(ctx, token)
+	userID, epoch, ok, err := s.sessions.resolve(ctx, token)
 	if err != nil {
 		return Session{}, err
 	}
@@ -173,7 +195,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Session, erro
 	if err != nil {
 		return Session{}, fmt.Errorf("load session user: %w", err)
 	}
-	if status(row.Status) != statusActive {
+	if status(row.Status) != statusActive || row.SessionEpoch != epoch {
 		return Session{}, ErrUnauthenticated
 	}
 	return Session{User: userFromRow(row), Token: token}, nil
@@ -204,6 +226,7 @@ func signInEvent(actor User, from netip.Addr, outcome audit.Outcome) audit.Event
 func userFromRow(row sqlcdb.User) User {
 	return User{
 		ID:              row.ID,
+		OrganizationID:  row.OrganizationID,
 		Username:        row.Username,
 		DisplayName:     row.DisplayName,
 		IsAdministrator: row.IsAdministrator,

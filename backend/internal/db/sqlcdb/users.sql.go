@@ -7,9 +7,49 @@ package sqlcdb
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const changePasswordWithAudit = `-- name: ChangePasswordWithAudit :execrows
+WITH changed AS (
+ UPDATE users SET password_hash = $6
+ WHERE users.id = $7 AND password_hash = $8
+ RETURNING users.id
+)
+INSERT INTO audit_events (occurred_at, user_id, username, source_ip, action, outcome, detail)
+SELECT $1, $2, $3, $4, $5, 'success',
+ jsonb_build_object('target_user_id', changed.id) FROM changed
+`
+
+type ChangePasswordWithAuditParams struct {
+	OccurredAt   pgtype.Timestamptz
+	ActorID      pgtype.Int8
+	ActorName    string
+	SourceIp     *netip.Addr
+	Action       string
+	NewHash      string
+	TargetID     int64
+	ExpectedHash string
+}
+
+func (q *Queries) ChangePasswordWithAudit(ctx context.Context, arg ChangePasswordWithAuditParams) (int64, error) {
+	result, err := q.db.Exec(ctx, changePasswordWithAudit,
+		arg.OccurredAt,
+		arg.ActorID,
+		arg.ActorName,
+		arg.SourceIp,
+		arg.Action,
+		arg.NewHash,
+		arg.TargetID,
+		arg.ExpectedHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const createInitialAdministrator = `-- name: CreateInitialAdministrator :execrows
 INSERT INTO users (username, display_name, password_hash, is_administrator, status, created_at)
@@ -41,7 +81,7 @@ func (q *Queries) CreateInitialAdministrator(ctx context.Context, arg CreateInit
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at FROM users WHERE id = $1
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -55,12 +95,15 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.IsAdministrator,
 		&i.Status,
 		&i.CreatedAt,
+		&i.OrganizationID,
+		&i.OrganizationHint,
+		&i.SessionEpoch,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at FROM users WHERE lower(username) = lower($1)
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE lower(username) = lower($1)
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -74,6 +117,79 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.IsAdministrator,
 		&i.Status,
 		&i.CreatedAt,
+		&i.OrganizationID,
+		&i.OrganizationHint,
+		&i.SessionEpoch,
 	)
 	return i, err
+}
+
+const listManagedUsers = `-- name: ListManagedUsers :many
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE status IN ('active','deactivated') ORDER BY username
+`
+
+func (q *Queries) ListManagedUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.Query(ctx, listManagedUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.DisplayName,
+			&i.PasswordHash,
+			&i.IsAdministrator,
+			&i.Status,
+			&i.CreatedAt,
+			&i.OrganizationID,
+			&i.OrganizationHint,
+			&i.SessionEpoch,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const moveUser = `-- name: MoveUser :execrows
+UPDATE users SET organization_id = $1 WHERE id = $2 AND status IN ('active', 'deactivated')
+`
+
+type MoveUserParams struct {
+	OrganizationID int64
+	ID             int64
+}
+
+func (q *Queries) MoveUser(ctx context.Context, arg MoveUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveUser, arg.OrganizationID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setUserStatus = `-- name: SetUserStatus :execrows
+UPDATE users SET status = $1, session_epoch = session_epoch + CASE WHEN $1 = 'deactivated' THEN 1 ELSE 0 END
+WHERE id = $2 AND status IN ('active', 'deactivated')
+`
+
+type SetUserStatusParams struct {
+	Status string
+	ID     int64
+}
+
+func (q *Queries) SetUserStatus(ctx context.Context, arg SetUserStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserStatus, arg.Status, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

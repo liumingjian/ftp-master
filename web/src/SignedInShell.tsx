@@ -1,3 +1,9 @@
+import { AuditPanel } from "./AuditPanel"
+import {TreePanel} from "./TreePanel"
+import { RegistrationsPanel } from './RegistrationsPanel'
+import { MembershipPanel } from './MembershipPanel'
+import { PasswordPanel } from "./PasswordPanel"
+
 import { api, type CurrentUser } from './api/client'
 import { HealthPanel } from './HealthPanel'
 import { SIGN_IN_PATH } from './navigation'
@@ -33,6 +39,9 @@ export function SignedInShell() {
       </header>
       <main className="shell-main">
         <HealthPanel />
+ <TreePanel administrator={state.user.isAdministrator} />
+        {state.user.isAdministrator && <><AuditPanel /><MembershipPanel /><RegistrationsPanel /></>}
+        <PasswordPanel administrator={state.user.isAdministrator} />
       </main>
     </div>
   )

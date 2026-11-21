@@ -46,7 +46,7 @@ make test-e2e          # Playwright against the running stack (`make up` first)
   integration tests. It runs only on an empty data directory, so a stack created before it
   existed needs `docker compose -f deploy/local/docker-compose.yml down -v`.
 - **Sign-in.** Every operation requires a signed-in, active User unless the contract marks it
-  `security: []`; only sign-in, Registration and health checks may. While no Administrator
+  `security: []`; sign-in, Registration, health checks and the permit-gated Document Gateway may. While no Administrator
   exists, the service creates one from `INITIAL_ADMINISTRATOR_USERNAME` / `INITIAL_ADMINISTRATOR_PASSWORD`.
   Set `TRUSTED_PROXIES` (addresses or CIDRs of the reverse proxies) so Audit Events record
   the client's address from their `X-Forwarded-For`; the session cookie is `Secure` unless `INSECURE_SESSION_COOKIE=true`.
@@ -65,3 +65,69 @@ make test-e2e          # Playwright against the running stack (`make up` first)
 - **Tests** sit at three seams: the HTTP API (integration, build tag `integration`, real stores via
   testcontainers), the browser (Playwright in `web/e2e`), and pure units (plain `go test`;
   on the web, `src/**/*.test.ts` under Node's test runner).
+
+## Direct browser uploads
+
+Open a directory with Upload, then choose **上传文件**. Progress, speed and ETA
+appear in that directory. Administrators configure the extension policy through
+**上传扩展名限制**. The local stack signs the browser's localhost MinIO port;
+if deploying separately, configure `MINIO_PUBLIC_ENDPOINT`,
+`MINIO_PUBLIC_USE_SSL`, `MINIO_REGION`, and storage CORS for the web origin.
+See [transfer contracts](docs/shared-tree.md#transfer-integration).
+## Bulk User import
+
+Administrators can upload a UTF-8 CSV in Organization management. The browser sends
+its decoded contents as `{"csv":"..."}` to `POST /api/users/import`. A UTF-8 BOM,
+CRLF and standard CSV quoting are accepted. Limits: 2 MiB, 1000 data records.
+The header must be exactly:
+
+```csv
+username,display_name,password,organization_id
+alice,Alice,initial-password,2
+```
+
+`organization_id` is the numeric stable Organization ID shown in the management
+list and returned by `GET /api/organizations`; names and hierarchy paths are never
+used as identifiers. Usernames and display names are trimmed, nonblank and at most
+150 characters; passwords are preserved exactly, nonempty and at most 1024 bytes.
+Usernames are unique without regard to case, including pending or deactivated Users.
+Every User is created active and non-Administrator and can sign in immediately.
+
+The whole file is validated before creation. HTTP 422 returns an `errors` array of
+`{row,message}` entries, using one-based CSV record numbers (header is record 1).
+Errors can repeat a row when it has multiple problems. A malformed CSV record stops
+parsing where recovery is ambiguous. Any validation or storage failure creates no
+Users or import Audit Events. Each successful User creation and its `account_import`
+Audit Event commit in the same transaction. Passwords are hashed with the sign-in
+policy and never included in Audit Events or validation responses.
+
+## Audit queries
+
+The Administrator workspace includes a minute-precision UTC range (start inclusive,
+end exclusive, at most 180 days), User selection or Organization subtree, historical
+directory, action category, exact action and failure filters. Results have 50 rows
+per page. The detail drawer pivots by User, historical directory, or stable item ID;
+item history clears the other scope filters so renames and moves remain visible.
+Historical directory suggestions mark paths absent from the current Shared Tree.
+
+`POST /api/audit/query` applies the same filter body to table results and CSV
+(`export: true`). Exports include every matching row, independent of pagination,
+and neither reads nor exports create Audit Events. CSV values are escaped for
+spreadsheet formula safety. ZIP events store `detail.files` as an array of
+`{id, path}` objects, one per packed file; both directory and stable-ID filters
+include these entries. No Audit Event update/delete privilege is added.
+
+## Grant drafts
+
+Grant draft previews use the same validation and Effective Permission evaluator as
+saving. `changedUsers` counts distinct active Users whose Rights change on at least
+one item (Administrators retain every Right); `coveredItems` counts distinct items
+reached by added or removed Grants, including redundant Grants. Preview writes and
+Audit Events are rolled back. A subsequent save validates against its current state.
+A broad subtree warning requires an added Organization/User Group subtree Grant
+with at least **50 active Users** and **100 covered items** (both inclusive).
+This-level-only and file Grants never trigger that warning. Self-revocation warns
+only when the editor actually loses their Grant Right after all drafted changes.
+Permission inspection defaults to the signed-in User; inspecting any other User
+requires an Administrator. Sources retain stable Grant and item IDs with current
+paths and direct/inherited attribution.
