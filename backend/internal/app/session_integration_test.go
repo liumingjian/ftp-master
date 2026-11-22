@@ -5,6 +5,7 @@ package app_test
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -163,15 +164,43 @@ func TestEveryProtectedOperationRefusesAnonymousRequests(t *testing.T) {
 			// Any value will do for path parameters: the request must be
 			// refused before anything is looked up.
 			concrete := pathParam.ReplaceAllString(path, "1")
+			query := url.Values{}
+			for _, parameter := range op.Parameters {
+				if p := parameter.Value; p != nil && p.In == "query" && p.Required {
+					query.Set(p.Name, "1")
+				}
+			}
+			if len(query) != 0 {
+				concrete += "?" + query.Encode()
+			}
 			for name, cookie := range map[string]*http.Cookie{
 				"no cookie":     nil,
 				"forged cookie": {Name: sessionCookieName, Value: "forged"},
 			} {
 				anonymous := newBrowser(t, server)
 				anonymous.cookie = cookie
-				status, body := anonymous.do(method, "/api"+concrete, nil)
+				var payload any
+				if op.RequestBody != nil {
+					if _, multipart := op.RequestBody.Value.Content["multipart/form-data"]; multipart {
+						// Binding initializes the multipart reader before the
+						// session guard. The guard must not consume its parts.
+						anonymous.header = http.Header{"Content-Type": {"multipart/form-data; boundary=test"}}
+					} else {
+						payload = map[string]any{}
+					}
+				}
+				status, body := anonymous.do(method, "/api"+concrete, payload)
 				if status != http.StatusUnauthorized {
 					t.Errorf("%s %s with %s: status %d, want 401", method, path, name, status)
+					continue
+				}
+				if path == "/office/permits/{permitId}/save" {
+					// The Office Plugin consumes its own receipt envelope.
+					var receipt struct{ Success *bool }
+					decode(t, body, &receipt)
+					if receipt.Success == nil || *receipt.Success {
+						t.Errorf("%s %s with %s: expected failed Office receipt", method, path, name)
+					}
 					continue
 				}
 				var e api.Error
@@ -183,8 +212,8 @@ func TestEveryProtectedOperationRefusesAnonymousRequests(t *testing.T) {
 		}
 	}
 
-	// Only sign-in, Registration and health checks may be reached signed out.
-	want := map[string]bool{"signIn": true, "getHealth": true}
+	// The Document Gateway is explicitly permit-gated; dedicated tests probe invalid permits.
+	want := map[string]bool{"signIn": true, "register": true, "getHealth": true, "getOfficeDocument": true}
 	for id := range public {
 		if !want[id] {
 			t.Errorf("operation %s is reachable without sign-in", id)
@@ -203,8 +232,8 @@ func signInAsAdministrator(t *testing.T, b *browser) api.CurrentUser {
 	return user
 }
 
-// Only an active User may sign in or keep a session. Nothing in the service
-// changes a User's status yet, so the test does it as the schema owner.
+// Only an active User may sign in or keep a session. Change the fixture's
+// status as the schema owner so the same credentials exercise each case.
 func TestOnlyAnActiveUserIsAuthenticated(t *testing.T) {
 	stores := startStores(t)
 	server := startService(t, stores.config, clock.NewFake(time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)))
@@ -216,11 +245,15 @@ func TestOnlyAnActiveUserIsAuthenticated(t *testing.T) {
 		t.Errorf("live session of a deactivated User: status %d, want 401", status)
 	}
 
-	for _, s := range []string{"deactivated", "pending"} {
+	for s, expected := range map[string]int{
+		"deactivated": http.StatusUnauthorized,
+		"pending":     http.StatusForbidden,
+		"rejected":    http.StatusUnauthorized,
+	} {
 		setAdministratorStatus(t, stores.config.MigrationDatabaseURL, s)
 		status, _ := newBrowser(t, server).signIn(initialAdministratorUsername, initialAdministratorPassword)
-		if status != http.StatusUnauthorized {
-			t.Errorf("sign in as a %s User: status %d, want 401", s, status)
+		if status != expected {
+			t.Errorf("sign in as a %s User: status %d, want %d", s, status, expected)
 		}
 	}
 }

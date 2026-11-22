@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"strings"
 
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/health"
@@ -30,10 +31,12 @@ type Options struct {
 
 // Server implements api.StrictServerInterface.
 type Server struct {
-	health   *health.Checker
-	identity *identity.Service
-	options  Options
-	contract contractFacts
+	transfer   TransferDependencies
+	membership MembershipDependencies
+	health     *health.Checker
+	identity   *identity.Service
+	options    Options
+	contract   contractFacts
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -41,12 +44,15 @@ var _ api.StrictServerInterface = (*Server)(nil)
 // NewHandler returns the HTTP handler serving the whole API under BasePath.
 // Every operation requires a signed-in, active User unless the contract marks
 // it `security: []`.
-func NewHandler(checker *health.Checker, identityService *identity.Service, options Options) (http.Handler, error) {
+func NewHandler(checker *health.Checker, identityService *identity.Service, options Options, membership MembershipDependencies, transfers ...TransferDependencies) (http.Handler, error) {
 	contract, err := readContract()
 	if err != nil {
 		return nil, err
 	}
-	server := &Server{health: checker, identity: identityService, options: options, contract: contract}
+	server := &Server{membership: membership, health: checker, identity: identityService, options: options, contract: contract}
+	if len(transfers) > 0 {
+		server.transfer = transfers[0]
+	}
 	strict := api.NewStrictHandlerWithOptions(server,
 		[]api.StrictMiddlewareFunc{server.guard()},
 		api.StrictHTTPServerOptions{
@@ -58,7 +64,32 @@ func NewHandler(checker *health.Checker, identityService *identity.Service, opti
 				writeError(w, http.StatusInternalServerError, "internal", "internal error")
 			},
 		})
-	return api.HandlerWithOptions(strict, api.StdHTTPServerOptions{BaseURL: BasePath}), nil
+	handler := api.HandlerWithOptions(strict, api.StdHTTPServerOptions{BaseURL: BasePath})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasPrefix(r.URL.Path, BasePath+"/office/permits/") && strings.HasSuffix(r.URL.Path, "/save") {
+			r.Body = http.MaxBytesReader(w, r.Body, 26*1024*1024)
+			recorder := &officeResponseBuffer{header: make(http.Header), Code: 200}
+			handler.ServeHTTP(recorder, r)
+			if recorder.Code >= 400 {
+				var receipt map[string]any
+				if json.Unmarshal(recorder.Body.Bytes(), &receipt) != nil || receipt["Success"] != false {
+					message := "save failed"
+					if m, ok := receipt["message"].(string); ok {
+						message = m
+					}
+					writeOfficeReceipt(w, recorder.Code, message)
+					return
+				}
+			}
+			for k, v := range recorder.Header() {
+				w.Header()[k] = v
+			}
+			w.WriteHeader(recorder.Code)
+			_, _ = w.Write(recorder.Body.Bytes())
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}), nil
 }
 
 // GetHealth reports whether the backing stores are reachable. Failure

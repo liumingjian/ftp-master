@@ -12,6 +12,727 @@ servers:
 security:
   - session: []
 paths:
+  /tree/zip:
+    get:
+      operationId: downloadZip
+      parameters:
+        - {in: query, name: ids, required: true, schema: {type: string, maxLength: 20000}}
+        - {in: query, name: preflight, schema: {type: boolean, default: false}}
+      responses:
+        '200':
+          description: Streaming ZIP of authorized selected files, limited to 10 GB before streaming.
+          content:
+            application/zip:
+              schema: {type: string, format: binary}
+        '204': {description: Preflight accepted; no download or audit event.}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /recycle-bin:
+    get:
+      operationId: listRecycleBin
+      responses:
+        '200':
+          description: Entries restorable by the signed-in User.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, originalPath, deletedAt]
+                  properties:
+                    id: {type: integer, format: int64}
+                    originalPath: {type: string}
+                    deletedAt: {type: string, format: date-time}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/restore:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    post:
+      operationId: restoreTreeNode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                parentId: {type: integer, format: int64, nullable: true}
+      responses:
+        '204': {description: Completed}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/purge:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    delete:
+      operationId: purgeTreeNode
+      responses:
+        '204': {description: Completed}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /office/permits/{permitId}/document/{filename}:
+    parameters:
+      - {name: permitId, in: path, required: true, schema: {type: string}}
+      - {name: filename, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getOfficeDocument
+      security: []
+      responses:
+        "200":
+          description: Exact immutable document bytes; delivery is recorded only after the full response.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        default: {$ref: "#/components/responses/Unauthorized"}
+  /office/permits/{permitId}/save:
+    parameters:
+      - {name: permitId, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: saveOffice
+      description: Writer multipart filedata, md5sum and filename; ET multipart single file (empty filename or form value).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                filedata: {type: string, format: binary}
+                md5sum: {type: string}
+                filename: {type: string}
+                file: {type: string, format: binary}
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema: &officeReceipt
+                type: object
+                required: [Success, Message, Data]
+                properties:
+                  Success: {type: boolean}
+                  Message: {type: string}
+                  Data: {type: object, nullable: true, additionalProperties: true}
+        default:
+          description: Failed; file unchanged.
+          content:
+            application/json:
+              schema: *officeReceipt
+  /office/permits/{permitId}/delivery:
+    parameters:
+      - {name: permitId, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getOfficeDelivery
+      responses:
+        "200":
+          description: Delivery state for the issuing User.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [delivered]
+                properties:
+                  delivered: {type: boolean}
+        default: {$ref: "#/components/responses/Unauthorized"}
+  /files/{id}/office-edits:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    post:
+      operationId: startOfficeEdit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                versionId: {type: integer, format: int64, minimum: 1}
+                preview: {type: boolean, description: Request a read-only permit with Browse access.}
+      responses:
+        '201':
+          description: Office permit issued. Gateway read expires after five minutes.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OfficeEdit'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/text:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: openText
+      responses:
+        '200':
+          description: Open UTF-8 plain text under 10 MB with Modify; audited.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versionId, content]
+                properties:
+                  versionId: {type: integer, format: int64}
+                  content: {type: string}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    put:
+      operationId: saveText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseVersionId, content]
+              properties:
+                baseVersionId: {type: integer, format: int64, minimum: 1}
+                content: {type: string}
+      responses:
+        '201':
+          description: New immutable File Version and Audit Event; outdated base returns 409 without change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadReceipt'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/versions:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: listFileVersions
+      responses:
+        '200':
+          description: All retained File Versions, newest first. Requires Browse.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/FileVersion'}}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/versions/{versionId}/restore:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+      - {in: path, name: versionId, required: true, schema: {type: integer, format: int64, minimum: 1}}
+    post:
+      operationId: restoreFileVersion
+      responses:
+        '201':
+          description: Appended a new File Version sharing the immutable content. Requires Modify.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadReceipt'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/search:
+    get:
+      operationId: searchTree
+      parameters:
+        - {in: query, name: q, required: true, schema: {type: string, minLength: 1, maxLength: 255}}
+      responses:
+        "200":
+          description: Files matching the literal case-insensitive name query with current Browse.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: "#/components/schemas/TreeNode"}}
+        default: {$ref: "#/components/responses/Unauthorized"}
+  /tree/{id}/preview:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: previewFile
+      parameters:
+        - {in: header, name: Range, schema: {type: string}}
+      responses:
+        "200":
+          description: Safe inline immutable content, requires Browse and produces no Audit Event.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        "206":
+          description: Partial media content.
+        default: {$ref: "#/components/responses/Unauthorized"}
+  /tree/{id}/download:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: downloadFile
+      parameters:
+        - {in: query, name: versionId, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        "302":
+          description: Authorized short-lived capability for immutable file bytes. Audit records issuance.
+          headers:
+            Location: {required: true, schema: {type: string}}
+            Cache-Control: {required: true, schema: {type: string}}
+        default: {$ref: "#/components/responses/Unauthorized"}
+  /audit/query:
+    post:
+      operationId: queryAudit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: {type: string, format: date-time}
+                to: {type: string, format: date-time}
+                userIds: {type: array, items: {type: integer, format: int64}}
+                organizationId: {type: integer, format: int64}
+                directory: {type: string}
+                includeSubdirectories: {type: boolean, default: true}
+                action: {type: string}
+                category: {type: string, enum: [session, read, write, delete, grant, account]}
+                failuresOnly: {type: boolean}
+                itemId: {type: integer, format: int64}
+                page: {type: integer, minimum: 1, default: 1}
+                export: {type: boolean}
+      responses:
+        '200':
+          description: Paged events and historical directory suggestions, or all filtered events as CSV. No Audit Event is recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, total, page, directories]
+                properties:
+                  total: {type: integer}
+                  page: {type: integer}
+                  directories:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, exists]
+                      properties:
+                        path: {type: string}
+                        exists: {type: boolean}
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, time, userId, username, sourceIp, action, outcome, itemId, path, detail]
+                      properties:
+                        id: {type: integer, format: int64}
+                        time: {type: string, format: date-time}
+                        userId: {type: integer, format: int64, nullable: true}
+                        username: {type: string}
+                        sourceIp: {type: string}
+                        action: {type: string}
+                        outcome: {type: string, enum: [success, failure]}
+                        itemId: {type: integer, format: int64, nullable: true}
+                        path: {type: string}
+                        detail: {type: object, additionalProperties: true}
+            text/csv:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /upload-batches:
+    post:
+      operationId: initiateUploadBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parentId, name, files]
+              properties:
+                parentId: {type: integer, format: int64}
+                name: {type: string}
+                directories:
+                  type: array
+                  maxItems: 10000
+                  items: {type: string}
+                files:
+                  type: array
+                  minItems: 0
+                  maxItems: 10000
+                  items:
+                    type: object
+                    required: [path, size]
+                    properties:
+                      path: {type: string}
+                      size: {type: integer, format: int64}
+      responses:
+        '201':
+          description: Sessions in the same order as the input manifest. Publication is atomic.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/UploadSession'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /uploads:
+    post:
+      operationId: initiateUpload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UploadInput'}
+      responses:
+        '201':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadSession'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /uploads/{id}/parts:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    get:
+      operationId: listUploadParts
+      responses:
+        '200':
+          description: Authoritative stored multipart part numbers, read from object storage.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [number]
+                  properties:
+                    number: {type: integer}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: issueUploadParts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PartInput'}
+      responses:
+        '200':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PartURLs'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /uploads/{id}/complete:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    post:
+      operationId: completeUpload
+      parameters:
+        - in: query
+          name: collision
+          description: Resolve a visible name clash; hidden clashes always keep both silently.
+          schema: {type: string, enum: [new_version, keep_both]}
+      responses:
+        '200':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadReceipt'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /upload-policy:
+    get:
+      operationId: getUploadPolicy
+      responses:
+        '200':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadPolicy'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    put:
+      operationId: setUploadPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UploadPolicy'}
+      responses:
+        '200':
+          description: Successful transfer operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadPolicy'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree:
+    get:
+      operationId: listTree
+      parameters:
+        - in: query
+          name: parentId
+          schema: {type: integer, format: int64}
+        - in: query
+          name: includeGrantCounts
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: Visible children; traversable paths never reveal siblings.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/TreeNode'}}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createDirectory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                parentId: {type: integer, format: int64}
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}:
+    delete:
+      operationId: deleteTreeNode
+      responses:
+        '204': {description: Completed}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    get:
+      operationId: getTreeNode
+      responses:
+        '200':
+          description: Visible item, including its effective Rights.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/rename:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    post:
+      operationId: renameTreeNode
+      description: Requires Modify on the item. Returns 409 for name conflicts or cycles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 255}
+      responses:
+        '200':
+          description: Updated stable item; metadata and Audit Event committed together.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/move:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    post:
+      operationId: moveTreeNode
+      description: Requires Delete on the source parent and Upload on the destination. Null destination means root and requires Administrator. Returns 409 for name conflicts or cycles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parentId]
+              properties:
+                parentId: {type: integer, format: int64, nullable: true}
+      responses:
+        '200':
+          description: Updated stable item; metadata and Audit Event committed together.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeNode'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/grant-draft:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: getGrantDraft
+      responses:
+        '200':
+          description: Direct and inherited Grants with their sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SourcedGrant'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: saveGrantDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [add, remove]
+              properties:
+                add: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/TreeGrantInput'}}
+                remove: {type: array, maxItems: 100, items: {type: integer, format: int64}}
+      responses:
+        '204': {description: Draft committed atomically}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/grant-draft/preview:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer, format: int64}}
+    post:
+      operationId: previewGrantDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [add, remove]
+              properties:
+                add: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/TreeGrantInput'}}
+                remove: {type: array, maxItems: 100, items: {type: integer, format: int64}}
+      responses:
+        '200':
+          description: Exact effective Rights changes; validation runs in a rolled-back transaction
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GrantImpact'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/permission:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: inspectPermission
+      parameters:
+        - {name: userId, in: query, schema: {type: integer, format: int64}}
+      responses:
+        '200':
+          description: Own Effective Permission or Administrator inspection of another User
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionInspection'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/grants:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+    get:
+      operationId: listTreeGrants
+      responses:
+        '200':
+          description: Direct Grants.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/TreeGrant'}}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createTreeGrant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TreeGrantInput'}
+      responses:
+        '201':
+          description: Grant created and audited.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TreeGrant'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /tree/{id}/grants/{grantId}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: integer, format: int64}
+      - in: path
+        name: grantId
+        required: true
+        schema: {type: integer, format: int64}
+    delete:
+      operationId: deleteTreeGrant
+      responses:
+        '204': {description: Grant revoked and audited.}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /registrations:
+    post:
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationInput'
+      responses:
+        '201':
+          description: Registration pending approval.
+        '400':
+          description: Invalid request.
+        '409':
+          description: Conflict.
+    get:
+      operationId: listRegistrations
+      responses:
+        '200':
+          description: Pending Registrations, Administrator only.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Registration'
+        '403':
+          description: Administrator required.
+  /registrations/{id}/activate:
+    post:
+      operationId: activateRegistration
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer, format: int64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [organizationId]
+              properties:
+                organizationId: {type: integer, format: int64}
+      responses:
+        '204':
+          description: Registration processed with an Audit Event.
+        '400':
+          description: Invalid request.
+        '403':
+          description: Administrator required.
+        '404':
+          description: Not found.
+        '409':
+          description: Conflict.
+  /registrations/{id}/reject:
+    post:
+      operationId: rejectRegistration
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer, format: int64}
+      responses:
+        '204':
+          description: Registration processed with an Audit Event.
+        '400':
+          description: Invalid request.
+        '403':
+          description: Administrator required.
+        '404':
+          description: Not found.
+        '409':
+          description: Conflict.
   /health:
     get:
       operationId: getHealth
@@ -54,6 +775,12 @@ paths:
             schema:
               $ref: "#/components/schemas/SignInRequest"
       responses:
+        "403":
+          description: Verified credentials belong to a pending Registration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         "200":
           description: Signed in. The session cookie is set.
           headers:
@@ -84,6 +811,446 @@ paths:
                 type: string
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /password:
+    put:
+      operationId: changePassword
+      summary: Change the signed-in User's password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 1
+                  maxLength: 1024
+      responses:
+        "204":
+          description: Password changed.
+        default:
+          $ref: "#/components/responses/Unauthorized"
+  /users/{userId}/password:
+    put:
+      operationId: resetPassword
+      summary: Reset a User's password as an Administrator.
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              properties:
+                newPassword:
+                  type: string
+                  minLength: 1
+                  maxLength: 1024
+      responses:
+        "204":
+          description: Password reset.
+        default:
+          $ref: "#/components/responses/Unauthorized"
+  /organizations:
+    get:
+      operationId: listOrganizations
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Organizations"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    post:
+      operationId: createOrganization
+      responses:
+        '201':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Organization"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/OrganizationInput"
+  /organizations/{id}:
+    patch:
+      operationId: updateOrganization
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Organization"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/OrganizationInput"
+    delete:
+      operationId: deleteOrganization
+      responses:
+        '204':
+          description: Success.
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+  /user-groups:
+    get:
+      operationId: listUserGroups
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UserGroups"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    post:
+      operationId: createUserGroup
+      responses:
+        '201':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UserGroup"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UserGroupInput"
+  /user-groups/{id}/members:
+    put:
+      operationId: setUserGroupMembers
+      responses:
+        '204':
+          description: Success.
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/GroupMembers"
+  /users/{userId}/status:
+    patch:
+      operationId: setUserStatus
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: {type: integer, format: int64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, deactivated]
+      responses:
+        '204':
+          description: User changed.
+        default:
+          $ref: '#/components/responses/Unauthorized'
+  /users/{userId}/organization:
+    put:
+      operationId: moveUser
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: {type: integer, format: int64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [organizationId]
+              properties:
+                organizationId:
+                  type: integer
+                  format: int64
+      responses:
+        '204':
+          description: User changed.
+        default:
+          $ref: '#/components/responses/Unauthorized'
+  /managed-users:
+    get:
+      operationId: listManagedUsers
+      responses:
+        '200':
+          description: Active and deactivated Users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManagedUser'
+        default:
+          $ref: '#/components/responses/Unauthorized'
+  /users/import:
+    post:
+      operationId: importUsers
+      description: Atomically import active Users from UTF-8 CSV (at most 1000 data records and 2 MiB).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csv]
+              properties:
+                csv: {type: string, maxLength: 2097152}
+      responses:
+        '201':
+          description: Every User was created and audited.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created]
+                properties:
+                  created: {type: integer}
+        '422':
+          description: No Users created. Row is the one-based CSV record number including the header.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [errors]
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      required: [row, message]
+                      properties:
+                        row: {type: integer}
+                        message: {type: string}
+        default:
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     session:
@@ -101,6 +1268,99 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    OfficeEdit:
+      type: object
+      required: [permitId, documentUrl, deliveryCheckUrl, title, format, expiresAt, versionId]
+      properties:
+        permitId: {type: string}
+        documentUrl: {type: string}
+        saveUrl: {type: string, description: Present for edit permits only.}
+        deliveryCheckUrl: {type: string}
+        title: {type: string}
+        format: {type: string, enum: [doc, docx, wps, xls, xlsx]}
+        expiresAt: {type: string, format: date-time}
+        versionId: {type: integer, format: int64}
+    TreeNode:
+      type: object
+      required: [id, name, isFile, rights, traversable]
+      properties:
+        id: {type: integer, format: int64}
+        parentId: {type: integer, format: int64}
+        name: {type: string}
+        isFile: {type: boolean}
+        rights: {type: integer}
+        traversable: {type: boolean}
+        canMoveFromParent:
+          type: boolean
+          description: Included in search results. The caller can move this item out of its source directory.
+        directGrantCount:
+          type: integer
+          minimum: 0
+          description: Included in grant-count listings on items where the caller has Grant.
+        directIndividualGrantCount:
+          type: integer
+          minimum: 0
+          description: Counts direct User Grants excluding Creator Grants. Requires the same access as directGrantCount.
+        latestVersion:
+          description: Latest immutable content metadata, included for browsable files.
+          type: object
+          required: [id, size, format]
+          properties:
+            id: {type: integer, format: int64}
+            size: {type: integer, format: int64}
+            format: {type: string}
+            username: {type: string}
+            createdAt: {type: string, format: date-time}
+    GrantImpact:
+      type: object
+      required: [changedUsers, coveredItems, warnings]
+      properties:
+        changedUsers: {type: integer}
+        coveredItems: {type: integer}
+        warnings: {type: array, items: {type: string}}
+    PermissionInspection:
+      type: object
+      required: [userId, rights, traversable, administrator, sources]
+      properties:
+        userId: {type: integer, format: int64}
+        rights: {type: integer}
+        traversable: {type: boolean}
+        administrator: {type: boolean}
+        sources: {type: array, items: {$ref: '#/components/schemas/SourcedGrant'}}
+    SourcedGrant:
+      type: object
+      required: [grant, sourceId, sourcePath, inherited]
+      properties:
+        grant: {$ref: '#/components/schemas/TreeGrant'}
+        sourceId: {type: integer, format: int64}
+        sourcePath: {type: string}
+        inherited: {type: boolean}
+    TreeGrantInput:
+      type: object
+      required: [principalKind, principalId, rights, scope]
+      properties:
+        creator: {type: boolean, description: 'Create a Creator Grant; requires Grant on the parent directory and a User principal with all Rights.'}
+        principalKind: {type: string, enum: [user, organization, user_group]}
+        principalId: {type: integer, format: int64}
+        rights: {type: integer, minimum: 1, maximum: 63}
+        scope: {type: string, enum: [subtree, this_level_only]}
+    TreeGrant:
+      allOf:
+        - {$ref: '#/components/schemas/TreeGrantInput'}
+        - type: object
+          required: [id, creator]
+          properties:
+            id: {type: integer, format: int64}
+            creator: {type: boolean}
+    ManagedUser:
+      type: object
+      required: [id, username, displayName, status, organizationId]
+      properties:
+        id: {type: integer, format: int64}
+        username: {type: string}
+        displayName: {type: string}
+        status: {type: string}
+        organizationId: {type: integer, format: int64}
     Error:
       type: object
       required: [code, message]
@@ -124,7 +1384,7 @@ components:
           maxLength: 1024
     CurrentUser:
       type: object
-      required: [id, username, displayName, isAdministrator]
+      required: [id, username, displayName, isAdministrator, organizationId]
       properties:
         id:
           type: integer
@@ -133,6 +1393,7 @@ components:
           type: string
         displayName:
           type: string
+        organizationId: {type: integer, format: int64}
         isAdministrator:
           type: boolean
     Health:
@@ -177,3 +1438,145 @@ components:
           type: integer
           format: int64
           description: Latest migration version applied, as read from PostgreSQL; 0 when down.
+    OrganizationInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        parentId:
+          type: integer
+          format: int64
+          nullable: true
+    Organization:
+      type: object
+      required:
+      - id
+      - name
+      - parentId
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        parentId:
+          type: integer
+          format: int64
+          nullable: true
+    UserGroupInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+    UserGroup:
+      type: object
+      required:
+      - id
+      - name
+      - userIds
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        userIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+    GroupMembers:
+      type: object
+      required:
+      - userIds
+      properties:
+        userIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          uniqueItems: true
+    Organizations:
+      type: array
+      items:
+        "$ref": "#/components/schemas/Organization"
+    UserGroups:
+      type: array
+      items:
+        "$ref": "#/components/schemas/UserGroup"
+    RegistrationInput:
+      type: object
+      required: [username, displayName, organizationHint, password]
+      properties:
+        username: {type: string, minLength: 1, maxLength: 150}
+        displayName: {type: string, minLength: 1, maxLength: 150}
+        organizationHint: {type: string, minLength: 1, maxLength: 150}
+        password: {type: string, minLength: 1, maxLength: 1024}
+    Registration:
+      type: object
+      required: [id, username, displayName, organizationHint]
+      properties:
+        id: {type: integer, format: int64}
+        username: {type: string}
+        displayName: {type: string}
+        organizationHint: {type: string}
+    UploadInput:
+      type: object
+      required: [parentId, name, size]
+      properties:
+        parentId: {type: integer, format: int64}
+        name: {type: string}
+        size: {type: integer, format: int64}
+    UploadSession:
+      type: object
+      required: [id, partSize, partCount]
+      properties:
+        id: {type: string}
+        partSize: {type: integer, format: int64}
+        partCount: {type: integer}
+    PartInput:
+      type: object
+      required: [numbers]
+      properties:
+        numbers: {type: array, items: {type: integer}, maxItems: 100}
+    PartURLs:
+      type: array
+      items:
+        type: object
+        required: [number, url]
+        properties:
+          number: {type: integer}
+          url: {type: string}
+    FileVersion:
+      type: object
+      required: [id, size, format, createdBy, username, createdAt]
+      properties:
+        id: {type: integer, format: int64}
+        size: {type: integer, format: int64}
+        format: {type: string}
+        createdBy: {type: integer, format: int64}
+        username: {type: string}
+        createdAt: {type: string, format: date-time}
+    UploadReceipt:
+      type: object
+      required: [fileId, versionId]
+      properties:
+        fileId: {type: integer, format: int64}
+        versionId: {type: integer, format: int64}
+    UploadPolicy:
+      type: object
+      required: [blockedExtensions]
+      properties:
+        blockedExtensions: {type: array, items: {type: string}}

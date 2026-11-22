@@ -27,6 +27,7 @@ test('signing out ends the session', async ({ page }) => {
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
   await expect(page.getByTestId('current-user')).toBeVisible()
 
+  await page.locator('.user-menu summary').click()
   await page.getByRole('button', { name: '退出登录' }).click()
 
   await expect(page).toHaveURL(/\/sign-in/)

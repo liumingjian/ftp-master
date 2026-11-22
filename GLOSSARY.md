@@ -73,15 +73,15 @@ Where deleted files and directories wait for a retention period before being pur
 _Avoid_: Trash, deleted items
 
 **Office Plugin**:
-The in-house browser extension that opens Office documents in desktop WPS inside the browser and saves them back to this system.
+The in-house browser extension that starts edits in WPS from the file browser and submits the edited files to this system.
 _Avoid_: WPS plugin, editor extension, online editor
 
 **Document Gateway**:
-The address desktop WPS reads a document from while it is being edited; it carries no sign-in, so it serves only against an Edit Permit.
+The address that delivers one File Version for editing under an Edit Permit, without requiring the User's session.
 _Avoid_: Proxy, WPS URL, download endpoint
 
 **Edit Permit**:
-A short-lived permission, issued to a signed-in User with Modify when they start an Office edit, for WPS to read one File Version through the Document Gateway once; a save is accepted only under a permit whose content was delivered.
+Permission issued to a signed-in User with Modify when they start an Office edit. It lets the Office Plugin retrieve one File Version through the Document Gateway once, within a limited time. The User can submit edits after complete delivery.
 _Avoid_: Token, ticket, capability, lock
 
 **Stale Save**:

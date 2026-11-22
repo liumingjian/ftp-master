@@ -10,7 +10,7 @@ import ts from 'typescript'
 
 const web = join(dirname(fileURLToPath(import.meta.url)), '..')
 const src = join(web, 'src')
-const clockModules = new Set([])
+const clockModules = new Set(["clock.ts"])
 
 // Globals whose call reads or waits on the wall clock.
 const bannedCalls = new Set(['setTimeout', 'setInterval', 'requestAnimationFrame'])

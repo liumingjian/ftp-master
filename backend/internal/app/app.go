@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +24,7 @@ import (
 	"github.com/liumingjian/ftp-master/backend/internal/health"
 	"github.com/liumingjian/ftp-master/backend/internal/httpapi"
 	"github.com/liumingjian/ftp-master/backend/internal/identity"
+	"github.com/liumingjian/ftp-master/backend/internal/scheduler"
 )
 
 // Config locates the backing stores and sets up the first sign-in.
@@ -43,11 +46,14 @@ type Config struct {
 	RedisAddr     string
 	RedisPassword string
 
-	MinIOEndpoint  string
-	MinIOAccessKey string
-	MinIOSecretKey string
-	MinIOUseSSL    bool
-	MinIOBucket    string
+	MinIOPublicEndpoint string
+	MinIOPublicUseSSL   bool
+	MinIORegion         string
+	MinIOEndpoint       string
+	MinIOAccessKey      string
+	MinIOSecretKey      string
+	MinIOUseSSL         bool
+	MinIOBucket         string
 }
 
 // InitialAdministrator are the credentials of the first Administrator.
@@ -61,6 +67,8 @@ type App struct {
 	pool    *pgxpool.Pool
 	redis   *redis.Client
 	handler http.Handler
+	cancel  context.CancelFunc
+	workers sync.WaitGroup
 }
 
 // New applies pending migrations, connects to the backing stores, ensures the
@@ -82,9 +90,12 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 		}
 	}()
 
+	if cfg.MinIORegion == "" {
+		cfg.MinIORegion = "us-east-1"
+	}
 	minioClient, err := minio.New(cfg.MinIOEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
-		Secure: cfg.MinIOUseSSL,
+		Secure: cfg.MinIOUseSSL, Region: cfg.MinIORegion, BucketLookup: minio.BucketLookupPath,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("configure MinIO client: %w", err)
@@ -93,6 +104,15 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 		return nil, err
 	}
 
+	publicEndpoint := cfg.MinIOPublicEndpoint
+	if publicEndpoint == "" {
+		publicEndpoint = cfg.MinIOEndpoint
+		cfg.MinIOPublicUseSSL = cfg.MinIOUseSSL
+	}
+	signer, err := minio.New(publicEndpoint, &minio.Options{Creds: credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""), Secure: cfg.MinIOPublicUseSSL, Region: cfg.MinIORegion, BucketLookup: minio.BucketLookupPath})
+	if err != nil {
+		return nil, err
+	}
 	queries := sqlcdb.New(pool)
 	recorder := audit.NewRecorder(queries, clk)
 	// This month's and next month's partitions, so the first events of a
@@ -117,11 +137,32 @@ func New(ctx context.Context, cfg Config, clk clock.Clock) (_ *App, err error) {
 		bucketPinger{client: minioClient, bucket: cfg.MinIOBucket},
 		redisPinger{client: redisClient},
 	)
-	handler, err := httpapi.NewHandler(checker, identityService, cfg.HTTP)
+	handler, err := httpapi.NewHandler(checker, identityService, cfg.HTTP, httpapi.MembershipDependencies{Pool: pool, Clock: clk}, httpapi.TransferDependencies{Client: minioClient, Signer: signer, Bucket: cfg.MinIOBucket})
 	if err != nil {
 		return nil, err
 	}
-	return &App{pool: pool, redis: redisClient, handler: handler}, nil
+	a := &App{pool: pool, redis: redisClient, handler: handler}
+	workerCtx, cancel := context.WithCancel(ctx)
+	a.cancel = cancel
+	a.workers.Add(1)
+	go func() {
+		defer a.workers.Done()
+		jobs := scheduler.New(pool, minioClient, cfg.MinIOBucket, clk)
+		//clock:wallclock Wakeup cadence only; every retention cutoff reads the injected Clock.
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			if err := jobs.Run(workerCtx); err != nil && workerCtx.Err() == nil {
+				slog.Error("retention jobs failed", "error", err)
+			}
+			select {
+			case <-workerCtx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return a, nil
 }
 
 // migrate applies pending migrations as the schema owner, over a connection
@@ -143,6 +184,8 @@ func (a *App) Handler() http.Handler { return a.handler }
 
 // Close releases connections to the backing stores.
 func (a *App) Close() {
+	a.cancel()
+	a.workers.Wait()
 	a.pool.Close()
 	_ = a.redis.Close()
 }

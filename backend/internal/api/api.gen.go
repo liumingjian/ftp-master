@@ -11,7 +11,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path"
@@ -20,6 +23,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for HealthStatus.
@@ -40,11 +44,201 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for OfficeEditFormat.
+const (
+	Doc  OfficeEditFormat = "doc"
+	Docx OfficeEditFormat = "docx"
+	Wps  OfficeEditFormat = "wps"
+	Xls  OfficeEditFormat = "xls"
+	Xlsx OfficeEditFormat = "xlsx"
+)
+
+// Valid indicates whether the value is a known member of the OfficeEditFormat enum.
+func (e OfficeEditFormat) Valid() bool {
+	switch e {
+	case Doc:
+		return true
+	case Docx:
+		return true
+	case Wps:
+		return true
+	case Xls:
+		return true
+	case Xlsx:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TreeGrantPrincipalKind.
+const (
+	TreeGrantPrincipalKindOrganization TreeGrantPrincipalKind = "organization"
+	TreeGrantPrincipalKindUser         TreeGrantPrincipalKind = "user"
+	TreeGrantPrincipalKindUserGroup    TreeGrantPrincipalKind = "user_group"
+)
+
+// Valid indicates whether the value is a known member of the TreeGrantPrincipalKind enum.
+func (e TreeGrantPrincipalKind) Valid() bool {
+	switch e {
+	case TreeGrantPrincipalKindOrganization:
+		return true
+	case TreeGrantPrincipalKindUser:
+		return true
+	case TreeGrantPrincipalKindUserGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TreeGrantScope.
+const (
+	TreeGrantScopeSubtree       TreeGrantScope = "subtree"
+	TreeGrantScopeThisLevelOnly TreeGrantScope = "this_level_only"
+)
+
+// Valid indicates whether the value is a known member of the TreeGrantScope enum.
+func (e TreeGrantScope) Valid() bool {
+	switch e {
+	case TreeGrantScopeSubtree:
+		return true
+	case TreeGrantScopeThisLevelOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TreeGrantInputPrincipalKind.
+const (
+	TreeGrantInputPrincipalKindOrganization TreeGrantInputPrincipalKind = "organization"
+	TreeGrantInputPrincipalKindUser         TreeGrantInputPrincipalKind = "user"
+	TreeGrantInputPrincipalKindUserGroup    TreeGrantInputPrincipalKind = "user_group"
+)
+
+// Valid indicates whether the value is a known member of the TreeGrantInputPrincipalKind enum.
+func (e TreeGrantInputPrincipalKind) Valid() bool {
+	switch e {
+	case TreeGrantInputPrincipalKindOrganization:
+		return true
+	case TreeGrantInputPrincipalKindUser:
+		return true
+	case TreeGrantInputPrincipalKindUserGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TreeGrantInputScope.
+const (
+	TreeGrantInputScopeSubtree       TreeGrantInputScope = "subtree"
+	TreeGrantInputScopeThisLevelOnly TreeGrantInputScope = "this_level_only"
+)
+
+// Valid indicates whether the value is a known member of the TreeGrantInputScope enum.
+func (e TreeGrantInputScope) Valid() bool {
+	switch e {
+	case TreeGrantInputScopeSubtree:
+		return true
+	case TreeGrantInputScopeThisLevelOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QueryAuditJSONBodyCategory.
+const (
+	Account QueryAuditJSONBodyCategory = "account"
+	Delete  QueryAuditJSONBodyCategory = "delete"
+	Grant   QueryAuditJSONBodyCategory = "grant"
+	Read    QueryAuditJSONBodyCategory = "read"
+	Session QueryAuditJSONBodyCategory = "session"
+	Write   QueryAuditJSONBodyCategory = "write"
+)
+
+// Valid indicates whether the value is a known member of the QueryAuditJSONBodyCategory enum.
+func (e QueryAuditJSONBodyCategory) Valid() bool {
+	switch e {
+	case Account:
+		return true
+	case Delete:
+		return true
+	case Grant:
+		return true
+	case Read:
+		return true
+	case Session:
+		return true
+	case Write:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QueryAudit200JSONResponseBodyEventsOutcome.
+const (
+	Failure QueryAudit200JSONResponseBodyEventsOutcome = "failure"
+	Success QueryAudit200JSONResponseBodyEventsOutcome = "success"
+)
+
+// Valid indicates whether the value is a known member of the QueryAudit200JSONResponseBodyEventsOutcome enum.
+func (e QueryAudit200JSONResponseBodyEventsOutcome) Valid() bool {
+	switch e {
+	case Failure:
+		return true
+	case Success:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CompleteUploadParamsCollision.
+const (
+	KeepBoth   CompleteUploadParamsCollision = "keep_both"
+	NewVersion CompleteUploadParamsCollision = "new_version"
+)
+
+// Valid indicates whether the value is a known member of the CompleteUploadParamsCollision enum.
+func (e CompleteUploadParamsCollision) Valid() bool {
+	switch e {
+	case KeepBoth:
+		return true
+	case NewVersion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetUserStatusJSONBodyStatus.
+const (
+	Active      SetUserStatusJSONBodyStatus = "active"
+	Deactivated SetUserStatusJSONBodyStatus = "deactivated"
+)
+
+// Valid indicates whether the value is a known member of the SetUserStatusJSONBodyStatus enum.
+func (e SetUserStatusJSONBodyStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Deactivated:
+		return true
+	default:
+		return false
+	}
+}
+
 // CurrentUser defines model for CurrentUser.
 type CurrentUser struct {
 	DisplayName     string `json:"displayName"`
 	Id              int64  `json:"id"`
 	IsAdministrator bool   `json:"isAdministrator"`
+	OrganizationId  int64  `json:"organizationId"`
 	Username        string `json:"username"`
 }
 
@@ -67,6 +261,28 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// FileVersion defines model for FileVersion.
+type FileVersion struct {
+	CreatedAt time.Time `json:"createdAt"`
+	CreatedBy int64     `json:"createdBy"`
+	Format    string    `json:"format"`
+	Id        int64     `json:"id"`
+	Size      int64     `json:"size"`
+	Username  string    `json:"username"`
+}
+
+// GrantImpact defines model for GrantImpact.
+type GrantImpact struct {
+	ChangedUsers int      `json:"changedUsers"`
+	CoveredItems int      `json:"coveredItems"`
+	Warnings     []string `json:"warnings"`
+}
+
+// GroupMembers defines model for GroupMembers.
+type GroupMembers struct {
+	UserIds []int64 `json:"userIds"`
+}
+
 // Health defines model for Health.
 type Health struct {
 	// Cache Whether a backing store answered. Failure details are logged by the service, never returned, since this endpoint needs no sign-in.
@@ -87,23 +303,496 @@ type Health struct {
 // HealthStatus defines model for HealthStatus.
 type HealthStatus string
 
+// ManagedUser defines model for ManagedUser.
+type ManagedUser struct {
+	DisplayName    string `json:"displayName"`
+	Id             int64  `json:"id"`
+	OrganizationId int64  `json:"organizationId"`
+	Status         string `json:"status"`
+	Username       string `json:"username"`
+}
+
+// OfficeEdit defines model for OfficeEdit.
+type OfficeEdit struct {
+	DeliveryCheckUrl string           `json:"deliveryCheckUrl"`
+	DocumentUrl      string           `json:"documentUrl"`
+	ExpiresAt        time.Time        `json:"expiresAt"`
+	Format           OfficeEditFormat `json:"format"`
+	PermitId         string           `json:"permitId"`
+
+	// SaveUrl Present for edit permits only.
+	SaveUrl   *string `json:"saveUrl,omitempty"`
+	Title     string  `json:"title"`
+	VersionId int64   `json:"versionId"`
+}
+
+// OfficeEditFormat defines model for OfficeEdit.Format.
+type OfficeEditFormat string
+
+// Organization defines model for Organization.
+type Organization struct {
+	Id       int64  `json:"id"`
+	Name     string `json:"name"`
+	ParentId *int64 `json:"parentId"`
+}
+
+// OrganizationInput defines model for OrganizationInput.
+type OrganizationInput struct {
+	Name     string `json:"name"`
+	ParentId *int64 `json:"parentId,omitempty"`
+}
+
+// Organizations defines model for Organizations.
+type Organizations = []Organization
+
+// PartInput defines model for PartInput.
+type PartInput struct {
+	Numbers []int `json:"numbers"`
+}
+
+// PartURLs defines model for PartURLs.
+type PartURLs = []struct {
+	Number int    `json:"number"`
+	Url    string `json:"url"`
+}
+
+// PermissionInspection defines model for PermissionInspection.
+type PermissionInspection struct {
+	Administrator bool           `json:"administrator"`
+	Rights        int            `json:"rights"`
+	Sources       []SourcedGrant `json:"sources"`
+	Traversable   bool           `json:"traversable"`
+	UserId        int64          `json:"userId"`
+}
+
+// Registration defines model for Registration.
+type Registration struct {
+	DisplayName      string `json:"displayName"`
+	Id               int64  `json:"id"`
+	OrganizationHint string `json:"organizationHint"`
+	Username         string `json:"username"`
+}
+
+// RegistrationInput defines model for RegistrationInput.
+type RegistrationInput struct {
+	DisplayName      string `json:"displayName"`
+	OrganizationHint string `json:"organizationHint"`
+	Password         string `json:"password"`
+	Username         string `json:"username"`
+}
+
 // SignInRequest defines model for SignInRequest.
 type SignInRequest struct {
 	Password string `json:"password"`
 	Username string `json:"username"`
 }
 
+// SourcedGrant defines model for SourcedGrant.
+type SourcedGrant struct {
+	Grant      TreeGrant `json:"grant"`
+	Inherited  bool      `json:"inherited"`
+	SourceId   int64     `json:"sourceId"`
+	SourcePath string    `json:"sourcePath"`
+}
+
+// TreeGrant defines model for TreeGrant.
+type TreeGrant struct {
+	Creator       bool                   `json:"creator"`
+	Id            int64                  `json:"id"`
+	PrincipalId   int64                  `json:"principalId"`
+	PrincipalKind TreeGrantPrincipalKind `json:"principalKind"`
+	Rights        int                    `json:"rights"`
+	Scope         TreeGrantScope         `json:"scope"`
+}
+
+// TreeGrantPrincipalKind defines model for TreeGrant.PrincipalKind.
+type TreeGrantPrincipalKind string
+
+// TreeGrantScope defines model for TreeGrant.Scope.
+type TreeGrantScope string
+
+// TreeGrantInput defines model for TreeGrantInput.
+type TreeGrantInput struct {
+	// Creator Create a Creator Grant; requires Grant on the parent directory and a User principal with all Rights.
+	Creator       *bool                       `json:"creator,omitempty"`
+	PrincipalId   int64                       `json:"principalId"`
+	PrincipalKind TreeGrantInputPrincipalKind `json:"principalKind"`
+	Rights        int                         `json:"rights"`
+	Scope         TreeGrantInputScope         `json:"scope"`
+}
+
+// TreeGrantInputPrincipalKind defines model for TreeGrantInput.PrincipalKind.
+type TreeGrantInputPrincipalKind string
+
+// TreeGrantInputScope defines model for TreeGrantInput.Scope.
+type TreeGrantInputScope string
+
+// TreeNode defines model for TreeNode.
+type TreeNode struct {
+	// CanMoveFromParent Included in search results. The caller can move this item out of its source directory.
+	CanMoveFromParent *bool `json:"canMoveFromParent,omitempty"`
+
+	// DirectGrantCount Included in grant-count listings on items where the caller has Grant.
+	DirectGrantCount *int `json:"directGrantCount,omitempty"`
+
+	// DirectIndividualGrantCount Counts direct User Grants excluding Creator Grants. Requires the same access as directGrantCount.
+	DirectIndividualGrantCount *int  `json:"directIndividualGrantCount,omitempty"`
+	Id                         int64 `json:"id"`
+	IsFile                     bool  `json:"isFile"`
+
+	// LatestVersion Latest immutable content metadata, included for browsable files.
+	LatestVersion *struct {
+		CreatedAt *time.Time `json:"createdAt,omitempty"`
+		Format    string     `json:"format"`
+		Id        int64      `json:"id"`
+		Size      int64      `json:"size"`
+		Username  *string    `json:"username,omitempty"`
+	} `json:"latestVersion,omitempty"`
+	Name        string `json:"name"`
+	ParentId    *int64 `json:"parentId,omitempty"`
+	Rights      int    `json:"rights"`
+	Traversable bool   `json:"traversable"`
+}
+
+// UploadInput defines model for UploadInput.
+type UploadInput struct {
+	Name     string `json:"name"`
+	ParentId int64  `json:"parentId"`
+	Size     int64  `json:"size"`
+}
+
+// UploadPolicy defines model for UploadPolicy.
+type UploadPolicy struct {
+	BlockedExtensions []string `json:"blockedExtensions"`
+}
+
+// UploadReceipt defines model for UploadReceipt.
+type UploadReceipt struct {
+	FileId    int64 `json:"fileId"`
+	VersionId int64 `json:"versionId"`
+}
+
+// UploadSession defines model for UploadSession.
+type UploadSession struct {
+	Id        string `json:"id"`
+	PartCount int    `json:"partCount"`
+	PartSize  int64  `json:"partSize"`
+}
+
+// UserGroup defines model for UserGroup.
+type UserGroup struct {
+	Id      int64   `json:"id"`
+	Name    string  `json:"name"`
+	UserIds []int64 `json:"userIds"`
+}
+
+// UserGroupInput defines model for UserGroupInput.
+type UserGroupInput struct {
+	Name string `json:"name"`
+}
+
+// UserGroups defines model for UserGroups.
+type UserGroups = []UserGroup
+
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
+
+// QueryAuditJSONBody defines parameters for QueryAudit.
+type QueryAuditJSONBody struct {
+	Action                *string                     `json:"action,omitempty"`
+	Category              *QueryAuditJSONBodyCategory `json:"category,omitempty"`
+	Directory             *string                     `json:"directory,omitempty"`
+	Export                *bool                       `json:"export,omitempty"`
+	FailuresOnly          *bool                       `json:"failuresOnly,omitempty"`
+	From                  time.Time                   `json:"from"`
+	IncludeSubdirectories *bool                       `json:"includeSubdirectories,omitempty"`
+	ItemId                *int64                      `json:"itemId,omitempty"`
+	OrganizationId        *int64                      `json:"organizationId,omitempty"`
+	Page                  *int                        `json:"page,omitempty"`
+	To                    time.Time                   `json:"to"`
+	UserIds               *[]int64                    `json:"userIds,omitempty"`
+}
+
+// QueryAuditJSONBodyCategory defines parameters for QueryAudit.
+type QueryAuditJSONBodyCategory string
+
+// QueryAudit200JSONResponseBodyEventsOutcome defines parameters for QueryAudit.
+type QueryAudit200JSONResponseBodyEventsOutcome string
+
+// StartOfficeEditJSONBody defines parameters for StartOfficeEdit.
+type StartOfficeEditJSONBody struct {
+	// Preview Request a read-only permit with Browse access.
+	Preview   *bool  `json:"preview,omitempty"`
+	VersionId *int64 `json:"versionId,omitempty"`
+}
+
+// SaveOfficeMultipartBody defines parameters for SaveOffice.
+type SaveOfficeMultipartBody struct {
+	File     *openapi_types.File `json:"file,omitempty"`
+	Filedata *openapi_types.File `json:"filedata,omitempty"`
+	Filename *string             `json:"filename,omitempty"`
+	Md5sum   *string             `json:"md5sum,omitempty"`
+}
+
+// ChangePasswordJSONBody defines parameters for ChangePassword.
+type ChangePasswordJSONBody struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+// ActivateRegistrationJSONBody defines parameters for ActivateRegistration.
+type ActivateRegistrationJSONBody struct {
+	OrganizationId int64 `json:"organizationId"`
+}
+
+// ListTreeParams defines parameters for ListTree.
+type ListTreeParams struct {
+	ParentId           *int64 `form:"parentId,omitempty" json:"parentId,omitempty"`
+	IncludeGrantCounts *bool  `form:"includeGrantCounts,omitempty" json:"includeGrantCounts,omitempty"`
+}
+
+// CreateDirectoryJSONBody defines parameters for CreateDirectory.
+type CreateDirectoryJSONBody struct {
+	Name     string `json:"name"`
+	ParentId *int64 `json:"parentId,omitempty"`
+}
+
+// SearchTreeParams defines parameters for SearchTree.
+type SearchTreeParams struct {
+	Q string `form:"q" json:"q"`
+}
+
+// DownloadZipParams defines parameters for DownloadZip.
+type DownloadZipParams struct {
+	Ids       string `form:"ids" json:"ids"`
+	Preflight *bool  `form:"preflight,omitempty" json:"preflight,omitempty"`
+}
+
+// DownloadFileParams defines parameters for DownloadFile.
+type DownloadFileParams struct {
+	VersionId *int64 `form:"versionId,omitempty" json:"versionId,omitempty"`
+}
+
+// SaveGrantDraftJSONBody defines parameters for SaveGrantDraft.
+type SaveGrantDraftJSONBody struct {
+	Add    []TreeGrantInput `json:"add"`
+	Remove []int64          `json:"remove"`
+}
+
+// PreviewGrantDraftJSONBody defines parameters for PreviewGrantDraft.
+type PreviewGrantDraftJSONBody struct {
+	Add    []TreeGrantInput `json:"add"`
+	Remove []int64          `json:"remove"`
+}
+
+// MoveTreeNodeJSONBody defines parameters for MoveTreeNode.
+type MoveTreeNodeJSONBody struct {
+	ParentId *int64 `json:"parentId"`
+}
+
+// InspectPermissionParams defines parameters for InspectPermission.
+type InspectPermissionParams struct {
+	UserId *int64 `form:"userId,omitempty" json:"userId,omitempty"`
+}
+
+// PreviewFileParams defines parameters for PreviewFile.
+type PreviewFileParams struct {
+	Range *string `json:"Range,omitempty"`
+}
+
+// RenameTreeNodeJSONBody defines parameters for RenameTreeNode.
+type RenameTreeNodeJSONBody struct {
+	Name string `json:"name"`
+}
+
+// RestoreTreeNodeJSONBody defines parameters for RestoreTreeNode.
+type RestoreTreeNodeJSONBody struct {
+	ParentId *int64 `json:"parentId,omitempty"`
+}
+
+// SaveTextJSONBody defines parameters for SaveText.
+type SaveTextJSONBody struct {
+	BaseVersionId int64  `json:"baseVersionId"`
+	Content       string `json:"content"`
+}
+
+// InitiateUploadBatchJSONBody defines parameters for InitiateUploadBatch.
+type InitiateUploadBatchJSONBody struct {
+	Directories *[]string `json:"directories,omitempty"`
+	Files       []struct {
+		Path string `json:"path"`
+		Size int64  `json:"size"`
+	} `json:"files"`
+	Name     string `json:"name"`
+	ParentId int64  `json:"parentId"`
+}
+
+// CompleteUploadParams defines parameters for CompleteUpload.
+type CompleteUploadParams struct {
+	// Collision Resolve a visible name clash; hidden clashes always keep both silently.
+	Collision *CompleteUploadParamsCollision `form:"collision,omitempty" json:"collision,omitempty"`
+}
+
+// CompleteUploadParamsCollision defines parameters for CompleteUpload.
+type CompleteUploadParamsCollision string
+
+// ImportUsersJSONBody defines parameters for ImportUsers.
+type ImportUsersJSONBody struct {
+	Csv string `json:"csv"`
+}
+
+// MoveUserJSONBody defines parameters for MoveUser.
+type MoveUserJSONBody struct {
+	OrganizationId int64 `json:"organizationId"`
+}
+
+// ResetPasswordJSONBody defines parameters for ResetPassword.
+type ResetPasswordJSONBody struct {
+	NewPassword string `json:"newPassword"`
+}
+
+// SetUserStatusJSONBody defines parameters for SetUserStatus.
+type SetUserStatusJSONBody struct {
+	Status SetUserStatusJSONBodyStatus `json:"status"`
+}
+
+// SetUserStatusJSONBodyStatus defines parameters for SetUserStatus.
+type SetUserStatusJSONBodyStatus string
+
+// QueryAuditJSONRequestBody defines body for QueryAudit for application/json ContentType.
+type QueryAuditJSONRequestBody QueryAuditJSONBody
+
+// StartOfficeEditJSONRequestBody defines body for StartOfficeEdit for application/json ContentType.
+type StartOfficeEditJSONRequestBody StartOfficeEditJSONBody
+
+// SaveOfficeMultipartRequestBody defines body for SaveOffice for multipart/form-data ContentType.
+type SaveOfficeMultipartRequestBody SaveOfficeMultipartBody
+
+// CreateOrganizationJSONRequestBody defines body for CreateOrganization for application/json ContentType.
+type CreateOrganizationJSONRequestBody = OrganizationInput
+
+// UpdateOrganizationJSONRequestBody defines body for UpdateOrganization for application/json ContentType.
+type UpdateOrganizationJSONRequestBody = OrganizationInput
+
+// ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
+type ChangePasswordJSONRequestBody ChangePasswordJSONBody
+
+// RegisterJSONRequestBody defines body for Register for application/json ContentType.
+type RegisterJSONRequestBody = RegistrationInput
+
+// ActivateRegistrationJSONRequestBody defines body for ActivateRegistration for application/json ContentType.
+type ActivateRegistrationJSONRequestBody ActivateRegistrationJSONBody
 
 // SignInJSONRequestBody defines body for SignIn for application/json ContentType.
 type SignInJSONRequestBody = SignInRequest
 
+// CreateDirectoryJSONRequestBody defines body for CreateDirectory for application/json ContentType.
+type CreateDirectoryJSONRequestBody CreateDirectoryJSONBody
+
+// SaveGrantDraftJSONRequestBody defines body for SaveGrantDraft for application/json ContentType.
+type SaveGrantDraftJSONRequestBody SaveGrantDraftJSONBody
+
+// PreviewGrantDraftJSONRequestBody defines body for PreviewGrantDraft for application/json ContentType.
+type PreviewGrantDraftJSONRequestBody PreviewGrantDraftJSONBody
+
+// CreateTreeGrantJSONRequestBody defines body for CreateTreeGrant for application/json ContentType.
+type CreateTreeGrantJSONRequestBody = TreeGrantInput
+
+// MoveTreeNodeJSONRequestBody defines body for MoveTreeNode for application/json ContentType.
+type MoveTreeNodeJSONRequestBody MoveTreeNodeJSONBody
+
+// RenameTreeNodeJSONRequestBody defines body for RenameTreeNode for application/json ContentType.
+type RenameTreeNodeJSONRequestBody RenameTreeNodeJSONBody
+
+// RestoreTreeNodeJSONRequestBody defines body for RestoreTreeNode for application/json ContentType.
+type RestoreTreeNodeJSONRequestBody RestoreTreeNodeJSONBody
+
+// SaveTextJSONRequestBody defines body for SaveText for application/json ContentType.
+type SaveTextJSONRequestBody SaveTextJSONBody
+
+// InitiateUploadBatchJSONRequestBody defines body for InitiateUploadBatch for application/json ContentType.
+type InitiateUploadBatchJSONRequestBody InitiateUploadBatchJSONBody
+
+// SetUploadPolicyJSONRequestBody defines body for SetUploadPolicy for application/json ContentType.
+type SetUploadPolicyJSONRequestBody = UploadPolicy
+
+// InitiateUploadJSONRequestBody defines body for InitiateUpload for application/json ContentType.
+type InitiateUploadJSONRequestBody = UploadInput
+
+// IssueUploadPartsJSONRequestBody defines body for IssueUploadParts for application/json ContentType.
+type IssueUploadPartsJSONRequestBody = PartInput
+
+// CreateUserGroupJSONRequestBody defines body for CreateUserGroup for application/json ContentType.
+type CreateUserGroupJSONRequestBody = UserGroupInput
+
+// SetUserGroupMembersJSONRequestBody defines body for SetUserGroupMembers for application/json ContentType.
+type SetUserGroupMembersJSONRequestBody = GroupMembers
+
+// ImportUsersJSONRequestBody defines body for ImportUsers for application/json ContentType.
+type ImportUsersJSONRequestBody ImportUsersJSONBody
+
+// MoveUserJSONRequestBody defines body for MoveUser for application/json ContentType.
+type MoveUserJSONRequestBody MoveUserJSONBody
+
+// ResetPasswordJSONRequestBody defines body for ResetPassword for application/json ContentType.
+type ResetPasswordJSONRequestBody ResetPasswordJSONBody
+
+// SetUserStatusJSONRequestBody defines body for SetUserStatus for application/json ContentType.
+type SetUserStatusJSONRequestBody SetUserStatusJSONBody
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+
+	// (POST /audit/query)
+	QueryAudit(w http.ResponseWriter, r *http.Request)
+
+	// (POST /files/{id}/office-edits)
+	StartOfficeEdit(w http.ResponseWriter, r *http.Request, id int64)
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+
+	// (GET /managed-users)
+	ListManagedUsers(w http.ResponseWriter, r *http.Request)
+
+	// (GET /office/permits/{permitId}/delivery)
+	GetOfficeDelivery(w http.ResponseWriter, r *http.Request, permitId string)
+
+	// (GET /office/permits/{permitId}/document/{filename})
+	GetOfficeDocument(w http.ResponseWriter, r *http.Request, permitId string, filename string)
+
+	// (POST /office/permits/{permitId}/save)
+	SaveOffice(w http.ResponseWriter, r *http.Request, permitId string)
+
+	// (GET /organizations)
+	ListOrganizations(w http.ResponseWriter, r *http.Request)
+
+	// (POST /organizations)
+	CreateOrganization(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /organizations/{id})
+	DeleteOrganization(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (PATCH /organizations/{id})
+	UpdateOrganization(w http.ResponseWriter, r *http.Request, id int64)
+	// ChangePassword Change the signed-in User's password.
+	// (PUT /password)
+	ChangePassword(w http.ResponseWriter, r *http.Request)
+
+	// (GET /recycle-bin)
+	ListRecycleBin(w http.ResponseWriter, r *http.Request)
+
+	// (GET /registrations)
+	ListRegistrations(w http.ResponseWriter, r *http.Request)
+
+	// (POST /registrations)
+	Register(w http.ResponseWriter, r *http.Request)
+
+	// (POST /registrations/{id}/activate)
+	ActivateRegistration(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /registrations/{id}/reject)
+	RejectRegistration(w http.ResponseWriter, r *http.Request, id int64)
 	// SignOut Sign out, ending the current session immediately.
 	// (DELETE /session)
 	SignOut(w http.ResponseWriter, r *http.Request)
@@ -113,6 +802,117 @@ type ServerInterface interface {
 	// SignIn Sign in with username and password, starting a session.
 	// (POST /session)
 	SignIn(w http.ResponseWriter, r *http.Request)
+
+	// (GET /tree)
+	ListTree(w http.ResponseWriter, r *http.Request, params ListTreeParams)
+
+	// (POST /tree)
+	CreateDirectory(w http.ResponseWriter, r *http.Request)
+
+	// (GET /tree/search)
+	SearchTree(w http.ResponseWriter, r *http.Request, params SearchTreeParams)
+
+	// (GET /tree/zip)
+	DownloadZip(w http.ResponseWriter, r *http.Request, params DownloadZipParams)
+
+	// (DELETE /tree/{id})
+	DeleteTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /tree/{id})
+	GetTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /tree/{id}/download)
+	DownloadFile(w http.ResponseWriter, r *http.Request, id int64, params DownloadFileParams)
+
+	// (GET /tree/{id}/grant-draft)
+	GetGrantDraft(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/grant-draft)
+	SaveGrantDraft(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/grant-draft/preview)
+	PreviewGrantDraft(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /tree/{id}/grants)
+	ListTreeGrants(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/grants)
+	CreateTreeGrant(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (DELETE /tree/{id}/grants/{grantId})
+	DeleteTreeGrant(w http.ResponseWriter, r *http.Request, id int64, grantId int64)
+
+	// (POST /tree/{id}/move)
+	MoveTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /tree/{id}/permission)
+	InspectPermission(w http.ResponseWriter, r *http.Request, id int64, params InspectPermissionParams)
+
+	// (GET /tree/{id}/preview)
+	PreviewFile(w http.ResponseWriter, r *http.Request, id int64, params PreviewFileParams)
+
+	// (DELETE /tree/{id}/purge)
+	PurgeTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/rename)
+	RenameTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/restore)
+	RestoreTreeNode(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /tree/{id}/text)
+	OpenText(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (PUT /tree/{id}/text)
+	SaveText(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /tree/{id}/versions)
+	ListFileVersions(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /tree/{id}/versions/{versionId}/restore)
+	RestoreFileVersion(w http.ResponseWriter, r *http.Request, id int64, versionId int64)
+
+	// (POST /upload-batches)
+	InitiateUploadBatch(w http.ResponseWriter, r *http.Request)
+
+	// (GET /upload-policy)
+	GetUploadPolicy(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /upload-policy)
+	SetUploadPolicy(w http.ResponseWriter, r *http.Request)
+
+	// (POST /uploads)
+	InitiateUpload(w http.ResponseWriter, r *http.Request)
+
+	// (POST /uploads/{id}/complete)
+	CompleteUpload(w http.ResponseWriter, r *http.Request, id string, params CompleteUploadParams)
+
+	// (GET /uploads/{id}/parts)
+	ListUploadParts(w http.ResponseWriter, r *http.Request, id string)
+
+	// (POST /uploads/{id}/parts)
+	IssueUploadParts(w http.ResponseWriter, r *http.Request, id string)
+
+	// (GET /user-groups)
+	ListUserGroups(w http.ResponseWriter, r *http.Request)
+
+	// (POST /user-groups)
+	CreateUserGroup(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /user-groups/{id}/members)
+	SetUserGroupMembers(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (POST /users/import)
+	ImportUsers(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /users/{userId}/organization)
+	MoveUser(w http.ResponseWriter, r *http.Request, userId int64)
+	// ResetPassword Reset a User's password as an Administrator.
+	// (PUT /users/{userId}/password)
+	ResetPassword(w http.ResponseWriter, r *http.Request, userId int64)
+
+	// (PATCH /users/{userId}/status)
+	SetUserStatus(w http.ResponseWriter, r *http.Request, userId int64)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -124,11 +924,340 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// QueryAudit operation middleware
+func (siw *ServerInterfaceWrapper) QueryAudit(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryAudit(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartOfficeEdit operation middleware
+func (siw *ServerInterfaceWrapper) StartOfficeEdit(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartOfficeEdit(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListManagedUsers operation middleware
+func (siw *ServerInterfaceWrapper) ListManagedUsers(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListManagedUsers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetOfficeDelivery operation middleware
+func (siw *ServerInterfaceWrapper) GetOfficeDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "permitId" -------------
+	var permitId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "permitId", r.PathValue("permitId"), &permitId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "permitId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOfficeDelivery(w, r, permitId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetOfficeDocument operation middleware
+func (siw *ServerInterfaceWrapper) GetOfficeDocument(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "permitId" -------------
+	var permitId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "permitId", r.PathValue("permitId"), &permitId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "permitId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "filename" -------------
+	var filename string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filename", r.PathValue("filename"), &filename, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filename", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOfficeDocument(w, r, permitId, filename)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveOffice operation middleware
+func (siw *ServerInterfaceWrapper) SaveOffice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "permitId" -------------
+	var permitId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "permitId", r.PathValue("permitId"), &permitId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "permitId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveOffice(w, r, permitId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOrganizations operation middleware
+func (siw *ServerInterfaceWrapper) ListOrganizations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOrganizations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateOrganization operation middleware
+func (siw *ServerInterfaceWrapper) CreateOrganization(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateOrganization(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteOrganization operation middleware
+func (siw *ServerInterfaceWrapper) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteOrganization(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateOrganization operation middleware
+func (siw *ServerInterfaceWrapper) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateOrganization(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ChangePassword operation middleware
+func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChangePassword(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRecycleBin operation middleware
+func (siw *ServerInterfaceWrapper) ListRecycleBin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRecycleBin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRegistrations operation middleware
+func (siw *ServerInterfaceWrapper) ListRegistrations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRegistrations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Register operation middleware
+func (siw *ServerInterfaceWrapper) Register(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Register(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ActivateRegistration operation middleware
+func (siw *ServerInterfaceWrapper) ActivateRegistration(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ActivateRegistration(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RejectRegistration operation middleware
+func (siw *ServerInterfaceWrapper) RejectRegistration(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RejectRegistration(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -171,6 +1300,1009 @@ func (siw *ServerInterfaceWrapper) SignIn(w http.ResponseWriter, r *http.Request
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SignIn(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTree operation middleware
+func (siw *ServerInterfaceWrapper) ListTree(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTreeParams
+
+	// ------------- Optional query parameter "parentId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "parentId", r.URL.Query(), &params.ParentId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "parentId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "parentId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "includeGrantCounts" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "includeGrantCounts", r.URL.Query(), &params.IncludeGrantCounts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "includeGrantCounts"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "includeGrantCounts", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTree(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDirectory operation middleware
+func (siw *ServerInterfaceWrapper) CreateDirectory(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDirectory(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SearchTree operation middleware
+func (siw *ServerInterfaceWrapper) SearchTree(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SearchTreeParams
+
+	// ------------- Required query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SearchTree(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DownloadZip operation middleware
+func (siw *ServerInterfaceWrapper) DownloadZip(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DownloadZipParams
+
+	// ------------- Required query parameter "ids" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "ids", r.URL.Query(), &params.Ids, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "ids"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ids", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "preflight" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "preflight", r.URL.Query(), &params.Preflight, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "preflight"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "preflight", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadZip(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) GetTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DownloadFile operation middleware
+func (siw *ServerInterfaceWrapper) DownloadFile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DownloadFileParams
+
+	// ------------- Optional query parameter "versionId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "versionId", r.URL.Query(), &params.VersionId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "versionId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "versionId", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadFile(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGrantDraft operation middleware
+func (siw *ServerInterfaceWrapper) GetGrantDraft(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGrantDraft(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveGrantDraft operation middleware
+func (siw *ServerInterfaceWrapper) SaveGrantDraft(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveGrantDraft(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewGrantDraft operation middleware
+func (siw *ServerInterfaceWrapper) PreviewGrantDraft(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewGrantDraft(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTreeGrants operation middleware
+func (siw *ServerInterfaceWrapper) ListTreeGrants(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTreeGrants(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTreeGrant operation middleware
+func (siw *ServerInterfaceWrapper) CreateTreeGrant(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTreeGrant(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTreeGrant operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTreeGrant(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "grantId" -------------
+	var grantId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "grantId", r.PathValue("grantId"), &grantId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "grantId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTreeGrant(w, r, id, grantId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MoveTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) MoveTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MoveTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InspectPermission operation middleware
+func (siw *ServerInterfaceWrapper) InspectPermission(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params InspectPermissionParams
+
+	// ------------- Optional query parameter "userId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "userId", r.URL.Query(), &params.UserId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "userId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InspectPermission(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewFile operation middleware
+func (siw *ServerInterfaceWrapper) PreviewFile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewFileParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Range" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Range")]; found {
+		var Range string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Range", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Range", valueList[0], &Range, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Range", Err: err})
+			return
+		}
+
+		params.Range = &Range
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewFile(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PurgeTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) PurgeTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PurgeTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RenameTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) RenameTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenameTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RestoreTreeNode operation middleware
+func (siw *ServerInterfaceWrapper) RestoreTreeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestoreTreeNode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// OpenText operation middleware
+func (siw *ServerInterfaceWrapper) OpenText(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OpenText(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveText operation middleware
+func (siw *ServerInterfaceWrapper) SaveText(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveText(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFileVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListFileVersions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFileVersions(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RestoreFileVersion operation middleware
+func (siw *ServerInterfaceWrapper) RestoreFileVersion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "versionId" -------------
+	var versionId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "versionId", r.PathValue("versionId"), &versionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "versionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestoreFileVersion(w, r, id, versionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InitiateUploadBatch operation middleware
+func (siw *ServerInterfaceWrapper) InitiateUploadBatch(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InitiateUploadBatch(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUploadPolicy operation middleware
+func (siw *ServerInterfaceWrapper) GetUploadPolicy(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUploadPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetUploadPolicy operation middleware
+func (siw *ServerInterfaceWrapper) SetUploadPolicy(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetUploadPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InitiateUpload operation middleware
+func (siw *ServerInterfaceWrapper) InitiateUpload(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InitiateUpload(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteUpload operation middleware
+func (siw *ServerInterfaceWrapper) CompleteUpload(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CompleteUploadParams
+
+	// ------------- Optional query parameter "collision" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "collision", r.URL.Query(), &params.Collision, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "collision"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "collision", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteUpload(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUploadParts operation middleware
+func (siw *ServerInterfaceWrapper) ListUploadParts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUploadParts(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// IssueUploadParts operation middleware
+func (siw *ServerInterfaceWrapper) IssueUploadParts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IssueUploadParts(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUserGroups operation middleware
+func (siw *ServerInterfaceWrapper) ListUserGroups(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUserGroups(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateUserGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateUserGroup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateUserGroup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetUserGroupMembers operation middleware
+func (siw *ServerInterfaceWrapper) SetUserGroupMembers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetUserGroupMembers(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ImportUsers operation middleware
+func (siw *ServerInterfaceWrapper) ImportUsers(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportUsers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MoveUser operation middleware
+func (siw *ServerInterfaceWrapper) MoveUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MoveUser(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResetPassword operation middleware
+func (siw *ServerInterfaceWrapper) ResetPassword(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResetPassword(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetUserStatus operation middleware
+func (siw *ServerInterfaceWrapper) SetUserStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetUserStatus(w, r, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -300,15 +2432,186 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/zip", wrapper.DownloadZip)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/recycle-bin", wrapper.ListRecycleBin)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/restore", wrapper.RestoreTreeNode)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tree/{id}/purge", wrapper.PurgeTreeNode)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/office/permits/{permitId}/document/{filename}", wrapper.GetOfficeDocument)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/office/permits/{permitId}/save", wrapper.SaveOffice)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/office/permits/{permitId}/delivery", wrapper.GetOfficeDelivery)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/files/{id}/office-edits", wrapper.StartOfficeEdit)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/text", wrapper.OpenText)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/tree/{id}/text", wrapper.SaveText)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/versions", wrapper.ListFileVersions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/versions/{versionId}/restore", wrapper.RestoreFileVersion)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/search", wrapper.SearchTree)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/preview", wrapper.PreviewFile)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/download", wrapper.DownloadFile)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/audit/query", wrapper.QueryAudit)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/upload-batches", wrapper.InitiateUploadBatch)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads", wrapper.InitiateUpload)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/uploads/{id}/parts", wrapper.ListUploadParts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads/{id}/parts", wrapper.IssueUploadParts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads/{id}/complete", wrapper.CompleteUpload)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/upload-policy", wrapper.GetUploadPolicy)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/upload-policy", wrapper.SetUploadPolicy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree", wrapper.ListTree)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree", wrapper.CreateDirectory)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tree/{id}", wrapper.DeleteTreeNode)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}", wrapper.GetTreeNode)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/rename", wrapper.RenameTreeNode)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/move", wrapper.MoveTreeNode)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/grant-draft", wrapper.GetGrantDraft)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/grant-draft", wrapper.SaveGrantDraft)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/grant-draft/preview", wrapper.PreviewGrantDraft)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/permission", wrapper.InspectPermission)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tree/{id}/grants", wrapper.ListTreeGrants)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/tree/{id}/grants", wrapper.CreateTreeGrant)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tree/{id}/grants/{grantId}", wrapper.DeleteTreeGrant)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/registrations", wrapper.ListRegistrations)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/registrations", wrapper.Register)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/registrations/{id}/activate", wrapper.ActivateRegistration)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/registrations/{id}/reject", wrapper.RejectRegistration)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/health", wrapper.GetHealth)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/session", wrapper.SignOut)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/session", wrapper.SignIn)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/password", wrapper.ChangePassword)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/users/{userId}/password", wrapper.ResetPassword)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/organizations", wrapper.ListOrganizations)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/organizations", wrapper.CreateOrganization)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/organizations/{id}", wrapper.DeleteOrganization)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/organizations/{id}", wrapper.UpdateOrganization)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/user-groups", wrapper.ListUserGroups)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/user-groups", wrapper.CreateUserGroup)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/user-groups/{id}/members", wrapper.SetUserGroupMembers)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/users/{userId}/status", wrapper.SetUserStatus)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/users/{userId}/organization", wrapper.MoveUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/managed-users", wrapper.ListManagedUsers)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/users/import", wrapper.ImportUsers)
 
 	return m
 }
 
 type UnauthorizedJSONResponse Error
+
+type QueryAuditRequestObject struct {
+	Body *QueryAuditJSONRequestBody
+}
+
+type QueryAuditResponseObject interface {
+	VisitQueryAuditResponse(w http.ResponseWriter) error
+}
+
+type QueryAudit200JSONResponse struct {
+	Directories []struct {
+		Exists bool   `json:"exists"`
+		Path   string `json:"path"`
+	} `json:"directories"`
+	Events []struct {
+		Action   string                                     `json:"action"`
+		Detail   map[string]interface{}                     `json:"detail"`
+		Id       int64                                      `json:"id"`
+		ItemId   *int64                                     `json:"itemId"`
+		Outcome  QueryAudit200JSONResponseBodyEventsOutcome `json:"outcome"`
+		Path     string                                     `json:"path"`
+		SourceIp string                                     `json:"sourceIp"`
+		Time     time.Time                                  `json:"time"`
+		UserId   *int64                                     `json:"userId"`
+		Username string                                     `json:"username"`
+	} `json:"events"`
+	Page  int `json:"page"`
+	Total int `json:"total"`
+}
+
+func (response QueryAudit200JSONResponse) VisitQueryAuditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type QueryAudit200TextcsvResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response QueryAudit200TextcsvResponse) VisitQueryAuditResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/csv")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type QueryAuditdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response QueryAuditdefaultJSONResponse) VisitQueryAuditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartOfficeEditRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *StartOfficeEditJSONRequestBody
+}
+
+type StartOfficeEditResponseObject interface {
+	VisitStartOfficeEditResponse(w http.ResponseWriter) error
+}
+
+type StartOfficeEdit201JSONResponse OfficeEdit
+
+func (response StartOfficeEdit201JSONResponse) VisitStartOfficeEditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartOfficeEditdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response StartOfficeEditdefaultJSONResponse) VisitStartOfficeEditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type GetHealthRequestObject struct {
 }
@@ -343,6 +2646,774 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
+}
+
+type ListManagedUsersRequestObject struct {
+}
+
+type ListManagedUsersResponseObject interface {
+	VisitListManagedUsersResponse(w http.ResponseWriter) error
+}
+
+type ListManagedUsers200JSONResponse []ManagedUser
+
+func (response ListManagedUsers200JSONResponse) VisitListManagedUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListManagedUsersdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListManagedUsersdefaultJSONResponse) VisitListManagedUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOfficeDeliveryRequestObject struct {
+	PermitId string `json:"permitId"`
+}
+
+type GetOfficeDeliveryResponseObject interface {
+	VisitGetOfficeDeliveryResponse(w http.ResponseWriter) error
+}
+
+type GetOfficeDelivery200JSONResponse struct {
+	Delivered bool `json:"delivered"`
+}
+
+func (response GetOfficeDelivery200JSONResponse) VisitGetOfficeDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOfficeDeliverydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetOfficeDeliverydefaultJSONResponse) VisitGetOfficeDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOfficeDocumentRequestObject struct {
+	PermitId string `json:"permitId"`
+	Filename string `json:"filename"`
+}
+
+type GetOfficeDocumentResponseObject interface {
+	VisitGetOfficeDocumentResponse(w http.ResponseWriter) error
+}
+
+type GetOfficeDocument200ApplicationoctetStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response GetOfficeDocument200ApplicationoctetStreamResponse) VisitGetOfficeDocumentResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type GetOfficeDocumentdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetOfficeDocumentdefaultJSONResponse) VisitGetOfficeDocumentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveOfficeRequestObject struct {
+	PermitId string `json:"permitId"`
+	Body     *multipart.Reader
+}
+
+type SaveOfficeResponseObject interface {
+	VisitSaveOfficeResponse(w http.ResponseWriter) error
+}
+
+type SaveOffice200JSONResponse struct {
+	Data    *map[string]interface{} `json:"Data"`
+	Message string                  `json:"Message"`
+	Success bool                    `json:"Success"`
+}
+
+func (response SaveOffice200JSONResponse) VisitSaveOfficeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveOfficedefaultJSONResponse struct {
+	Body struct {
+		Data    *map[string]interface{} `json:"Data"`
+		Message string                  `json:"Message"`
+		Success bool                    `json:"Success"`
+	}
+	StatusCode int
+}
+
+func (response SaveOfficedefaultJSONResponse) VisitSaveOfficeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizationsRequestObject struct {
+}
+
+type ListOrganizationsResponseObject interface {
+	VisitListOrganizationsResponse(w http.ResponseWriter) error
+}
+
+type ListOrganizations200JSONResponse Organizations
+
+func (response ListOrganizations200JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations400JSONResponse Error
+
+func (response ListOrganizations400JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListOrganizations401JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations403JSONResponse Error
+
+func (response ListOrganizations403JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations404JSONResponse Error
+
+func (response ListOrganizations404JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOrganizations409JSONResponse Error
+
+func (response ListOrganizations409JSONResponse) VisitListOrganizationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganizationRequestObject struct {
+	Body *CreateOrganizationJSONRequestBody
+}
+
+type CreateOrganizationResponseObject interface {
+	VisitCreateOrganizationResponse(w http.ResponseWriter) error
+}
+
+type CreateOrganization201JSONResponse Organization
+
+func (response CreateOrganization201JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization400JSONResponse Error
+
+func (response CreateOrganization400JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateOrganization401JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization403JSONResponse Error
+
+func (response CreateOrganization403JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization404JSONResponse Error
+
+func (response CreateOrganization404JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrganization409JSONResponse Error
+
+func (response CreateOrganization409JSONResponse) VisitCreateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganizationRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type DeleteOrganizationResponseObject interface {
+	VisitDeleteOrganizationResponse(w http.ResponseWriter) error
+}
+
+type DeleteOrganization204Response struct {
+}
+
+func (response DeleteOrganization204Response) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteOrganization400JSONResponse Error
+
+func (response DeleteOrganization400JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteOrganization401JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganization403JSONResponse Error
+
+func (response DeleteOrganization403JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganization404JSONResponse Error
+
+func (response DeleteOrganization404JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOrganization409JSONResponse Error
+
+func (response DeleteOrganization409JSONResponse) VisitDeleteOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganizationRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *UpdateOrganizationJSONRequestBody
+}
+
+type UpdateOrganizationResponseObject interface {
+	VisitUpdateOrganizationResponse(w http.ResponseWriter) error
+}
+
+type UpdateOrganization200JSONResponse Organization
+
+func (response UpdateOrganization200JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization400JSONResponse Error
+
+func (response UpdateOrganization400JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateOrganization401JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization403JSONResponse Error
+
+func (response UpdateOrganization403JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization404JSONResponse Error
+
+func (response UpdateOrganization404JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOrganization409JSONResponse Error
+
+func (response UpdateOrganization409JSONResponse) VisitUpdateOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChangePasswordRequestObject struct {
+	Body *ChangePasswordJSONRequestBody
+}
+
+type ChangePasswordResponseObject interface {
+	VisitChangePasswordResponse(w http.ResponseWriter) error
+}
+
+type ChangePassword204Response struct {
+}
+
+func (response ChangePassword204Response) VisitChangePasswordResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ChangePassworddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ChangePassworddefaultJSONResponse) VisitChangePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRecycleBinRequestObject struct {
+}
+
+type ListRecycleBinResponseObject interface {
+	VisitListRecycleBinResponse(w http.ResponseWriter) error
+}
+
+type ListRecycleBin200JSONResponse []struct {
+	DeletedAt    time.Time `json:"deletedAt"`
+	Id           int64     `json:"id"`
+	OriginalPath string    `json:"originalPath"`
+}
+
+func (response ListRecycleBin200JSONResponse) VisitListRecycleBinResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRecycleBindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListRecycleBindefaultJSONResponse) VisitListRecycleBinResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRegistrationsRequestObject struct {
+}
+
+type ListRegistrationsResponseObject interface {
+	VisitListRegistrationsResponse(w http.ResponseWriter) error
+}
+
+type ListRegistrations200JSONResponse []Registration
+
+func (response ListRegistrations200JSONResponse) VisitListRegistrationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRegistrations403Response struct {
+}
+
+func (response ListRegistrations403Response) VisitListRegistrationsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(403)
+	return nil
+}
+
+type RegisterRequestObject struct {
+	Body *RegisterJSONRequestBody
+}
+
+type RegisterResponseObject interface {
+	VisitRegisterResponse(w http.ResponseWriter) error
+}
+
+type Register201Response struct {
+}
+
+func (response Register201Response) VisitRegisterResponse(w http.ResponseWriter) error {
+	w.WriteHeader(201)
+	return nil
+}
+
+type Register400Response struct {
+}
+
+func (response Register400Response) VisitRegisterResponse(w http.ResponseWriter) error {
+	w.WriteHeader(400)
+	return nil
+}
+
+type Register409Response struct {
+}
+
+func (response Register409Response) VisitRegisterResponse(w http.ResponseWriter) error {
+	w.WriteHeader(409)
+	return nil
+}
+
+type ActivateRegistrationRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *ActivateRegistrationJSONRequestBody
+}
+
+type ActivateRegistrationResponseObject interface {
+	VisitActivateRegistrationResponse(w http.ResponseWriter) error
+}
+
+type ActivateRegistration204Response struct {
+}
+
+func (response ActivateRegistration204Response) VisitActivateRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ActivateRegistration400Response struct {
+}
+
+func (response ActivateRegistration400Response) VisitActivateRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(400)
+	return nil
+}
+
+type ActivateRegistration403Response struct {
+}
+
+func (response ActivateRegistration403Response) VisitActivateRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(403)
+	return nil
+}
+
+type ActivateRegistration404Response struct {
+}
+
+func (response ActivateRegistration404Response) VisitActivateRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(404)
+	return nil
+}
+
+type ActivateRegistration409Response struct {
+}
+
+func (response ActivateRegistration409Response) VisitActivateRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(409)
+	return nil
+}
+
+type RejectRegistrationRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type RejectRegistrationResponseObject interface {
+	VisitRejectRegistrationResponse(w http.ResponseWriter) error
+}
+
+type RejectRegistration204Response struct {
+}
+
+func (response RejectRegistration204Response) VisitRejectRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RejectRegistration400Response struct {
+}
+
+func (response RejectRegistration400Response) VisitRejectRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(400)
+	return nil
+}
+
+type RejectRegistration403Response struct {
+}
+
+func (response RejectRegistration403Response) VisitRejectRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(403)
+	return nil
+}
+
+type RejectRegistration404Response struct {
+}
+
+func (response RejectRegistration404Response) VisitRejectRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(404)
+	return nil
+}
+
+type RejectRegistration409Response struct {
+}
+
+func (response RejectRegistration409Response) VisitRejectRegistrationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(409)
+	return nil
 }
 
 type SignOutRequestObject struct {
@@ -463,11 +3534,1693 @@ func (response SignIn401JSONResponse) VisitSignInResponse(w http.ResponseWriter)
 	return err
 }
 
+type SignIn403JSONResponse Error
+
+func (response SignIn403JSONResponse) VisitSignInResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTreeRequestObject struct {
+	Params ListTreeParams
+}
+
+type ListTreeResponseObject interface {
+	VisitListTreeResponse(w http.ResponseWriter) error
+}
+
+type ListTree200JSONResponse []TreeNode
+
+func (response ListTree200JSONResponse) VisitListTreeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTreedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListTreedefaultJSONResponse) VisitListTreeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDirectoryRequestObject struct {
+	Body *CreateDirectoryJSONRequestBody
+}
+
+type CreateDirectoryResponseObject interface {
+	VisitCreateDirectoryResponse(w http.ResponseWriter) error
+}
+
+type CreateDirectory201JSONResponse TreeNode
+
+func (response CreateDirectory201JSONResponse) VisitCreateDirectoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDirectorydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateDirectorydefaultJSONResponse) VisitCreateDirectoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchTreeRequestObject struct {
+	Params SearchTreeParams
+}
+
+type SearchTreeResponseObject interface {
+	VisitSearchTreeResponse(w http.ResponseWriter) error
+}
+
+type SearchTree200JSONResponse []TreeNode
+
+func (response SearchTree200JSONResponse) VisitSearchTreeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchTreedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SearchTreedefaultJSONResponse) VisitSearchTreeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadZipRequestObject struct {
+	Params DownloadZipParams
+}
+
+type DownloadZipResponseObject interface {
+	VisitDownloadZipResponse(w http.ResponseWriter) error
+}
+
+type DownloadZip200ApplicationzipResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response DownloadZip200ApplicationzipResponse) VisitDownloadZipResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/zip")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type DownloadZip204Response struct {
+}
+
+func (response DownloadZip204Response) VisitDownloadZipResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DownloadZipdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DownloadZipdefaultJSONResponse) VisitDownloadZipResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTreeNodeRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type DeleteTreeNodeResponseObject interface {
+	VisitDeleteTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type DeleteTreeNode204Response struct {
+}
+
+func (response DeleteTreeNode204Response) VisitDeleteTreeNodeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteTreeNodedefaultJSONResponse) VisitDeleteTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTreeNodeRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type GetTreeNodeResponseObject interface {
+	VisitGetTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type GetTreeNode200JSONResponse TreeNode
+
+func (response GetTreeNode200JSONResponse) VisitGetTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetTreeNodedefaultJSONResponse) VisitGetTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadFileRequestObject struct {
+	Id     int64 `json:"id"`
+	Params DownloadFileParams
+}
+
+type DownloadFileResponseObject interface {
+	VisitDownloadFileResponse(w http.ResponseWriter) error
+}
+
+type DownloadFile302ResponseHeaders struct {
+	CacheControl string
+	Location     string
+}
+
+type DownloadFile302Response struct {
+	Headers DownloadFile302ResponseHeaders
+}
+
+func (response DownloadFile302Response) VisitDownloadFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("Location", fmt.Sprint(response.Headers.Location))
+	w.WriteHeader(302)
+	return nil
+}
+
+type DownloadFiledefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DownloadFiledefaultJSONResponse) VisitDownloadFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGrantDraftRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type GetGrantDraftResponseObject interface {
+	VisitGetGrantDraftResponse(w http.ResponseWriter) error
+}
+
+type GetGrantDraft200JSONResponse []SourcedGrant
+
+func (response GetGrantDraft200JSONResponse) VisitGetGrantDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGrantDraftdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetGrantDraftdefaultJSONResponse) VisitGetGrantDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveGrantDraftRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *SaveGrantDraftJSONRequestBody
+}
+
+type SaveGrantDraftResponseObject interface {
+	VisitSaveGrantDraftResponse(w http.ResponseWriter) error
+}
+
+type SaveGrantDraft204Response struct {
+}
+
+func (response SaveGrantDraft204Response) VisitSaveGrantDraftResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SaveGrantDraftdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SaveGrantDraftdefaultJSONResponse) VisitSaveGrantDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewGrantDraftRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *PreviewGrantDraftJSONRequestBody
+}
+
+type PreviewGrantDraftResponseObject interface {
+	VisitPreviewGrantDraftResponse(w http.ResponseWriter) error
+}
+
+type PreviewGrantDraft200JSONResponse GrantImpact
+
+func (response PreviewGrantDraft200JSONResponse) VisitPreviewGrantDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewGrantDraftdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PreviewGrantDraftdefaultJSONResponse) VisitPreviewGrantDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTreeGrantsRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type ListTreeGrantsResponseObject interface {
+	VisitListTreeGrantsResponse(w http.ResponseWriter) error
+}
+
+type ListTreeGrants200JSONResponse []TreeGrant
+
+func (response ListTreeGrants200JSONResponse) VisitListTreeGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTreeGrantsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListTreeGrantsdefaultJSONResponse) VisitListTreeGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTreeGrantRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *CreateTreeGrantJSONRequestBody
+}
+
+type CreateTreeGrantResponseObject interface {
+	VisitCreateTreeGrantResponse(w http.ResponseWriter) error
+}
+
+type CreateTreeGrant201JSONResponse TreeGrant
+
+func (response CreateTreeGrant201JSONResponse) VisitCreateTreeGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTreeGrantdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateTreeGrantdefaultJSONResponse) VisitCreateTreeGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTreeGrantRequestObject struct {
+	Id      int64 `json:"id"`
+	GrantId int64 `json:"grantId"`
+}
+
+type DeleteTreeGrantResponseObject interface {
+	VisitDeleteTreeGrantResponse(w http.ResponseWriter) error
+}
+
+type DeleteTreeGrant204Response struct {
+}
+
+func (response DeleteTreeGrant204Response) VisitDeleteTreeGrantResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteTreeGrantdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteTreeGrantdefaultJSONResponse) VisitDeleteTreeGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MoveTreeNodeRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *MoveTreeNodeJSONRequestBody
+}
+
+type MoveTreeNodeResponseObject interface {
+	VisitMoveTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type MoveTreeNode200JSONResponse TreeNode
+
+func (response MoveTreeNode200JSONResponse) VisitMoveTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MoveTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response MoveTreeNodedefaultJSONResponse) VisitMoveTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InspectPermissionRequestObject struct {
+	Id     int64 `json:"id"`
+	Params InspectPermissionParams
+}
+
+type InspectPermissionResponseObject interface {
+	VisitInspectPermissionResponse(w http.ResponseWriter) error
+}
+
+type InspectPermission200JSONResponse PermissionInspection
+
+func (response InspectPermission200JSONResponse) VisitInspectPermissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InspectPermissiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response InspectPermissiondefaultJSONResponse) VisitInspectPermissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewFileRequestObject struct {
+	Id     int64 `json:"id"`
+	Params PreviewFileParams
+}
+
+type PreviewFileResponseObject interface {
+	VisitPreviewFileResponse(w http.ResponseWriter) error
+}
+
+type PreviewFile200ApplicationoctetStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response PreviewFile200ApplicationoctetStreamResponse) VisitPreviewFileResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type PreviewFile206Response struct {
+}
+
+func (response PreviewFile206Response) VisitPreviewFileResponse(w http.ResponseWriter) error {
+	w.WriteHeader(206)
+	return nil
+}
+
+type PreviewFiledefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PreviewFiledefaultJSONResponse) VisitPreviewFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PurgeTreeNodeRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type PurgeTreeNodeResponseObject interface {
+	VisitPurgeTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type PurgeTreeNode204Response struct {
+}
+
+func (response PurgeTreeNode204Response) VisitPurgeTreeNodeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type PurgeTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PurgeTreeNodedefaultJSONResponse) VisitPurgeTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenameTreeNodeRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *RenameTreeNodeJSONRequestBody
+}
+
+type RenameTreeNodeResponseObject interface {
+	VisitRenameTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type RenameTreeNode200JSONResponse TreeNode
+
+func (response RenameTreeNode200JSONResponse) VisitRenameTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenameTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RenameTreeNodedefaultJSONResponse) VisitRenameTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreTreeNodeRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *RestoreTreeNodeJSONRequestBody
+}
+
+type RestoreTreeNodeResponseObject interface {
+	VisitRestoreTreeNodeResponse(w http.ResponseWriter) error
+}
+
+type RestoreTreeNode204Response struct {
+}
+
+func (response RestoreTreeNode204Response) VisitRestoreTreeNodeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RestoreTreeNodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RestoreTreeNodedefaultJSONResponse) VisitRestoreTreeNodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenTextRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type OpenTextResponseObject interface {
+	VisitOpenTextResponse(w http.ResponseWriter) error
+}
+
+type OpenText200JSONResponse struct {
+	Content   string `json:"content"`
+	VersionId int64  `json:"versionId"`
+}
+
+func (response OpenText200JSONResponse) VisitOpenTextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenTextdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response OpenTextdefaultJSONResponse) VisitOpenTextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveTextRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *SaveTextJSONRequestBody
+}
+
+type SaveTextResponseObject interface {
+	VisitSaveTextResponse(w http.ResponseWriter) error
+}
+
+type SaveText201JSONResponse UploadReceipt
+
+func (response SaveText201JSONResponse) VisitSaveTextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveTextdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SaveTextdefaultJSONResponse) VisitSaveTextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFileVersionsRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type ListFileVersionsResponseObject interface {
+	VisitListFileVersionsResponse(w http.ResponseWriter) error
+}
+
+type ListFileVersions200JSONResponse []FileVersion
+
+func (response ListFileVersions200JSONResponse) VisitListFileVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFileVersionsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListFileVersionsdefaultJSONResponse) VisitListFileVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreFileVersionRequestObject struct {
+	Id        int64 `json:"id"`
+	VersionId int64 `json:"versionId"`
+}
+
+type RestoreFileVersionResponseObject interface {
+	VisitRestoreFileVersionResponse(w http.ResponseWriter) error
+}
+
+type RestoreFileVersion201JSONResponse UploadReceipt
+
+func (response RestoreFileVersion201JSONResponse) VisitRestoreFileVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreFileVersiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RestoreFileVersiondefaultJSONResponse) VisitRestoreFileVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InitiateUploadBatchRequestObject struct {
+	Body *InitiateUploadBatchJSONRequestBody
+}
+
+type InitiateUploadBatchResponseObject interface {
+	VisitInitiateUploadBatchResponse(w http.ResponseWriter) error
+}
+
+type InitiateUploadBatch201JSONResponse []UploadSession
+
+func (response InitiateUploadBatch201JSONResponse) VisitInitiateUploadBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InitiateUploadBatchdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response InitiateUploadBatchdefaultJSONResponse) VisitInitiateUploadBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUploadPolicyRequestObject struct {
+}
+
+type GetUploadPolicyResponseObject interface {
+	VisitGetUploadPolicyResponse(w http.ResponseWriter) error
+}
+
+type GetUploadPolicy200JSONResponse UploadPolicy
+
+func (response GetUploadPolicy200JSONResponse) VisitGetUploadPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUploadPolicydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetUploadPolicydefaultJSONResponse) VisitGetUploadPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUploadPolicyRequestObject struct {
+	Body *SetUploadPolicyJSONRequestBody
+}
+
+type SetUploadPolicyResponseObject interface {
+	VisitSetUploadPolicyResponse(w http.ResponseWriter) error
+}
+
+type SetUploadPolicy200JSONResponse UploadPolicy
+
+func (response SetUploadPolicy200JSONResponse) VisitSetUploadPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUploadPolicydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetUploadPolicydefaultJSONResponse) VisitSetUploadPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InitiateUploadRequestObject struct {
+	Body *InitiateUploadJSONRequestBody
+}
+
+type InitiateUploadResponseObject interface {
+	VisitInitiateUploadResponse(w http.ResponseWriter) error
+}
+
+type InitiateUpload201JSONResponse UploadSession
+
+func (response InitiateUpload201JSONResponse) VisitInitiateUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InitiateUploaddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response InitiateUploaddefaultJSONResponse) VisitInitiateUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteUploadRequestObject struct {
+	Id     string `json:"id"`
+	Params CompleteUploadParams
+}
+
+type CompleteUploadResponseObject interface {
+	VisitCompleteUploadResponse(w http.ResponseWriter) error
+}
+
+type CompleteUpload200JSONResponse UploadReceipt
+
+func (response CompleteUpload200JSONResponse) VisitCompleteUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteUploaddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CompleteUploaddefaultJSONResponse) VisitCompleteUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUploadPartsRequestObject struct {
+	Id string `json:"id"`
+}
+
+type ListUploadPartsResponseObject interface {
+	VisitListUploadPartsResponse(w http.ResponseWriter) error
+}
+
+type ListUploadParts200JSONResponse []struct {
+	Number int `json:"number"`
+}
+
+func (response ListUploadParts200JSONResponse) VisitListUploadPartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUploadPartsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListUploadPartsdefaultJSONResponse) VisitListUploadPartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueUploadPartsRequestObject struct {
+	Id   string `json:"id"`
+	Body *IssueUploadPartsJSONRequestBody
+}
+
+type IssueUploadPartsResponseObject interface {
+	VisitIssueUploadPartsResponse(w http.ResponseWriter) error
+}
+
+type IssueUploadParts200JSONResponse PartURLs
+
+func (response IssueUploadParts200JSONResponse) VisitIssueUploadPartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueUploadPartsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response IssueUploadPartsdefaultJSONResponse) VisitIssueUploadPartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroupsRequestObject struct {
+}
+
+type ListUserGroupsResponseObject interface {
+	VisitListUserGroupsResponse(w http.ResponseWriter) error
+}
+
+type ListUserGroups200JSONResponse UserGroups
+
+func (response ListUserGroups200JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups400JSONResponse Error
+
+func (response ListUserGroups400JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListUserGroups401JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups403JSONResponse Error
+
+func (response ListUserGroups403JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups404JSONResponse Error
+
+func (response ListUserGroups404JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserGroups409JSONResponse Error
+
+func (response ListUserGroups409JSONResponse) VisitListUserGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroupRequestObject struct {
+	Body *CreateUserGroupJSONRequestBody
+}
+
+type CreateUserGroupResponseObject interface {
+	VisitCreateUserGroupResponse(w http.ResponseWriter) error
+}
+
+type CreateUserGroup201JSONResponse UserGroup
+
+func (response CreateUserGroup201JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup400JSONResponse Error
+
+func (response CreateUserGroup400JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateUserGroup401JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup403JSONResponse Error
+
+func (response CreateUserGroup403JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup404JSONResponse Error
+
+func (response CreateUserGroup404JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserGroup409JSONResponse Error
+
+func (response CreateUserGroup409JSONResponse) VisitCreateUserGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembersRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *SetUserGroupMembersJSONRequestBody
+}
+
+type SetUserGroupMembersResponseObject interface {
+	VisitSetUserGroupMembersResponse(w http.ResponseWriter) error
+}
+
+type SetUserGroupMembers204Response struct {
+}
+
+func (response SetUserGroupMembers204Response) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SetUserGroupMembers400JSONResponse Error
+
+func (response SetUserGroupMembers400JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembers401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetUserGroupMembers401JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembers403JSONResponse Error
+
+func (response SetUserGroupMembers403JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembers404JSONResponse Error
+
+func (response SetUserGroupMembers404JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserGroupMembers409JSONResponse Error
+
+func (response SetUserGroupMembers409JSONResponse) VisitSetUserGroupMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ImportUsersRequestObject struct {
+	Body *ImportUsersJSONRequestBody
+}
+
+type ImportUsersResponseObject interface {
+	VisitImportUsersResponse(w http.ResponseWriter) error
+}
+
+type ImportUsers201JSONResponse struct {
+	Created int `json:"created"`
+}
+
+func (response ImportUsers201JSONResponse) VisitImportUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ImportUsers422JSONResponse struct {
+	Errors []struct {
+		Message string `json:"message"`
+		Row     int    `json:"row"`
+	} `json:"errors"`
+}
+
+func (response ImportUsers422JSONResponse) VisitImportUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ImportUsersdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ImportUsersdefaultJSONResponse) VisitImportUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MoveUserRequestObject struct {
+	UserId int64 `json:"userId"`
+	Body   *MoveUserJSONRequestBody
+}
+
+type MoveUserResponseObject interface {
+	VisitMoveUserResponse(w http.ResponseWriter) error
+}
+
+type MoveUser204Response struct {
+}
+
+func (response MoveUser204Response) VisitMoveUserResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type MoveUserdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response MoveUserdefaultJSONResponse) VisitMoveUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetPasswordRequestObject struct {
+	UserId int64 `json:"userId"`
+	Body   *ResetPasswordJSONRequestBody
+}
+
+type ResetPasswordResponseObject interface {
+	VisitResetPasswordResponse(w http.ResponseWriter) error
+}
+
+type ResetPassword204Response struct {
+}
+
+func (response ResetPassword204Response) VisitResetPasswordResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ResetPassworddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ResetPassworddefaultJSONResponse) VisitResetPasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserStatusRequestObject struct {
+	UserId int64 `json:"userId"`
+	Body   *SetUserStatusJSONRequestBody
+}
+
+type SetUserStatusResponseObject interface {
+	VisitSetUserStatusResponse(w http.ResponseWriter) error
+}
+
+type SetUserStatus204Response struct {
+}
+
+func (response SetUserStatus204Response) VisitSetUserStatusResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SetUserStatusdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetUserStatusdefaultJSONResponse) VisitSetUserStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+
+	// (POST /audit/query)
+	QueryAudit(ctx context.Context, request QueryAuditRequestObject) (QueryAuditResponseObject, error)
+
+	// (POST /files/{id}/office-edits)
+	StartOfficeEdit(ctx context.Context, request StartOfficeEditRequestObject) (StartOfficeEditResponseObject, error)
 	// GetHealth Report whether the service and its backing stores are reachable.
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+
+	// (GET /managed-users)
+	ListManagedUsers(ctx context.Context, request ListManagedUsersRequestObject) (ListManagedUsersResponseObject, error)
+
+	// (GET /office/permits/{permitId}/delivery)
+	GetOfficeDelivery(ctx context.Context, request GetOfficeDeliveryRequestObject) (GetOfficeDeliveryResponseObject, error)
+
+	// (GET /office/permits/{permitId}/document/{filename})
+	GetOfficeDocument(ctx context.Context, request GetOfficeDocumentRequestObject) (GetOfficeDocumentResponseObject, error)
+
+	// (POST /office/permits/{permitId}/save)
+	SaveOffice(ctx context.Context, request SaveOfficeRequestObject) (SaveOfficeResponseObject, error)
+
+	// (GET /organizations)
+	ListOrganizations(ctx context.Context, request ListOrganizationsRequestObject) (ListOrganizationsResponseObject, error)
+
+	// (POST /organizations)
+	CreateOrganization(ctx context.Context, request CreateOrganizationRequestObject) (CreateOrganizationResponseObject, error)
+
+	// (DELETE /organizations/{id})
+	DeleteOrganization(ctx context.Context, request DeleteOrganizationRequestObject) (DeleteOrganizationResponseObject, error)
+
+	// (PATCH /organizations/{id})
+	UpdateOrganization(ctx context.Context, request UpdateOrganizationRequestObject) (UpdateOrganizationResponseObject, error)
+	// ChangePassword Change the signed-in User's password.
+	// (PUT /password)
+	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
+
+	// (GET /recycle-bin)
+	ListRecycleBin(ctx context.Context, request ListRecycleBinRequestObject) (ListRecycleBinResponseObject, error)
+
+	// (GET /registrations)
+	ListRegistrations(ctx context.Context, request ListRegistrationsRequestObject) (ListRegistrationsResponseObject, error)
+
+	// (POST /registrations)
+	Register(ctx context.Context, request RegisterRequestObject) (RegisterResponseObject, error)
+
+	// (POST /registrations/{id}/activate)
+	ActivateRegistration(ctx context.Context, request ActivateRegistrationRequestObject) (ActivateRegistrationResponseObject, error)
+
+	// (POST /registrations/{id}/reject)
+	RejectRegistration(ctx context.Context, request RejectRegistrationRequestObject) (RejectRegistrationResponseObject, error)
 	// SignOut Sign out, ending the current session immediately.
 	// (DELETE /session)
 	SignOut(ctx context.Context, request SignOutRequestObject) (SignOutResponseObject, error)
@@ -477,6 +5230,117 @@ type StrictServerInterface interface {
 	// SignIn Sign in with username and password, starting a session.
 	// (POST /session)
 	SignIn(ctx context.Context, request SignInRequestObject) (SignInResponseObject, error)
+
+	// (GET /tree)
+	ListTree(ctx context.Context, request ListTreeRequestObject) (ListTreeResponseObject, error)
+
+	// (POST /tree)
+	CreateDirectory(ctx context.Context, request CreateDirectoryRequestObject) (CreateDirectoryResponseObject, error)
+
+	// (GET /tree/search)
+	SearchTree(ctx context.Context, request SearchTreeRequestObject) (SearchTreeResponseObject, error)
+
+	// (GET /tree/zip)
+	DownloadZip(ctx context.Context, request DownloadZipRequestObject) (DownloadZipResponseObject, error)
+
+	// (DELETE /tree/{id})
+	DeleteTreeNode(ctx context.Context, request DeleteTreeNodeRequestObject) (DeleteTreeNodeResponseObject, error)
+
+	// (GET /tree/{id})
+	GetTreeNode(ctx context.Context, request GetTreeNodeRequestObject) (GetTreeNodeResponseObject, error)
+
+	// (GET /tree/{id}/download)
+	DownloadFile(ctx context.Context, request DownloadFileRequestObject) (DownloadFileResponseObject, error)
+
+	// (GET /tree/{id}/grant-draft)
+	GetGrantDraft(ctx context.Context, request GetGrantDraftRequestObject) (GetGrantDraftResponseObject, error)
+
+	// (POST /tree/{id}/grant-draft)
+	SaveGrantDraft(ctx context.Context, request SaveGrantDraftRequestObject) (SaveGrantDraftResponseObject, error)
+
+	// (POST /tree/{id}/grant-draft/preview)
+	PreviewGrantDraft(ctx context.Context, request PreviewGrantDraftRequestObject) (PreviewGrantDraftResponseObject, error)
+
+	// (GET /tree/{id}/grants)
+	ListTreeGrants(ctx context.Context, request ListTreeGrantsRequestObject) (ListTreeGrantsResponseObject, error)
+
+	// (POST /tree/{id}/grants)
+	CreateTreeGrant(ctx context.Context, request CreateTreeGrantRequestObject) (CreateTreeGrantResponseObject, error)
+
+	// (DELETE /tree/{id}/grants/{grantId})
+	DeleteTreeGrant(ctx context.Context, request DeleteTreeGrantRequestObject) (DeleteTreeGrantResponseObject, error)
+
+	// (POST /tree/{id}/move)
+	MoveTreeNode(ctx context.Context, request MoveTreeNodeRequestObject) (MoveTreeNodeResponseObject, error)
+
+	// (GET /tree/{id}/permission)
+	InspectPermission(ctx context.Context, request InspectPermissionRequestObject) (InspectPermissionResponseObject, error)
+
+	// (GET /tree/{id}/preview)
+	PreviewFile(ctx context.Context, request PreviewFileRequestObject) (PreviewFileResponseObject, error)
+
+	// (DELETE /tree/{id}/purge)
+	PurgeTreeNode(ctx context.Context, request PurgeTreeNodeRequestObject) (PurgeTreeNodeResponseObject, error)
+
+	// (POST /tree/{id}/rename)
+	RenameTreeNode(ctx context.Context, request RenameTreeNodeRequestObject) (RenameTreeNodeResponseObject, error)
+
+	// (POST /tree/{id}/restore)
+	RestoreTreeNode(ctx context.Context, request RestoreTreeNodeRequestObject) (RestoreTreeNodeResponseObject, error)
+
+	// (GET /tree/{id}/text)
+	OpenText(ctx context.Context, request OpenTextRequestObject) (OpenTextResponseObject, error)
+
+	// (PUT /tree/{id}/text)
+	SaveText(ctx context.Context, request SaveTextRequestObject) (SaveTextResponseObject, error)
+
+	// (GET /tree/{id}/versions)
+	ListFileVersions(ctx context.Context, request ListFileVersionsRequestObject) (ListFileVersionsResponseObject, error)
+
+	// (POST /tree/{id}/versions/{versionId}/restore)
+	RestoreFileVersion(ctx context.Context, request RestoreFileVersionRequestObject) (RestoreFileVersionResponseObject, error)
+
+	// (POST /upload-batches)
+	InitiateUploadBatch(ctx context.Context, request InitiateUploadBatchRequestObject) (InitiateUploadBatchResponseObject, error)
+
+	// (GET /upload-policy)
+	GetUploadPolicy(ctx context.Context, request GetUploadPolicyRequestObject) (GetUploadPolicyResponseObject, error)
+
+	// (PUT /upload-policy)
+	SetUploadPolicy(ctx context.Context, request SetUploadPolicyRequestObject) (SetUploadPolicyResponseObject, error)
+
+	// (POST /uploads)
+	InitiateUpload(ctx context.Context, request InitiateUploadRequestObject) (InitiateUploadResponseObject, error)
+
+	// (POST /uploads/{id}/complete)
+	CompleteUpload(ctx context.Context, request CompleteUploadRequestObject) (CompleteUploadResponseObject, error)
+
+	// (GET /uploads/{id}/parts)
+	ListUploadParts(ctx context.Context, request ListUploadPartsRequestObject) (ListUploadPartsResponseObject, error)
+
+	// (POST /uploads/{id}/parts)
+	IssueUploadParts(ctx context.Context, request IssueUploadPartsRequestObject) (IssueUploadPartsResponseObject, error)
+
+	// (GET /user-groups)
+	ListUserGroups(ctx context.Context, request ListUserGroupsRequestObject) (ListUserGroupsResponseObject, error)
+
+	// (POST /user-groups)
+	CreateUserGroup(ctx context.Context, request CreateUserGroupRequestObject) (CreateUserGroupResponseObject, error)
+
+	// (PUT /user-groups/{id}/members)
+	SetUserGroupMembers(ctx context.Context, request SetUserGroupMembersRequestObject) (SetUserGroupMembersResponseObject, error)
+
+	// (POST /users/import)
+	ImportUsers(ctx context.Context, request ImportUsersRequestObject) (ImportUsersResponseObject, error)
+
+	// (PUT /users/{userId}/organization)
+	MoveUser(ctx context.Context, request MoveUserRequestObject) (MoveUserResponseObject, error)
+	// ResetPassword Reset a User's password as an Administrator.
+	// (PUT /users/{userId}/password)
+	ResetPassword(ctx context.Context, request ResetPasswordRequestObject) (ResetPasswordResponseObject, error)
+
+	// (PATCH /users/{userId}/status)
+	SetUserStatus(ctx context.Context, request SetUserStatusRequestObject) (SetUserStatusResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -518,6 +5382,70 @@ type strictHandler struct {
 	options     StrictHTTPServerOptions
 }
 
+// QueryAudit operation middleware
+func (sh *strictHandler) QueryAudit(w http.ResponseWriter, r *http.Request) {
+	var request QueryAuditRequestObject
+
+	var body QueryAuditJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.QueryAudit(ctx, request.(QueryAuditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "QueryAudit")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(QueryAuditResponseObject); ok {
+		if err := validResponse.VisitQueryAuditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartOfficeEdit operation middleware
+func (sh *strictHandler) StartOfficeEdit(w http.ResponseWriter, r *http.Request, id int64) {
+	var request StartOfficeEditRequestObject
+
+	request.Id = id
+
+	var body StartOfficeEditJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartOfficeEdit(ctx, request.(StartOfficeEditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartOfficeEdit")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartOfficeEditResponseObject); ok {
+		if err := validResponse.VisitStartOfficeEditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetHealth operation middleware
 func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	var request GetHealthRequestObject
@@ -535,6 +5463,399 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
 		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListManagedUsers operation middleware
+func (sh *strictHandler) ListManagedUsers(w http.ResponseWriter, r *http.Request) {
+	var request ListManagedUsersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListManagedUsers(ctx, request.(ListManagedUsersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListManagedUsers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListManagedUsersResponseObject); ok {
+		if err := validResponse.VisitListManagedUsersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOfficeDelivery operation middleware
+func (sh *strictHandler) GetOfficeDelivery(w http.ResponseWriter, r *http.Request, permitId string) {
+	var request GetOfficeDeliveryRequestObject
+
+	request.PermitId = permitId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOfficeDelivery(ctx, request.(GetOfficeDeliveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOfficeDelivery")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetOfficeDeliveryResponseObject); ok {
+		if err := validResponse.VisitGetOfficeDeliveryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOfficeDocument operation middleware
+func (sh *strictHandler) GetOfficeDocument(w http.ResponseWriter, r *http.Request, permitId string, filename string) {
+	var request GetOfficeDocumentRequestObject
+
+	request.PermitId = permitId
+	request.Filename = filename
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOfficeDocument(ctx, request.(GetOfficeDocumentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOfficeDocument")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetOfficeDocumentResponseObject); ok {
+		if err := validResponse.VisitGetOfficeDocumentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SaveOffice operation middleware
+func (sh *strictHandler) SaveOffice(w http.ResponseWriter, r *http.Request, permitId string) {
+	var request SaveOfficeRequestObject
+
+	request.PermitId = permitId
+
+	if reader, err := r.MultipartReader(); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode multipart body: %w", err))
+		return
+	} else {
+		request.Body = reader
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SaveOffice(ctx, request.(SaveOfficeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SaveOffice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SaveOfficeResponseObject); ok {
+		if err := validResponse.VisitSaveOfficeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListOrganizations operation middleware
+func (sh *strictHandler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
+	var request ListOrganizationsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListOrganizations(ctx, request.(ListOrganizationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListOrganizations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListOrganizationsResponseObject); ok {
+		if err := validResponse.VisitListOrganizationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateOrganization operation middleware
+func (sh *strictHandler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
+	var request CreateOrganizationRequestObject
+
+	var body CreateOrganizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateOrganization(ctx, request.(CreateOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateOrganization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateOrganizationResponseObject); ok {
+		if err := validResponse.VisitCreateOrganizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteOrganization operation middleware
+func (sh *strictHandler) DeleteOrganization(w http.ResponseWriter, r *http.Request, id int64) {
+	var request DeleteOrganizationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteOrganization(ctx, request.(DeleteOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteOrganization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteOrganizationResponseObject); ok {
+		if err := validResponse.VisitDeleteOrganizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateOrganization operation middleware
+func (sh *strictHandler) UpdateOrganization(w http.ResponseWriter, r *http.Request, id int64) {
+	var request UpdateOrganizationRequestObject
+
+	request.Id = id
+
+	var body UpdateOrganizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateOrganization(ctx, request.(UpdateOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateOrganization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateOrganizationResponseObject); ok {
+		if err := validResponse.VisitUpdateOrganizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ChangePassword operation middleware
+func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	var request ChangePasswordRequestObject
+
+	var body ChangePasswordJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ChangePassword(ctx, request.(ChangePasswordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ChangePassword")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ChangePasswordResponseObject); ok {
+		if err := validResponse.VisitChangePasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListRecycleBin operation middleware
+func (sh *strictHandler) ListRecycleBin(w http.ResponseWriter, r *http.Request) {
+	var request ListRecycleBinRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRecycleBin(ctx, request.(ListRecycleBinRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRecycleBin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRecycleBinResponseObject); ok {
+		if err := validResponse.VisitListRecycleBinResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListRegistrations operation middleware
+func (sh *strictHandler) ListRegistrations(w http.ResponseWriter, r *http.Request) {
+	var request ListRegistrationsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRegistrations(ctx, request.(ListRegistrationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRegistrations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRegistrationsResponseObject); ok {
+		if err := validResponse.VisitListRegistrationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Register operation middleware
+func (sh *strictHandler) Register(w http.ResponseWriter, r *http.Request) {
+	var request RegisterRequestObject
+
+	var body RegisterJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Register(ctx, request.(RegisterRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Register")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegisterResponseObject); ok {
+		if err := validResponse.VisitRegisterResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ActivateRegistration operation middleware
+func (sh *strictHandler) ActivateRegistration(w http.ResponseWriter, r *http.Request, id int64) {
+	var request ActivateRegistrationRequestObject
+
+	request.Id = id
+
+	var body ActivateRegistrationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ActivateRegistration(ctx, request.(ActivateRegistrationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ActivateRegistration")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ActivateRegistrationResponseObject); ok {
+		if err := validResponse.VisitActivateRegistrationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RejectRegistration operation middleware
+func (sh *strictHandler) RejectRegistration(w http.ResponseWriter, r *http.Request, id int64) {
+	var request RejectRegistrationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RejectRegistration(ctx, request.(RejectRegistrationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RejectRegistration")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RejectRegistrationResponseObject); ok {
+		if err := validResponse.VisitRejectRegistrationResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -621,34 +5942,1188 @@ func (sh *strictHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListTree operation middleware
+func (sh *strictHandler) ListTree(w http.ResponseWriter, r *http.Request, params ListTreeParams) {
+	var request ListTreeRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTree(ctx, request.(ListTreeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTree")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTreeResponseObject); ok {
+		if err := validResponse.VisitListTreeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateDirectory operation middleware
+func (sh *strictHandler) CreateDirectory(w http.ResponseWriter, r *http.Request) {
+	var request CreateDirectoryRequestObject
+
+	var body CreateDirectoryJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateDirectory(ctx, request.(CreateDirectoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateDirectory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateDirectoryResponseObject); ok {
+		if err := validResponse.VisitCreateDirectoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SearchTree operation middleware
+func (sh *strictHandler) SearchTree(w http.ResponseWriter, r *http.Request, params SearchTreeParams) {
+	var request SearchTreeRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SearchTree(ctx, request.(SearchTreeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SearchTree")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SearchTreeResponseObject); ok {
+		if err := validResponse.VisitSearchTreeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DownloadZip operation middleware
+func (sh *strictHandler) DownloadZip(w http.ResponseWriter, r *http.Request, params DownloadZipParams) {
+	var request DownloadZipRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadZip(ctx, request.(DownloadZipRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadZip")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DownloadZipResponseObject); ok {
+		if err := validResponse.VisitDownloadZipResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteTreeNode operation middleware
+func (sh *strictHandler) DeleteTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request DeleteTreeNodeRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteTreeNode(ctx, request.(DeleteTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteTreeNodeResponseObject); ok {
+		if err := validResponse.VisitDeleteTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTreeNode operation middleware
+func (sh *strictHandler) GetTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request GetTreeNodeRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTreeNode(ctx, request.(GetTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTreeNodeResponseObject); ok {
+		if err := validResponse.VisitGetTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DownloadFile operation middleware
+func (sh *strictHandler) DownloadFile(w http.ResponseWriter, r *http.Request, id int64, params DownloadFileParams) {
+	var request DownloadFileRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadFile(ctx, request.(DownloadFileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadFile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DownloadFileResponseObject); ok {
+		if err := validResponse.VisitDownloadFileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGrantDraft operation middleware
+func (sh *strictHandler) GetGrantDraft(w http.ResponseWriter, r *http.Request, id int64) {
+	var request GetGrantDraftRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGrantDraft(ctx, request.(GetGrantDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGrantDraft")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGrantDraftResponseObject); ok {
+		if err := validResponse.VisitGetGrantDraftResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SaveGrantDraft operation middleware
+func (sh *strictHandler) SaveGrantDraft(w http.ResponseWriter, r *http.Request, id int64) {
+	var request SaveGrantDraftRequestObject
+
+	request.Id = id
+
+	var body SaveGrantDraftJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SaveGrantDraft(ctx, request.(SaveGrantDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SaveGrantDraft")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SaveGrantDraftResponseObject); ok {
+		if err := validResponse.VisitSaveGrantDraftResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreviewGrantDraft operation middleware
+func (sh *strictHandler) PreviewGrantDraft(w http.ResponseWriter, r *http.Request, id int64) {
+	var request PreviewGrantDraftRequestObject
+
+	request.Id = id
+
+	var body PreviewGrantDraftJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewGrantDraft(ctx, request.(PreviewGrantDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewGrantDraft")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PreviewGrantDraftResponseObject); ok {
+		if err := validResponse.VisitPreviewGrantDraftResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTreeGrants operation middleware
+func (sh *strictHandler) ListTreeGrants(w http.ResponseWriter, r *http.Request, id int64) {
+	var request ListTreeGrantsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTreeGrants(ctx, request.(ListTreeGrantsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTreeGrants")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTreeGrantsResponseObject); ok {
+		if err := validResponse.VisitListTreeGrantsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateTreeGrant operation middleware
+func (sh *strictHandler) CreateTreeGrant(w http.ResponseWriter, r *http.Request, id int64) {
+	var request CreateTreeGrantRequestObject
+
+	request.Id = id
+
+	var body CreateTreeGrantJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateTreeGrant(ctx, request.(CreateTreeGrantRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateTreeGrant")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateTreeGrantResponseObject); ok {
+		if err := validResponse.VisitCreateTreeGrantResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteTreeGrant operation middleware
+func (sh *strictHandler) DeleteTreeGrant(w http.ResponseWriter, r *http.Request, id int64, grantId int64) {
+	var request DeleteTreeGrantRequestObject
+
+	request.Id = id
+	request.GrantId = grantId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteTreeGrant(ctx, request.(DeleteTreeGrantRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteTreeGrant")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteTreeGrantResponseObject); ok {
+		if err := validResponse.VisitDeleteTreeGrantResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MoveTreeNode operation middleware
+func (sh *strictHandler) MoveTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request MoveTreeNodeRequestObject
+
+	request.Id = id
+
+	var body MoveTreeNodeJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MoveTreeNode(ctx, request.(MoveTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MoveTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MoveTreeNodeResponseObject); ok {
+		if err := validResponse.VisitMoveTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// InspectPermission operation middleware
+func (sh *strictHandler) InspectPermission(w http.ResponseWriter, r *http.Request, id int64, params InspectPermissionParams) {
+	var request InspectPermissionRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.InspectPermission(ctx, request.(InspectPermissionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "InspectPermission")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(InspectPermissionResponseObject); ok {
+		if err := validResponse.VisitInspectPermissionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreviewFile operation middleware
+func (sh *strictHandler) PreviewFile(w http.ResponseWriter, r *http.Request, id int64, params PreviewFileParams) {
+	var request PreviewFileRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewFile(ctx, request.(PreviewFileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewFile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PreviewFileResponseObject); ok {
+		if err := validResponse.VisitPreviewFileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PurgeTreeNode operation middleware
+func (sh *strictHandler) PurgeTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request PurgeTreeNodeRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PurgeTreeNode(ctx, request.(PurgeTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PurgeTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PurgeTreeNodeResponseObject); ok {
+		if err := validResponse.VisitPurgeTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RenameTreeNode operation middleware
+func (sh *strictHandler) RenameTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request RenameTreeNodeRequestObject
+
+	request.Id = id
+
+	var body RenameTreeNodeJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RenameTreeNode(ctx, request.(RenameTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RenameTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RenameTreeNodeResponseObject); ok {
+		if err := validResponse.VisitRenameTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RestoreTreeNode operation middleware
+func (sh *strictHandler) RestoreTreeNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var request RestoreTreeNodeRequestObject
+
+	request.Id = id
+
+	var body RestoreTreeNodeJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RestoreTreeNode(ctx, request.(RestoreTreeNodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RestoreTreeNode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RestoreTreeNodeResponseObject); ok {
+		if err := validResponse.VisitRestoreTreeNodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// OpenText operation middleware
+func (sh *strictHandler) OpenText(w http.ResponseWriter, r *http.Request, id int64) {
+	var request OpenTextRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.OpenText(ctx, request.(OpenTextRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OpenText")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(OpenTextResponseObject); ok {
+		if err := validResponse.VisitOpenTextResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SaveText operation middleware
+func (sh *strictHandler) SaveText(w http.ResponseWriter, r *http.Request, id int64) {
+	var request SaveTextRequestObject
+
+	request.Id = id
+
+	var body SaveTextJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SaveText(ctx, request.(SaveTextRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SaveText")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SaveTextResponseObject); ok {
+		if err := validResponse.VisitSaveTextResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFileVersions operation middleware
+func (sh *strictHandler) ListFileVersions(w http.ResponseWriter, r *http.Request, id int64) {
+	var request ListFileVersionsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFileVersions(ctx, request.(ListFileVersionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFileVersions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFileVersionsResponseObject); ok {
+		if err := validResponse.VisitListFileVersionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RestoreFileVersion operation middleware
+func (sh *strictHandler) RestoreFileVersion(w http.ResponseWriter, r *http.Request, id int64, versionId int64) {
+	var request RestoreFileVersionRequestObject
+
+	request.Id = id
+	request.VersionId = versionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RestoreFileVersion(ctx, request.(RestoreFileVersionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RestoreFileVersion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RestoreFileVersionResponseObject); ok {
+		if err := validResponse.VisitRestoreFileVersionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// InitiateUploadBatch operation middleware
+func (sh *strictHandler) InitiateUploadBatch(w http.ResponseWriter, r *http.Request) {
+	var request InitiateUploadBatchRequestObject
+
+	var body InitiateUploadBatchJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.InitiateUploadBatch(ctx, request.(InitiateUploadBatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "InitiateUploadBatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(InitiateUploadBatchResponseObject); ok {
+		if err := validResponse.VisitInitiateUploadBatchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetUploadPolicy operation middleware
+func (sh *strictHandler) GetUploadPolicy(w http.ResponseWriter, r *http.Request) {
+	var request GetUploadPolicyRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetUploadPolicy(ctx, request.(GetUploadPolicyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetUploadPolicy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetUploadPolicyResponseObject); ok {
+		if err := validResponse.VisitGetUploadPolicyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetUploadPolicy operation middleware
+func (sh *strictHandler) SetUploadPolicy(w http.ResponseWriter, r *http.Request) {
+	var request SetUploadPolicyRequestObject
+
+	var body SetUploadPolicyJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetUploadPolicy(ctx, request.(SetUploadPolicyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetUploadPolicy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetUploadPolicyResponseObject); ok {
+		if err := validResponse.VisitSetUploadPolicyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// InitiateUpload operation middleware
+func (sh *strictHandler) InitiateUpload(w http.ResponseWriter, r *http.Request) {
+	var request InitiateUploadRequestObject
+
+	var body InitiateUploadJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.InitiateUpload(ctx, request.(InitiateUploadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "InitiateUpload")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(InitiateUploadResponseObject); ok {
+		if err := validResponse.VisitInitiateUploadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CompleteUpload operation middleware
+func (sh *strictHandler) CompleteUpload(w http.ResponseWriter, r *http.Request, id string, params CompleteUploadParams) {
+	var request CompleteUploadRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CompleteUpload(ctx, request.(CompleteUploadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CompleteUpload")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CompleteUploadResponseObject); ok {
+		if err := validResponse.VisitCompleteUploadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListUploadParts operation middleware
+func (sh *strictHandler) ListUploadParts(w http.ResponseWriter, r *http.Request, id string) {
+	var request ListUploadPartsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListUploadParts(ctx, request.(ListUploadPartsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListUploadParts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListUploadPartsResponseObject); ok {
+		if err := validResponse.VisitListUploadPartsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// IssueUploadParts operation middleware
+func (sh *strictHandler) IssueUploadParts(w http.ResponseWriter, r *http.Request, id string) {
+	var request IssueUploadPartsRequestObject
+
+	request.Id = id
+
+	var body IssueUploadPartsJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.IssueUploadParts(ctx, request.(IssueUploadPartsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "IssueUploadParts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(IssueUploadPartsResponseObject); ok {
+		if err := validResponse.VisitIssueUploadPartsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListUserGroups operation middleware
+func (sh *strictHandler) ListUserGroups(w http.ResponseWriter, r *http.Request) {
+	var request ListUserGroupsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListUserGroups(ctx, request.(ListUserGroupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListUserGroups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListUserGroupsResponseObject); ok {
+		if err := validResponse.VisitListUserGroupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateUserGroup operation middleware
+func (sh *strictHandler) CreateUserGroup(w http.ResponseWriter, r *http.Request) {
+	var request CreateUserGroupRequestObject
+
+	var body CreateUserGroupJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateUserGroup(ctx, request.(CreateUserGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateUserGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateUserGroupResponseObject); ok {
+		if err := validResponse.VisitCreateUserGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetUserGroupMembers operation middleware
+func (sh *strictHandler) SetUserGroupMembers(w http.ResponseWriter, r *http.Request, id int64) {
+	var request SetUserGroupMembersRequestObject
+
+	request.Id = id
+
+	var body SetUserGroupMembersJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetUserGroupMembers(ctx, request.(SetUserGroupMembersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetUserGroupMembers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetUserGroupMembersResponseObject); ok {
+		if err := validResponse.VisitSetUserGroupMembersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ImportUsers operation middleware
+func (sh *strictHandler) ImportUsers(w http.ResponseWriter, r *http.Request) {
+	var request ImportUsersRequestObject
+
+	var body ImportUsersJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ImportUsers(ctx, request.(ImportUsersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ImportUsers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ImportUsersResponseObject); ok {
+		if err := validResponse.VisitImportUsersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MoveUser operation middleware
+func (sh *strictHandler) MoveUser(w http.ResponseWriter, r *http.Request, userId int64) {
+	var request MoveUserRequestObject
+
+	request.UserId = userId
+
+	var body MoveUserJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MoveUser(ctx, request.(MoveUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MoveUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MoveUserResponseObject); ok {
+		if err := validResponse.VisitMoveUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResetPassword operation middleware
+func (sh *strictHandler) ResetPassword(w http.ResponseWriter, r *http.Request, userId int64) {
+	var request ResetPasswordRequestObject
+
+	request.UserId = userId
+
+	var body ResetPasswordJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResetPassword(ctx, request.(ResetPasswordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResetPassword")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResetPasswordResponseObject); ok {
+		if err := validResponse.VisitResetPasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetUserStatus operation middleware
+func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, userId int64) {
+	var request SetUserStatusRequestObject
+
+	request.UserId = userId
+
+	var body SetUserStatusJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetUserStatus(ctx, request.(SetUserStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetUserStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetUserStatusResponseObject); ok {
+		if err := validResponse.VisitSetUserStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

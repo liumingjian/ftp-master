@@ -23,6 +23,16 @@ type AuditEvent struct {
 	Detail     []byte
 }
 
+type FileVersion struct {
+	ID        int64
+	FileID    int64
+	ObjectKey string
+	Size      int64
+	Format    string
+	CreatedBy int64
+	CreatedAt pgtype.Timestamptz
+}
+
 type GooseDbVersion struct {
 	ID        int32
 	VersionID int64
@@ -30,12 +40,114 @@ type GooseDbVersion struct {
 	Tstamp    pgtype.Timestamp
 }
 
-type User struct {
-	ID              int64
-	Username        string
-	DisplayName     string
-	PasswordHash    string
-	IsAdministrator bool
-	Status          string
+type Grant struct {
+	ID            int64
+	NodeID        int64
+	PrincipalKind string
+	PrincipalID   int64
+	Rights        int16
+	Scope         string
+	Creator       bool
+}
+
+type OfficeEditPermit struct {
+	ID          string
+	UserID      int64
+	FileID      int64
+	VersionID   int64
+	CreatedAt   pgtype.Timestamptz
+	ExpiresAt   pgtype.Timestamptz
+	DeliveredAt pgtype.Timestamptz
+	ObjectKey   string
+	Size        int64
+	Format      string
+	Preview     bool
+}
+
+type Organization struct {
+	ID       int64
+	Name     string
+	ParentID pgtype.Int8
+}
+
+type RecycleEntry struct {
+	NodeID           int64
+	OriginalParentID pgtype.Int8
+	OriginalPath     string
+	DeletedAt        pgtype.Timestamptz
+}
+
+type StorageGc struct {
+	ObjectKey string
+	UploadID  pgtype.Text
+}
+
+type TreeNode struct {
+	ID            int64
+	ParentID      pgtype.Int8
+	Name          string
+	IsFile        bool
+	DeletedAt     pgtype.Timestamptz
+	RecycleRootID pgtype.Int8
+}
+
+type UploadBatch struct {
+	ID        string
+	OwnerID   int64
+	ParentID  int64
+	RootID    int64
+	Expected  int32
+	CreatedAt pgtype.Timestamptz
+}
+
+type UploadBatchNode struct {
+	NodeID  int64
+	BatchID string
+}
+
+type UploadPolicy struct {
+	ID                bool
+	BlockedExtensions []string
+}
+
+type UploadSession struct {
+	ID              string
+	OwnerID         int64
+	ParentID        int64
+	Name            string
+	Size            int64
+	ObjectKey       string
+	StorageUploadID string
+	PartSize        int64
+	PartCount       int32
+	State           string
+	FileID          pgtype.Int8
+	VersionID       pgtype.Int8
 	CreatedAt       pgtype.Timestamptz
+	Collision       string
+	BatchID         pgtype.Text
+	RelativePath    string
+}
+
+type User struct {
+	ID               int64
+	Username         string
+	DisplayName      string
+	PasswordHash     string
+	IsAdministrator  bool
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	OrganizationID   int64
+	OrganizationHint string
+	SessionEpoch     int64
+}
+
+type UserGroup struct {
+	ID   int64
+	Name string
+}
+
+type UserGroupMember struct {
+	GroupID int64
+	UserID  int64
 }

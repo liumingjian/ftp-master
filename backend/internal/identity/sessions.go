@@ -40,7 +40,7 @@ end
 return 0`)
 
 // create starts a session for userID and returns its token.
-func (s *sessions) create(ctx context.Context, userID int64) (string, error) {
+func (s *sessions) create(ctx context.Context, userID, epoch int64) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("generate session token: %w", err)
@@ -48,7 +48,7 @@ func (s *sessions) create(ctx context.Context, userID int64) (string, error) {
 	token := base64.RawURLEncoding.EncodeToString(raw)
 	key := sessionKey(token)
 	_, err := s.redis.TxPipelined(ctx, func(p redis.Pipeliner) error {
-		p.HSet(ctx, key, "user_id", userID, "last_active", s.clock.Now().UnixNano())
+		p.HSet(ctx, key, "user_id", userID, "epoch", epoch, "last_active", s.clock.Now().UnixNano())
 		p.PExpire(ctx, key, IdleTimeout)
 		return nil
 	})
@@ -60,32 +60,33 @@ func (s *sessions) create(ctx context.Context, userID int64) (string, error) {
 
 // resolve returns the User a live session belongs to and extends its idle
 // expiry. ok is false for an unknown, revoked or idle-expired session.
-func (s *sessions) resolve(ctx context.Context, token string) (userID int64, ok bool, err error) {
+func (s *sessions) resolve(ctx context.Context, token string) (userID int64, epoch int64, ok bool, err error) {
 	if token == "" {
-		return 0, false, nil
+		return 0, 0, false, nil
 	}
 	key := sessionKey(token)
 	fields, err := s.redis.HGetAll(ctx, key).Result()
 	if err != nil {
-		return 0, false, fmt.Errorf("read session: %w", err)
+		return 0, 0, false, fmt.Errorf("read session: %w", err)
 	}
 	userID, idErr := strconv.ParseInt(fields["user_id"], 10, 64)
+	epoch, epochErr := strconv.ParseInt(fields["epoch"], 10, 64)
 	lastActive, timeErr := strconv.ParseInt(fields["last_active"], 10, 64)
-	if idErr != nil || timeErr != nil {
-		return 0, false, nil
+	if idErr != nil || timeErr != nil || epochErr != nil {
+		return 0, 0, false, nil
 	}
 	now := s.clock.Now()
 	if now.Sub(time.Unix(0, lastActive)) >= IdleTimeout {
 		if err := s.redis.Del(ctx, key).Err(); err != nil {
-			return 0, false, fmt.Errorf("remove expired session: %w", err)
+			return 0, 0, false, fmt.Errorf("remove expired session: %w", err)
 		}
-		return 0, false, nil
+		return 0, 0, false, nil
 	}
 	touched, err := touchIfPresent.Run(ctx, s.redis, []string{key}, now.UnixNano(), IdleTimeout.Milliseconds()).Int()
 	if err != nil {
-		return 0, false, fmt.Errorf("extend session: %w", err)
+		return 0, 0, false, fmt.Errorf("extend session: %w", err)
 	}
-	return userID, touched == 1, nil
+	return userID, epoch, touched == 1, nil
 }
 
 // revoke ends a session immediately.

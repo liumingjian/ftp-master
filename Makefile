@@ -1,13 +1,22 @@
 COMPOSE := docker compose -f deploy/local/docker-compose.yml
+QA_COMPOSE := $(COMPOSE) -f deploy/local/docker-compose.qa.yml
 # Host port of the web shell; the compose file reads the same variable.
 export FTP_MASTER_WEB_PORT ?= 8088
 
-.PHONY: up down logs generate check-generated check-generated-backend check-generated-web build test test-unit test-integration test-e2e run-backend
+.PHONY: up qa-up qa-down down logs generate check-generated check-generated-backend check-generated-web build test test-unit test-integration test-e2e run-backend
 
 ## up: build and start the whole local stack; the web shell is at http://localhost:$FTP_MASTER_WEB_PORT
 up:
 	$(COMPOSE) up --build --detach --wait
 	@echo "ftp-master is up: http://localhost:$(FTP_MASTER_WEB_PORT)"
+
+## qa-up builds and starts the local stack with Vite hot updates for web/src.
+qa-up:
+	$(QA_COMPOSE) up --build --detach --wait
+	@echo "ftp-master QA is up: http://localhost:$(FTP_MASTER_WEB_PORT)"
+
+qa-down:
+	$(QA_COMPOSE) down
 
 ## down: stop the local stack (keeps data volumes; add -v to the compose command to drop them)
 down:
