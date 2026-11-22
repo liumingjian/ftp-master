@@ -61,6 +61,7 @@ type OfficeEditPermit struct {
 	ObjectKey   string
 	Size        int64
 	Format      string
+	Preview     bool
 }
 
 type Organization struct {

@@ -8,6 +8,8 @@
 
 HTTP 201 returns `permitId`, `versionId`, `documentUrl`, `saveUrl`, `deliveryCheckUrl`, `title`, `format` and RFC3339 `expiresAt`. Each start creates a fresh cryptographically random 192-bit identifier. The database holds its User/file/version binding. The permit and `open_for_edit` Audit Event commit in one transaction. The event detail contains `versionId` and `permitId`.
 
+Qaxbrowser can request a read-only permit by adding `"preview": true` to the same POST. Preview requires Browse and uses the same file format, size and five-minute delivery limits. The response omits `saveUrl`. The server rejects saves with a preview permit even when the User has Modify. Preview does not create an Audit Event.
+
 Errors use the ordinary API error envelope: 400 invalid input; 401 missing/invalid session; 403 visible file without Modify; 404 invisible/missing file or version outside the file; 409 directory; 413 too large; 415 unsupported format. No permit or success event is issued on failure.
 
 ## Permit routes

@@ -4,7 +4,7 @@ import {putPart, UPLOAD_COMPLETE_MESSAGE_MS} from './UploadRow'
 import {systemClock} from './clock'
 type DirectoryHandle={kind:'directory';name:string;values:()=>AsyncIterable<DirectoryHandle|{kind:'file';name:string;getFile:()=>Promise<File>}>}
 type Manifest = {name:string; files:{path:string;size:number;id:string;partSize:number;partCount:number}[]}
-export function FolderUpload({parentId,visible,dropZone,completed,onActivityChange}:{parentId:number;visible:boolean;dropZone?:HTMLElement|null;completed:()=>void;onActivityChange?:(active:boolean)=>void}) {
+export function FolderUpload({parentId,visible,dropZone,completed,onActivityChange,onStatusChange}:{parentId:number;visible:boolean;dropZone?:HTMLElement|null;completed:()=>void;onActivityChange?:(active:boolean)=>void;onStatusChange?:(visible:boolean)=>void}) {
  const key=`ftp-folder:${parentId}`
  const [manifest,setManifest]=useState<Manifest|undefined>(()=>{ try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
  const [folder,setFolder]=useState('')
@@ -24,6 +24,10 @@ export function FolderUpload({parentId,visible,dropZone,completed,onActivityChan
  const activityCallback = useRef(onActivityChange); activityCallback.current=onActivityChange
  const active= busy || !!manifest
  useEffect(()=>{activityCallback.current?.(active)},[active])
+ const statusCallback = useRef(onStatusChange)
+ statusCallback.current = onStatusChange
+ const hasStatus = !!(manifest || status)
+ useEffect(() => { statusCallback.current?.(hasStatus) }, [hasStatus])
  async function upload(files:File[],directories:string[]=[],folderName?:string) {
   if(running.current || (!files.length&&!folderName))return
   const root=folderName??files[0]!.webkitRelativePath.split('/')[0]!

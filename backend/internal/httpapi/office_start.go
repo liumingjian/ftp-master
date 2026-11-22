@@ -40,7 +40,12 @@ func (s *Server) StartOfficeEdit(ctx context.Context, r api.StartOfficeEditReque
 	if err != nil {
 		return nil, err
 	}
-	if err = treeAccess(snap, r.Id, permission.Modify); err != nil {
+	preview := r.Body.Preview != nil && *r.Body.Preview
+	right := permission.Modify
+	if preview {
+		right = permission.Browse
+	}
+	if err = treeAccess(snap, r.Id, right); err != nil {
 		f, e := membershipError(err)
 		return f, e
 	}
@@ -67,19 +72,24 @@ func (s *Server) StartOfficeEdit(ctx context.Context, r api.StartOfficeEditReque
 	now := s.membership.Clock.Now()
 	expires := now.Add(5 * time.Minute)
 	id := opaqueKey()
-	err = q.CreateOfficePermit(ctx, sqlcdb.CreateOfficePermitParams{ID: id, UserID: info.session.User.ID, FileID: r.Id, VersionID: version.ID, CreatedAt: pgtype.Timestamptz{Time: now, Valid: true}, ExpiresAt: pgtype.Timestamptz{Time: expires, Valid: true}})
+	err = q.CreateOfficePermit(ctx, sqlcdb.CreateOfficePermitParams{ID: id, UserID: info.session.User.ID, FileID: r.Id, VersionID: version.ID, Preview: preview, CreatedAt: pgtype.Timestamptz{Time: now, Valid: true}, ExpiresAt: pgtype.Timestamptz{Time: expires, Valid: true}})
 	if err != nil {
 		return nil, err
 	}
-	err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: info.session.User.ID, Username: info.session.User.Username, SourceIP: info.sourceIP, Action: "open_for_edit", Outcome: audit.OutcomeSuccess, ItemID: r.Id, ItemPath: snap.Path(r.Id), Detail: map[string]any{"versionId": version.ID, "permitId": id}})
-	if err != nil {
-		return nil, err
+	base := BasePath + "/office/permits/" + id
+	var saveURL *string
+	if !preview {
+		url := base + "/save"
+		saveURL = &url
+		err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: info.session.User.ID, Username: info.session.User.Username, SourceIP: info.sourceIP, Action: "open_for_edit", Outcome: audit.OutcomeSuccess, ItemID: r.Id, ItemPath: snap.Path(r.Id), Detail: map[string]any{"versionId": version.ID, "permitId": id}})
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	base := BasePath + "/office/permits/" + id
-	return api.StartOfficeEdit201JSONResponse{PermitId: id, DocumentUrl: base + "/document/" + url.PathEscape(node.Name), SaveUrl: base + "/save", DeliveryCheckUrl: base + "/delivery", Title: node.Name, Format: api.OfficeEditFormat(version.Format), ExpiresAt: expires, VersionId: version.ID}, nil
+	return api.StartOfficeEdit201JSONResponse{PermitId: id, DocumentUrl: base + "/document/" + url.PathEscape(node.Name), SaveUrl: saveURL, DeliveryCheckUrl: base + "/delivery", Title: node.Name, Format: api.OfficeEditFormat(version.Format), ExpiresAt: expires, VersionId: version.ID}, nil
 }
 func (e membershipFailure) VisitStartOfficeEditResponse(w http.ResponseWriter) error {
 	return e.write(w)

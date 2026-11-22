@@ -15,23 +15,26 @@ function editableOfficeVersion(node: Node) {
       officeFormats.has(version.format) && version.size <= officeLimit) return version
 }
 
-export function OfficeEditIndicator({ node }: { node: Node }) {
-  if (!editableOfficeVersion(node)) return null
+export function canPreviewOffice(node: Node) {
+  const version = node.latestVersion
+  return node.isFile && !!(node.rights & 1) && version &&
+    officeFormats.has(version.format) && version.size <= officeLimit
+}
 
-  return <span className="office-edit-indicator" title="在线编辑暂不可用">
+export function OfficeEditAction({ node, officePlugin, onOpen, icon = false }: {
+  node: Node
+  officePlugin: boolean
+  onOpen: () => void
+  icon?: boolean
+}) {
+  const version = editableOfficeVersion(node)
+  if (!version) return null
+
+  if (!officePlugin && icon) return <span className="office-edit-indicator" title="在线编辑需要 WPS 插件">
     <button type="button" className="icon" disabled aria-label={`在线编辑 ${node.name}`}>
       <Pencil size={15} aria-hidden="true" />
     </button>
   </span>
-}
-
-export function OfficeEditAction({ node, officePlugin, onOpen }: {
-  node: Node
-  officePlugin: boolean
-  onOpen: () => void
-}) {
-  const version = editableOfficeVersion(node)
-  if (!version) return null
 
   if (!officePlugin) return <button type="button" className="office-edit" disabled
     aria-label={`在线编辑 ${node.name}，需要 WPS 插件`}>
@@ -39,17 +42,17 @@ export function OfficeEditAction({ node, officePlugin, onOpen }: {
     <small>需 WPS 插件</small>
   </button>
 
-  return <a className="button office-edit" href={`/api/files/${node.id}/office-edits`}
+  return <a className={icon ? 'button icon office-edit-indicator' : 'button office-edit'} href={`/api/files/${node.id}/office-edits`}
     data-ftp-office-edit="1" data-ftp-office-version={version.id} target="_blank" rel="noopener"
+    title="在线编辑"
     onClick={event => { event.preventDefault(); onOpen() }} aria-label={`在线编辑 ${node.name}`}>
-    <Pencil size={15} aria-hidden="true" />在线编辑
+    <Pencil size={15} aria-hidden="true" />{!icon && '在线编辑'}
   </a>
 }
 
-export function FileViewer({ node, officePlugin, onOfficeOpen, close, saved }: {
+export function FileViewer({ node, officePreview, close, saved }: {
   node: Node
-  officePlugin: boolean
-  onOfficeOpen: () => void
+  officePreview: boolean
   close: () => void
   saved: () => void
 }) {
@@ -81,7 +84,6 @@ export function FileViewer({ node, officePlugin, onOfficeOpen, close, saved }: {
         <FileIcon node={node} tile />
         <h2 id="file-viewer-title" title={node.name}>{node.name}</h2>
         <div className="file-viewer-actions">
-          <OfficeEditAction node={node} officePlugin={officePlugin} onOpen={onOfficeOpen} />
           <TextEditor node={node} saved={saved} />
           {download && <a className="button" href={`/api/tree/${node.id}/download`} download>
             <Download size={16} aria-hidden="true" />下载
@@ -94,18 +96,14 @@ export function FileViewer({ node, officePlugin, onOfficeOpen, close, saved }: {
       {kind ? <section aria-label="文件预览" className={`file-viewer-body ${kind}`}>
         <PreviewContent key={version?.id} node={node} kind={kind} />
       </section> : <div className="file-viewer-notice">
-        {office ? <OfficeNotice canModify={!!(node.rights & 8)} size={version.size} officePlugin={officePlugin} />
-          : <p>此文件类型暂不支持在线预览</p>}
+        {office && canPreviewOffice(node) && officePreview
+          ? <p><a className="button" href={`/api/files/${node.id}/office-edits`} data-ftp-office-preview="1"
+            data-ftp-office-version={version.id} onClick={event => { event.preventDefault(); dismiss() }}>预览</a></p>
+          : <p>{office ? version.size > officeLimit ? '超过 25 MiB 的 Office 文件无法在线预览'
+            : '在线预览需要支持预览的 ftp-master WPS 插件' : '此文件类型暂不支持在线预览'}</p>}
       </div>}
     </div>
   </dialog>
-}
-
-function OfficeNotice({ canModify, size, officePlugin }: { canModify: boolean; size: number; officePlugin: boolean }) {
-  if (!canModify) return <p>在线编辑需要修改权限</p>
-  if (size > officeLimit) return <p>超过 25 MiB 的 Office 文件无法在线编辑</p>
-  if (!officePlugin) return <p>当前浏览器未检测到 ftp-master WPS 插件。请在已启用专用插件的奇安信浏览器中打开此文件</p>
-  return <p>点击「在线编辑」，在 WPS 中打开此文件</p>
 }
 
 function PreviewContent({ node, kind }: { node: Node; kind: NonNullable<ReturnType<typeof previewKind>> }) {

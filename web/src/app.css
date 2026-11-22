@@ -123,6 +123,7 @@ th { color: var(--secondary); font-size: 12px; font-weight: 500; }
   --sidebar-width: var(--directory-width, 280px);
   display: grid;
   grid-template: var(--header-height) minmax(0, 1fr) / var(--sidebar-width) minmax(0, 1fr);
+  height: 100vh;
   height: 100dvh;
   color: var(--text);
   background: var(--bg);
@@ -298,7 +299,7 @@ button.file-name:hover:not(:disabled) { background: transparent; }
 .row-actions > * { min-height: 32px; padding-inline: 8px; font-size: 12px; white-space: nowrap; }
 .row-actions .icon { width: 32px; color: var(--muted); background: transparent; border-color: transparent; }
 .row-actions .icon:not(:disabled):hover { background: var(--control); color: var(--text); }
-.row-actions > .office-edit-indicator { padding: 0; cursor: not-allowed; }
+.row-actions > span.office-edit-indicator { padding: 0; cursor: not-allowed; }
 .office-edit-indicator .icon { min-height: 32px; pointer-events: none; }
 .office-edit { color: var(--accent); }
 .office-edit:disabled {
@@ -425,7 +426,6 @@ dd { margin: 0; }
 .file-author .avatar { width: 20px; height: 20px; margin-right: 8px; font-size: 11px; vertical-align: middle; }
 .file-author .ellipsis { display: inline-block; max-width: calc(100% - 28px); vertical-align: middle; }
 .file-time { white-space: nowrap; }
-.transfer-row:not(:has(.upload-row, .resume-folder, label:not(.visually-hidden), [role='alert'])) { display: none; }
 .transfer-row td { background: color-mix(in srgb, var(--accent-soft) 72%, var(--panel)); }
 .transfer-name { font-weight: 500; overflow-wrap: anywhere; }
 .explorer-actions button { min-height: 40px; }
@@ -445,6 +445,24 @@ dd { margin: 0; }
   .file-table :is(.file-size-header, .file-size) { display: none; }
   .file-name { display: grid; grid-template-columns: auto minmax(0, 1fr); width: 100%; text-align: start; }
   .file-name .ellipsis { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
+}
+
+/* Qaxbrowser 102 needs viewport breakpoints for the file table. */
+@supports not (container-type: inline-size) {
+  .file-table th:last-child { width: 128px; }
+  @media (max-width: 720px) {
+    .file-table th:nth-child(3), .file-table th:nth-child(4),
+    .file-table td.file-author, .file-table td.file-time { display: none; }
+    .file-table th:first-child { width: 36px; }
+    .file-size-header { width: 68px; }
+    .file-table th:last-child { width: 112px; }
+    .file-table :is(th, td) { padding-inline: 4px; }
+  }
+  @media (max-width: 460px) {
+    .file-table :is(.file-size-header, .file-size) { display: none; }
+    .file-name { display: grid; grid-template-columns: auto minmax(0, 1fr); width: 100%; text-align: start; }
+    .file-name .ellipsis { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
+  }
 }
 
 .destination > .audit-panel { padding: 0; border: 0; background: transparent; }
@@ -865,6 +883,7 @@ dd { margin: 0; }
   margin: 0;
   width: min(340px, 90vw);
   max-width: none;
+  height: 100vh;
   height: 100dvh;
   max-height: none;
   padding: 0;

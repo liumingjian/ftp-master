@@ -16,7 +16,7 @@ export function putPart(url: string, bytes: Blob, progress: (loaded: number) => 
     xhr.send(bytes)
   })
 }
-export function UploadRow({ parentId, visible, dropZone, completed, clock = systemClock, onActivityChange }: { onActivityChange?: (active: boolean) => void; parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; clock?: Clock }) {
+export function UploadRow({ parentId, visible, dropZone, completed, clock = systemClock, onActivityChange, onStatusChange }: { onActivityChange?: (active: boolean) => void; onStatusChange?: (visible: boolean) => void; parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; clock?: Clock }) {
   const key = `ftp-upload:${parentId}`
   const [savedSession, setSession] = useState<Session | undefined>(() => { try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
   const fileRef = useRef<File>(undefined)
@@ -46,6 +46,10 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
  const activityCallback = useRef(onActivityChange); activityCallback.current=onActivityChange
  const active= busy || !!savedSession || !!conflict
  useEffect(()=>{activityCallback.current?.(active)},[active])
+  const statusCallback = useRef(onStatusChange)
+  statusCallback.current = onStatusChange
+  const hasStatus = offline || !!row || (!!savedSession && !busy && !conflict)
+  useEffect(() => { statusCallback.current?.(hasStatus) }, [hasStatus])
   useEffect(() => {
     if (!dropZone) return
     const dragover = (event: DragEvent) => {

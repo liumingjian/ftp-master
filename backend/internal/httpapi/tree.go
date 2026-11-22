@@ -61,6 +61,25 @@ func (s *Server) ListTree(ctx context.Context, r api.ListTreeRequestObject) (api
 			result = append(result, treeResponse(n, snap))
 		}
 	}
+	if r.Params.IncludeGrantCounts != nil && *r.Params.IncludeGrantCounts {
+		type grantCounts struct{ total, individual int }
+		counts := make(map[int64]grantCounts)
+		for _, grant := range snap.Grants {
+			count := counts[grant.NodeID]
+			count.total++
+			if grant.PrincipalKind == "user" && !grant.Creator {
+				count.individual++
+			}
+			counts[grant.NodeID] = count
+		}
+		for i := range result {
+			if permission.Rights(result[i].Rights).Has(permission.GrantRight) {
+				count := counts[result[i].Id]
+				result[i].DirectGrantCount = &count.total
+				result[i].DirectIndividualGrantCount = &count.individual
+			}
+		}
+	}
 	return result, s.attachLatestVersions(ctx, result)
 }
 
@@ -342,6 +361,16 @@ func (s *Server) RenameTreeNode(ctx context.Context, r api.RenameTreeNodeRequest
 	}
 	return api.RenameTreeNode200JSONResponse(out.(api.TreeNode)), nil
 }
+func checkMoveSource(snap *tree.Snapshot, node sqlcdb.TreeNode) error {
+	if node.ParentID.Valid {
+		return treeAccess(snap, node.ParentID.Int64, permission.Delete)
+	}
+	if !snap.User.Administrator {
+		return membershipFailure{403, "Administrator required"}
+	}
+	return nil
+}
+
 func (s *Server) MoveTreeNode(ctx context.Context, r api.MoveTreeNodeRequestObject) (api.MoveTreeNodeResponseObject, error) {
 	out, err := s.changeTree(ctx, "move", r.Id, func(q *sqlcdb.Queries, snap *tree.Snapshot) (any, error) {
 		if err := treeAccess(snap, r.Id, 0); err != nil {
@@ -351,12 +380,8 @@ func (s *Server) MoveTreeNode(ctx context.Context, r api.MoveTreeNodeRequestObje
 			return nil, membershipFailure{400, "destination required"}
 		}
 		n, _ := snap.Node(r.Id)
-		if n.ParentID.Valid {
-			if err := treeAccess(snap, n.ParentID.Int64, permission.Delete); err != nil {
-				return nil, err
-			}
-		} else if !snap.User.Administrator {
-			return nil, membershipFailure{403, "Administrator required"}
+		if err := checkMoveSource(snap, n); err != nil {
+			return nil, err
 		}
 		if r.Body.ParentId == nil {
 			if !snap.User.Administrator {

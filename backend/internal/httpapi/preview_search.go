@@ -25,9 +25,18 @@ func (s *Server) SearchTree(ctx context.Context, r api.SearchTreeRequestObject) 
 		return nil, err
 	}
 	result := api.SearchTree200JSONResponse{}
+	moveByParent := make(map[int64]bool)
 	for _, n := range snap.Nodes {
 		if n.IsFile && snap.Permission(n.ID).Rights.Has(permission.Browse) && strings.Contains(strings.ToLower(n.Name), strings.ToLower(query)) {
-			result = append(result, treeResponse(n, snap))
+			entry := treeResponse(n, snap)
+			parentID := n.ParentID.Int64
+			canMove, checked := moveByParent[parentID]
+			if !checked {
+				canMove = checkMoveSource(snap, n) == nil
+				moveByParent[parentID] = canMove
+			}
+			entry.CanMoveFromParent = &canMove
+			result = append(result, entry)
 		}
 	}
 	return result, s.attachLatestVersions(ctx, result)

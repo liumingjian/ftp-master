@@ -43,6 +43,8 @@ test('browser sends real multipart bytes to public storage and shows in-place pr
   const panel = page.getByRole('region', { name: '共享目录' })
   const dir = `Upload-${Date.now()}`
   await createAndOpenFolder(page, dir)
+  const transferRow = panel.locator('tr.transfer-row')
+  await expect(transferRow).toHaveAttribute('hidden', '')
   const storageResponses: number[] = []
   page.on('response', response => {if (response.request().method() === 'PUT' && response.url().includes('uploadId=')) storageResponses.push(response.status())})
   const [picker] = await Promise.all([
@@ -51,9 +53,11 @@ test('browser sends real multipart bytes to public storage and shows in-place pr
   ])
   await picker.setFiles({ name: 'multipart.txt', mimeType: 'text/plain', buffer: Buffer.alloc(9 * 1024 * 1024, 65) })
   await expect(panel.getByRole('status', { name: '上传进度' })).toContainText('上传完成', {timeout: 60000})
+  await expect(transferRow).toBeVisible()
   await expect(panel.getByRole('status', { name: '上传进度' })).toContainText('MB/s')
   await page.clock.fastForward(3500)
   await expect(panel.getByRole('status', { name: '上传进度' })).toHaveCount(0)
+  await expect(transferRow).toHaveAttribute('hidden', '')
   await expect(panel.getByRole('button', { name: 'multipart.txt', exact: true })).toBeVisible()
   expect(storageResponses).toEqual([200, 200])
   await panel.getByLabel('上传文件',{exact:true}).setInputFiles({ name: 'blocked.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('no') })

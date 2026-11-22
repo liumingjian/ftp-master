@@ -12,7 +12,7 @@ import (
 )
 
 const createOfficePermit = `-- name: CreateOfficePermit :exec
-INSERT INTO office_edit_permits(id,user_id,file_id,version_id,created_at,expires_at,object_key,size,format) SELECT $1,$2,$3,$4,$5,$6,v.object_key,v.size,v.format FROM file_versions v WHERE v.id=$4
+INSERT INTO office_edit_permits(id,user_id,file_id,version_id,created_at,expires_at,preview,object_key,size,format) SELECT $1,$2,$3,$4,$5,$6,$7,v.object_key,v.size,v.format FROM file_versions v WHERE v.id=$4
 `
 
 type CreateOfficePermitParams struct {
@@ -22,6 +22,7 @@ type CreateOfficePermitParams struct {
 	VersionID int64
 	CreatedAt pgtype.Timestamptz
 	ExpiresAt pgtype.Timestamptz
+	Preview   bool
 }
 
 func (q *Queries) CreateOfficePermit(ctx context.Context, arg CreateOfficePermitParams) error {
@@ -32,12 +33,13 @@ func (q *Queries) CreateOfficePermit(ctx context.Context, arg CreateOfficePermit
 		arg.VersionID,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+		arg.Preview,
 	)
 	return err
 }
 
 const getOfficePermit = `-- name: GetOfficePermit :one
-SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at, p.object_key, p.size, p.format,n.name FROM office_edit_permits p JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL
+SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at, p.object_key, p.size, p.format, p.preview,n.name FROM office_edit_permits p JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL
 `
 
 type GetOfficePermitRow struct {
@@ -51,6 +53,7 @@ type GetOfficePermitRow struct {
 	ObjectKey   string
 	Size        int64
 	Format      string
+	Preview     bool
 	Name        string
 }
 
@@ -68,13 +71,14 @@ func (q *Queries) GetOfficePermit(ctx context.Context, id string) (GetOfficePerm
 		&i.ObjectKey,
 		&i.Size,
 		&i.Format,
+		&i.Preview,
 		&i.Name,
 	)
 	return i, err
 }
 
 const lockOfficePermit = `-- name: LockOfficePermit :one
-SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at, p.object_key, p.size, p.format,n.name FROM office_edit_permits p JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL FOR UPDATE OF p
+SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at, p.object_key, p.size, p.format, p.preview,n.name FROM office_edit_permits p JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL FOR UPDATE OF p
 `
 
 type LockOfficePermitRow struct {
@@ -88,6 +92,7 @@ type LockOfficePermitRow struct {
 	ObjectKey   string
 	Size        int64
 	Format      string
+	Preview     bool
 	Name        string
 }
 
@@ -105,6 +110,7 @@ func (q *Queries) LockOfficePermit(ctx context.Context, id string) (LockOfficePe
 		&i.ObjectKey,
 		&i.Size,
 		&i.Format,
+		&i.Preview,
 		&i.Name,
 	)
 	return i, err

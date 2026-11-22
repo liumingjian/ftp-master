@@ -145,9 +145,10 @@ paths:
               type: object
               properties:
                 versionId: {type: integer, format: int64, minimum: 1}
+                preview: {type: boolean, description: Request a read-only permit with Browse access.}
       responses:
         '201':
-          description: Edit Permit issued; gateway read expires after five minutes.
+          description: Office permit issued. Gateway read expires after five minutes.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OfficeEdit'}
@@ -447,6 +448,9 @@ paths:
         - in: query
           name: parentId
           schema: {type: integer, format: int64}
+        - in: query
+          name: includeGrantCounts
+          schema: {type: boolean, default: false}
       responses:
         '200':
           description: Visible children; traversable paths never reveal siblings.
@@ -1266,11 +1270,11 @@ components:
   schemas:
     OfficeEdit:
       type: object
-      required: [permitId, documentUrl, saveUrl, deliveryCheckUrl, title, format, expiresAt, versionId]
+      required: [permitId, documentUrl, deliveryCheckUrl, title, format, expiresAt, versionId]
       properties:
         permitId: {type: string}
         documentUrl: {type: string}
-        saveUrl: {type: string}
+        saveUrl: {type: string, description: Present for edit permits only.}
         deliveryCheckUrl: {type: string}
         title: {type: string}
         format: {type: string, enum: [doc, docx, wps, xls, xlsx]}
@@ -1286,6 +1290,17 @@ components:
         isFile: {type: boolean}
         rights: {type: integer}
         traversable: {type: boolean}
+        canMoveFromParent:
+          type: boolean
+          description: Included in search results. The caller can move this item out of its source directory.
+        directGrantCount:
+          type: integer
+          minimum: 0
+          description: Included in grant-count listings on items where the caller has Grant.
+        directIndividualGrantCount:
+          type: integer
+          minimum: 0
+          description: Counts direct User Grants excluding Creator Grants. Requires the same access as directGrantCount.
         latestVersion:
           description: Latest immutable content metadata, included for browsable files.
           type: object

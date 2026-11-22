@@ -3,7 +3,7 @@ import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, FolderOpen, Fold
 import { createPortal } from 'react-dom'
 import { TextEditor } from './TextEditor'
 import { copiedItemId, CopyItemLink, previewKind } from './BrowseTools'
-import { FileViewer, OfficeEditAction, OfficeEditIndicator } from './FileViewer'
+import { canPreviewOffice, FileViewer, OfficeEditAction } from './FileViewer'
 import { ZipDownload } from './ZipDownload'
 import { VersionsPanel } from './VersionsPanel'
 import { RecycleBin } from './RecycleBin'
@@ -46,6 +46,7 @@ type Props = {
 
 export function TreePanel({ administrator, active, hash, query, navigate, transferSlot, sidebarWidth, resizeSidebar, grantId, openGrant, recycle, openRecycle, recycleHref }: Props) {
   const [officePlugin, setOfficePlugin] = useState(false)
+  const [officePreview, setOfficePreview] = useState(false)
   const [path, setPath] = useState<Node[]>([])
   const [resolvedHash, setResolvedHash] = useState<string>()
   const [branches, setBranches] = useState<Record<number, Node[]>>({})
@@ -64,6 +65,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const [grantNode, setGrantNode] = useState<Node>()
   const [grantDirty, setGrantDirty] = useState(false)
   const [uploadActivity, setUploadActivity] = useState<Record<string, boolean>>({})
+  const [uploadStatus, setUploadStatus] = useState<Record<string, boolean>>({})
   const [uploadPaths, setUploadPaths] = useState<Node[][]>([])
   const [directoryOpen, setDirectoryOpen] = useState(false)
   const [dropZone, setDropZone] = useState<HTMLDivElement | null>(null)
@@ -92,6 +94,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const otherUploads = Object.keys(uploadActivity).filter(key =>
     uploadActivity[key] && (!browsing || !!query || Number(key.split(':')[1]) !== currentId))
   const selectedNode = detail && (nodes.find(node => node.id === detail.node.id) ?? detail.node)
+  const canMoveSelected = query ? selectedNode?.canMoveFromParent : current ? !!(current.rights & DELETE) : administrator
   const viewerNode = viewedFile && (nodes.find(node => node.id === viewedFile.id) ?? viewedFile)
   const pending = locationPending || (query ? searching : loading)
   const failed = query ? searchFailed : loadFailed
@@ -105,9 +108,12 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
 
   useEffect(() => {
     const root = document.documentElement
-    const update = () => setOfficePlugin(!!root.getAttribute('data-ftp-office-plugin')?.trim())
+    const update = () => {
+      setOfficePlugin(!!root.getAttribute('data-ftp-office-plugin')?.trim())
+      setOfficePreview(root.getAttribute('data-ftp-office-preview') === '1')
+    }
     const observer = new MutationObserver(update)
-    observer.observe(root, { attributes: true, attributeFilter: ['data-ftp-office-plugin'] })
+    observer.observe(root, { attributes: true, attributeFilter: ['data-ftp-office-plugin', 'data-ftp-office-preview'] })
     update()
     return () => observer.disconnect()
   }, [])
@@ -239,6 +245,8 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
 
   function trackOfficeEdit() {
     officeEditStarted.current = true
+    setViewedFile(undefined)
+    closeDrawer(false)
   }
 
   function openFolder(id = ROOT) {
@@ -349,11 +357,15 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
               {uploadPaths.map(target => {
                 const id = target.at(-1)!.id
                 const report = (kind: string, value: boolean) => setUploadActivity(previous => ({ ...previous, [`${kind}:${id}`]: value }))
+                const reportStatus = (kind: string, value: boolean) => setUploadStatus(previous => ({ ...previous, [`${kind}:${id}`]: value }))
                 const visible = browsing && !locationPending && !query && canUpload && id === currentId
-                return <tr key={id} className="transfer-row" hidden={!visible}>
+                const hasStatus = uploadStatus[`file:${id}`] || uploadStatus[`folder:${id}`]
+                return <tr key={id} className="transfer-row" hidden={!visible || !hasStatus}>
                   <td colSpan={6}>
-                    <UploadRow parentId={id} visible={visible} dropZone={visible ? dropZone : null} onActivityChange={value => report('file', value)} completed={() => refresh(v => v + 1)} />
-                    <FolderUpload parentId={id} visible={visible} dropZone={visible ? dropZone : null} onActivityChange={value => report('folder', value)} completed={() => refresh(v => v + 1)} />
+                    <UploadRow parentId={id} visible={visible} dropZone={visible ? dropZone : null} onActivityChange={value => report('file', value)}
+                      onStatusChange={value => reportStatus('file', value)} completed={() => refresh(v => v + 1)} />
+                    <FolderUpload parentId={id} visible={visible} dropZone={visible ? dropZone : null} onActivityChange={value => report('folder', value)}
+                      onStatusChange={value => reportStatus('folder', value)} completed={() => refresh(v => v + 1)} />
                   </td>
                 </tr>
               })}
@@ -363,20 +375,24 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                   <td><input type="checkbox" aria-label={node.name} checked={selectedIds.includes(node.id)}
                     onChange={event => setSelected(ids => event.target.checked ? [...ids, node.id] : ids.filter(id => id !== node.id))} /></td>
                   <td>
-                    <button className="file-name ghost" data-panel-trigger={node.isFile || undefined} onClick={() => {
+                    {officePreview && canPreviewOffice(node) ? <a className="button file-name ghost" title={node.name}
+                      href={`/api/files/${node.id}/office-edits`} data-ftp-office-preview="1" data-ftp-office-version={node.latestVersion?.id}
+                      onClick={event => { event.preventDefault(); closeDrawer(false) }}>
+                      <FileIcon node={node} tile /><span className="ellipsis">{node.name}</span>
+                    </a> : <button className="file-name ghost" data-panel-trigger={node.isFile || undefined} onClick={() => {
                       setAction(undefined)
                       if (node.isFile) {
                         closeDrawer(false)
                         setViewedFile(node)
                       } else openFolder(node.id)
-                    }} title={node.name}><FileIcon node={node} tile /><span className="ellipsis">{node.name}</span></button>
+                    }} title={node.name}><FileIcon node={node} tile /><span className="ellipsis">{node.name}</span></button>}
                     {node.traversable && <small className="access-note">仅通行</small>}
                   </td>
                   <td className="file-author">{node.latestVersion?.username && <><span className="avatar">{node.latestVersion.username.slice(-1)}</span><span className="ellipsis">{node.latestVersion.username}</span></>}</td>
                   <td className="file-time muted">{node.latestVersion?.createdAt && <time dateTime={node.latestVersion.createdAt}>{new Date(node.latestVersion.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</time>}</td>
                   <td className="file-size">{node.latestVersion && formatSize(node.latestVersion.size)}</td>
                   <td><div className="row-actions">
-                    <OfficeEditIndicator node={node} />
+                    <OfficeEditAction node={node} officePlugin={officePlugin} onOpen={trackOfficeEdit} icon />
                     {node.isFile && !!(node.rights & DOWNLOAD) && <a className="button icon" href={`/api/tree/${node.id}/download`}
                       download aria-label={`下载 ${node.name}`} title="下载"><Download size={15} /></a>}
                     <button className="icon" data-panel-trigger aria-expanded={selectedNode?.id === node.id}
@@ -452,7 +468,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
           <div className="detail-actions detail-management">
             {!!(selectedNode.rights & GRANT) && <button onClick={() => showGrants(selectedNode.id)}>管理权限</button>}
             {!!(selectedNode.rights & MODIFY) && <button onClick={() => setAction('rename')}>重命名</button>}
-            {(current ? !!(current.rights & DELETE) : administrator) && <button aria-label={`移动 ${selectedNode.name}`}
+            {canMoveSelected && <button aria-label={`移动 ${selectedNode.name}`}
               onClick={() => setAction('move')}>移动</button>}
             {!!(selectedNode.rights & DELETE) && <button className="danger" aria-label={`删除 ${selectedNode.name}`}
               onClick={() => void deleteNode(selectedNode.id)}>移入回收站</button>}
@@ -468,8 +484,8 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
             close={() => setAction(undefined)} moved={() => { setAction(undefined); setDetail(undefined) }} report={update} />}
         </>}
       </aside>}
-      {browsing && viewerNode && <FileViewer key={viewerNode.id} node={viewerNode} officePlugin={officePlugin}
-        onOfficeOpen={trackOfficeEdit} close={() => setViewedFile(undefined)} saved={() => refresh(value => value + 1)} />}
+      {browsing && viewerNode && <FileViewer key={viewerNode.id} node={viewerNode} officePreview={officePreview}
+        close={() => setViewedFile(undefined)} saved={() => refresh(value => value + 1)} />}
     </main>
 
     {active && recycle && <main className="shell-main"><button className="directory-trigger" aria-haspopup="dialog" aria-expanded={directoryOpen} aria-controls="file-directories"

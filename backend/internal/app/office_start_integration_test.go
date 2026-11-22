@@ -110,6 +110,15 @@ func TestOfficeStartRequiresSessionAndFile(t *testing.T) {
 	if status, body := reader.do("POST", route, map[string]any{}); status != 403 {
 		t.Fatalf("browse only: %d %s", status, body)
 	}
+	status, body := reader.do("POST", route, map[string]any{"preview": true})
+	if status != 201 {
+		t.Fatalf("browse-only preview: %d", status)
+	}
+	var preview map[string]any
+	decode(t, body, &preview)
+	if _, canSave := preview["saveUrl"]; canSave {
+		t.Fatal("preview returned a save URL")
+	}
 	// Latest selection differs from explicit historical selection.
 	var latest int64
 	if err = conn.QueryRow(context.Background(), "INSERT INTO file_versions(file_id,object_key,size,format,created_by,created_at) VALUES($1,'new-version',1,'docx',$2,$3) RETURNING id", file, adminID, fake.Now()).Scan(&latest); err != nil {

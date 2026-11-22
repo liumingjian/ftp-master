@@ -770,7 +770,8 @@ export interface components {
         OfficeEdit: {
             permitId: string;
             documentUrl: string;
-            saveUrl: string;
+            /** @description Present for edit permits only. */
+            saveUrl?: string;
             deliveryCheckUrl: string;
             title: string;
             /** @enum {string} */
@@ -789,6 +790,12 @@ export interface components {
             isFile: boolean;
             rights: number;
             traversable: boolean;
+            /** @description Included in search results. The caller can move this item out of its source directory. */
+            canMoveFromParent?: boolean;
+            /** @description Included in grant-count listings on items where the caller has Grant. */
+            directGrantCount?: number;
+            /** @description Counts direct User Grants excluding Creator Grants. Requires the same access as directGrantCount. */
+            directIndividualGrantCount?: number;
             /** @description Latest immutable content metadata, included for browsable files. */
             latestVersion?: {
                 /** Format: int64 */
@@ -1217,11 +1224,13 @@ export interface operations {
                 "application/json": {
                     /** Format: int64 */
                     versionId?: number;
+                    /** @description Request a read-only permit with Browse access. */
+                    preview?: boolean;
                 };
             };
         };
         responses: {
-            /** @description Edit Permit issued; gateway read expires after five minutes. */
+            /** @description Office permit issued. Gateway read expires after five minutes. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1678,6 +1687,7 @@ export interface operations {
         parameters: {
             query?: {
                 parentId?: number;
+                includeGrantCounts?: boolean;
             };
             header?: never;
             path?: never;

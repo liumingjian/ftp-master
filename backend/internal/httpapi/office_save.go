@@ -108,6 +108,9 @@ func (s *Server) SaveOffice(ctx context.Context, r api.SaveOfficeRequestObject) 
 	if err != nil {
 		return nil, err
 	}
+	if p.Preview {
+		return officeFailure{403, "read-only Office permit"}, nil
+	}
 	if !p.DeliveredAt.Valid {
 		return officeFailure{409, "document not delivered"}, nil
 	}

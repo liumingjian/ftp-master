@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowLeft, Building2, ChevronRight, Lock, UserRound, UserRoundPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, Building2, ChevronRight, Lock, TriangleAlert, UserRound, UserRoundPlus, Users, X } from 'lucide-react'
 import { DirectorySearch, matchesSearch } from './DirectorySearch'
 import { PageHeading } from './PageHeading'
 import { api } from './api/client'
@@ -18,6 +18,7 @@ const principalLabels = { user: '用户', organization: '组织', user_group: '�
 const principalKinds = ['user_group', 'organization', 'user'] as const
 const principalIcons = { user: UserRound, organization: Building2, user_group: Users }
 const principalOrder = (grant: Grant) => grant.creator ? -1 : principalKinds.indexOf(grant.principalKind)
+const individualGrantWarningThreshold = 10
 
 function toggleRight(value: number, bit: number, checked: boolean) {
   if (checked) {
@@ -74,7 +75,7 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
     const controller = new AbortController()
     async function load() {
       const directories = await loadAncestors(selected, controller.signal)
-      const listings = await loadBranches([...directories, selected], controller.signal)
+      const listings = await loadBranches([...directories, selected], controller.signal, { includeGrantCounts: true })
       if (controller.signal.aborted) return
       setPath(directories)
       setParentCanGrant(administrator || !!((directories.at(-1)?.rights ?? 0) & 32))
@@ -82,7 +83,7 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
     }
     void load().catch(() => { if (!controller.signal.aborted) setMessage('无法加载授权目录树') })
     return () => controller.abort()
-  }, [selected, administrator])
+  }, [selected, administrator, revision])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -183,9 +184,12 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
       setMessage(response.ok ? '授权已保存' : `保存失败 HTTP ${response.status}`)
       if (response.ok) {
         discard()
-        setRevision(value => value + 1)
-        const { data } = await api.GET('/tree/{id}', { params: { path: { id: selected.id } } })
-        if (data) setSelected(data)
+        try {
+          const { data } = await api.GET('/tree/{id}', { params: { path: { id: selected.id } } })
+          if (data) setSelected(data)
+        } finally {
+          setRevision(value => value + 1)
+        }
       }
     } catch {
       setMessage('无法保存授权')
@@ -220,12 +224,15 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
     return branches[parent]?.map(entry => {
       const isSelected = entry.id === selected.id
       const expanded = !entry.isFile && (isSelected || path.some(ancestor => ancestor.id === entry.id))
+      const individualCount = entry.directIndividualGrantCount ?? 0
       return <div key={entry.id}>
         <button className="sidebar-link" style={{ paddingInlineStart: 8 + depth * 12 }}
           aria-current={isSelected ? 'location' : undefined} onClick={() => pick(entry)}>
           <ChevronRight size={12} className={expanded ? 'expanded' : undefined} style={{ visibility: entry.isFile ? 'hidden' : 'visible' }} />
           <FileIcon node={entry} size={16} /><span className="ellipsis">{entry.name}</span>
-          {isSelected && direct.length > 0 && <span className="pill">{direct.length}</span>}
+          {!!entry.directGrantCount && <span className="pill">{entry.directGrantCount}</span>}
+          {individualCount >= individualGrantWarningThreshold && <TriangleAlert size={14} role="img"
+            aria-label={`${individualCount} 条个人授权`}><title>{individualCount} 条个人授权</title></TriangleAlert>}
         </button>
         {expanded && renderTree(entry.id, depth + 1)}
       </div>
@@ -296,7 +303,7 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
             <label key={bit}><input type="checkbox" disabled={saving} checked={!!(value & bit)} onChange={event =>
               setValue(toggleRight(value, bit, event.target.checked))} />{label}</label>)}</fieldset>
         </form></details>}
-        {canGrant && individualGrants >= 10 && <p className="notice grant-nudge">此处有 {individualGrants} 条个人授权。可将同一职责的人员加入用户组，再统一授权。</p>}
+        {canGrant && individualGrants >= individualGrantWarningThreshold && <p className="notice grant-nudge">此处有 {individualGrants} 条个人授权。可将同一职责的人员加入用户组，再统一授权。</p>}
         {canGrant && <div className="grant-table" tabIndex={0} role="region" aria-label="权限矩阵">
           <table><thead><tr><th scope="col">对象</th><th scope="col">预设</th>{rights.map(([bit, label]) => <th scope="col" key={bit}>{label}</th>)}<th scope="col">范围／来源</th><th scope="col">操作</th></tr></thead>
             <tbody>
