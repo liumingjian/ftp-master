@@ -46,8 +46,8 @@ export function SignedInShell() {
 function Workspace({ user }: { user: CurrentUser }) {
   const [location, setLocation] = useState(() => new URL(window.location.href))
   const [dark, setDark] = useState(() => localStorage.getItem('ftp-theme') === 'dark')
-  const [draft, setDraft] = useState('')
-  const [query, setQuery] = useState('')
+  const query = location.searchParams.get('q')?.trim().slice(0, 255) ?? ''
+  const [draft, setDraft] = useState(query)
   const [transfers, setTransferSlot] = useState<HTMLDivElement | null>(null)
   const headerActions = useRef<HTMLDivElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
@@ -64,9 +64,9 @@ function Workspace({ user }: { user: CurrentUser }) {
 
   useEffect(() => {
     function syncLocation() {
-      setLocation(new URL(window.location.href))
-      setQuery('')
-      setDraft('')
+      const next = new URL(window.location.href)
+      setLocation(next)
+      setDraft(next.searchParams.get('q')?.trim().slice(0, 255) ?? '')
     }
     window.addEventListener('popstate', syncLocation)
     window.addEventListener('hashchange', syncLocation)
@@ -103,24 +103,25 @@ function Workspace({ user }: { user: CurrentUser }) {
     }
   }, [])
 
-  function href(view?: string, hash = location.hash, grant?: number) {
+  function href(view?: string, hash = location.hash, grant?: number, search = '') {
     const url = new URL(location)
     if (view) url.searchParams.set('view', view)
     else url.searchParams.delete('view')
     if (grant) url.searchParams.set('grant', String(grant))
     else url.searchParams.delete('grant')
+    if (search) url.searchParams.set('q', search)
+    else url.searchParams.delete('q')
     url.hash = hash
     return url.pathname + url.search + url.hash
   }
 
-  function navigate(view?: string, hash?: string, grant?: number) {
-    const next = href(view, hash, grant)
+  function navigate(view?: string, hash?: string, grant?: number, search = '') {
+    const next = href(view, hash, grant, search)
     if (new URL(next, location).href !== location.href) {
       window.history.pushState(null, '', next)
       setLocation(new URL(window.location.href))
     }
-    setDraft('')
-    setQuery('')
+    setDraft(search)
   }
 
   function follow(event: MouseEvent<HTMLAnchorElement>, view?: string, hash?: string) {
@@ -140,7 +141,7 @@ function Workspace({ user }: { user: CurrentUser }) {
     <div className={personalPage ? 'shell personal-workspace' : adminPage ? 'shell management-workspace' : grantId ? 'shell permission-workspace' : 'shell'}
       style={{ '--directory-width': `${sidebarWidth}px` } as CSSProperties} data-theme={dark ? 'dark' : 'light'}>
       <header className="shell-header">
-        <a className="brand" href={href()} onClick={event => follow(event)}>
+        <a className="brand" href={href(undefined, '')} onClick={event => follow(event, undefined, '')}>
           <PlatformBrand />
         </a>
         {user.isAdministrator && <nav className="workspace-tabs" aria-label="工作区">
@@ -150,19 +151,15 @@ function Workspace({ user }: { user: CurrentUser }) {
         </nav>}
         <form className="header-search" role="search" onSubmit={event => {
           event.preventDefault()
-          if (!draft.trim()) return
-          if (view) navigate()
-          setDraft(draft.trim())
-          setQuery(draft.trim())
+          if (draft.trim()) navigate(undefined, location.hash, undefined, draft.trim())
         }}>
           <button className="ghost icon" aria-label="搜索"><Search size={16} aria-hidden="true" /></button>
-          <input ref={searchInput} aria-label="按文件名搜索" placeholder="按文件名搜索" value={draft} maxLength={255} onChange={event => {
+          <input ref={searchInput} aria-label="按文件名搜索" placeholder="搜索可访问的文件" value={draft} maxLength={255} onChange={event => {
             setDraft(event.target.value)
-            if (!event.target.value.trim()) setQuery('')
           }} />
-          {draft && <button type="button" className="ghost icon" aria-label="清除搜索" onClick={() => {
-            setDraft('')
-            setQuery('')
+          {(draft || query) && <button type="button" className="ghost icon" aria-label="清除搜索" onClick={() => {
+            if (query) navigate()
+            else setDraft('')
             searchInput.current?.focus()
           }}><X size={16} /></button>}
         </form>

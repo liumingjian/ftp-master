@@ -1293,6 +1293,9 @@ components:
         canMoveFromParent:
           type: boolean
           description: Included in search results. The caller can move this item out of its source directory.
+        parentPath:
+          type: string
+          description: Included in search results when every ancestor is visible to the caller. The parent directory's display path, or / for the root.
         directGrantCount:
           type: integer
           minimum: 0

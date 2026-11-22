@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Download, History } from 'lucide-react'
+import { ArrowLeft, Download } from 'lucide-react'
 import { api } from './api/client'
 import type { components } from './api/schema.gen'
 import { formatSize } from './FileIcon'
 
 type Node = components['schemas']['TreeNode']
 
-export function VersionsPanel({ node, close }: { node: Node; close: () => void }) {
-  const [versions, setVersions] = useState<components['schemas']['FileVersion'][]>([])
+type Version = components['schemas']['FileVersion']
+
+export function VersionsPanel({ node, close, restored }: { node: Node; close: () => void; restored: () => void }) {
+  const [versions, setVersions] = useState<Version[]>([])
   const [revision, setRevision] = useState(0)
   const [loading, setLoading] = useState(true)
   const [restoring, setRestoring] = useState<number>()
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [restoreTarget, setRestoreTarget] = useState<Version>()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -36,9 +39,13 @@ export function VersionsPanel({ node, close }: { node: Node; close: () => void }
     setMessage('')
     setError('')
     try {
-      const { response } = await api.POST('/tree/{id}/versions/{versionId}/restore', { params: { path: { id: node.id, versionId } } })
-      if (response.ok) { setMessage('已恢复为新版本'); setRevision(v => v + 1) }
-      else setError(`无法恢复版本（HTTP ${response.status}）`)
+      const { data, response } = await api.POST('/tree/{id}/versions/{versionId}/restore', { params: { path: { id: node.id, versionId } } })
+      if (data) {
+        setRestoreTarget(undefined)
+        setMessage(`已将版本 ${versionId} 恢复为新版本 ${data.versionId}`)
+        setRevision(v => v + 1)
+        restored()
+      } else setError(response.status === 403 ? '当前账户无权恢复此版本' : '无法恢复版本，请重试')
     } catch {
       setError('无法连接服务器')
     } finally {
@@ -47,22 +54,35 @@ export function VersionsPanel({ node, close }: { node: Node; close: () => void }
   }
 
   return <section aria-label="文件版本" className="versions">
-    <div className="section-heading"><History size={18} /><h3>文件版本</h3>
-      <button className="ghost" disabled={restoring !== undefined} onClick={close}><ArrowLeft size={14} />返回目录</button>
+    <div className="section-heading"><h3>版本历史</h3>
+      <button className="ghost" disabled={restoring !== undefined} onClick={close}><ArrowLeft size={16} />返回文件详情</button>
     </div>
-    {error && <p className="banner error" role="alert">{error}</p>}
+    {error && <p className="banner error" role="alert">{error}{!restoreTarget && <button className="ghost" onClick={() => {
+      setError('')
+      setRevision(v => v + 1)
+    }}>重试</button>}</p>}
     {message && <p className="banner success" role="status">{message}</p>}
     {loading && !versions.length && <p className="muted" role="status">正在加载…</p>}
     {!loading && !error && !versions.length && <p className="muted">暂无版本记录</p>}
     <ol className="record-list versions-list">{versions.map((version, index) => <li key={version.id}>
-      <div className="version-title"><strong>版本 {version.id} · {version.username}</strong>{index === 0 && <span className="pill">当前版本</span>}</div>
-      <small className="muted"><time dateTime={version.createdAt}>{new Date(version.createdAt).toLocaleString('zh-CN')}</time> · {formatSize(version.size)}</small>
+      <div className="version-title"><strong>版本 {version.id} · {version.username}</strong>{index === 0 && <span className="version-current">当前版本</span>}</div>
+      <small className="muted"><time dateTime={version.createdAt}>{new Date(version.createdAt).toLocaleString('zh-CN', { hour12: false })}</time> · {formatSize(version.size)}</small>
       <div className="form-actions">
         {!!(node.rights & 2) && <a className="button" href={`/api/tree/${node.id}/download?versionId=${version.id}`} download><Download size={14} />下载此版本</a>}
-        {!!(node.rights & 8) && <button disabled={restoring !== undefined} onClick={() => void restore(version.id)}>
-          {restoring === version.id ? '正在恢复…' : '恢复为新版本'}
+        {!!(node.rights & 8) && index !== 0 && restoreTarget?.id !== version.id && <button className="ghost" disabled={restoring !== undefined}
+          onClick={() => { setError(''); setRestoreTarget(version) }}>
+          恢复此版本
         </button>}
       </div>
+      {restoreTarget?.id === version.id && <div className="version-restore">
+        <p>将版本 {version.id} 的内容保存为新版本。现有版本记录会保留。</p>
+        <div className="form-actions">
+          <button className="primary" disabled={restoring !== undefined} onClick={() => void restore(version.id)}>
+            {restoring === version.id ? '正在恢复…' : '恢复为新版本'}
+          </button>
+          <button className="ghost" disabled={restoring !== undefined} onClick={() => { setError(''); setRestoreTarget(undefined) }}>取消</button>
+        </div>
+      </div>}
     </li>)}</ol>
   </section>
 }

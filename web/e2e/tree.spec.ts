@@ -188,6 +188,26 @@ test('a copied file link survives sign-in and header search returns from the rec
   await query.press('Enter')
   await expect(table.getByRole('button', { name: filename, exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: '回收站' })).toHaveCount(0)
+
+  const openParent = table.getByRole('link', { name: `打开所在目录 /${folder}` })
+  await openParent.click()
+  await expect(page.getByRole('heading', { name: folder, exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(query).toHaveValue(filename)
+  await expect(openParent).toBeVisible()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  const more = table.getByRole('button', { name: `更多操作 ${filename}` })
+  await more.click()
+  const details = page.getByRole('dialog', { name: '项目详情' })
+  await expect(details).toContainText(`/${folder}`)
+  await details.getByRole('button', { name: '文件版本', exact: true }).click()
+  await expect(details.getByRole('region', { name: '文件版本' })).toContainText('当前版本')
+  await details.getByRole('button', { name: '返回文件详情' }).click()
+  await expect(details.getByRole('button', { name: '概览' })).toHaveAttribute('aria-current', 'page')
+  await page.keyboard.press('Escape')
+  await expect(details).toHaveCount(0)
+  await expect(more).toBeFocused()
 })
 
 test('Administrator restores a deleted item into a directory selected in the recycle bin', async ({ page }) => {

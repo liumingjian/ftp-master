@@ -792,6 +792,8 @@ export interface components {
             traversable: boolean;
             /** @description Included in search results. The caller can move this item out of its source directory. */
             canMoveFromParent?: boolean;
+            /** @description Included in search results when every ancestor is visible to the caller. The parent directory's display path, or / for the root. */
+            parentPath?: string;
             /** @description Included in grant-count listings on items where the caller has Grant. */
             directGrantCount?: number;
             /** @description Counts direct User Grants excluding Creator Grants. Requires the same access as directGrantCount. */

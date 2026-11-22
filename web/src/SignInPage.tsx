@@ -30,7 +30,7 @@ export function SignInPage() {
   }
 
   return (
-    <AuthLayout title="登录" hideHeading
+    <AuthLayout title="登录"
       onSubmit={submit} footer={<a href="/register">注册新用户</a>}>
         <label>
           用户名

@@ -127,7 +127,9 @@ test('reload resumes only missing stored parts and rejects a different file', as
   await page.unroute('**/*partNumber=2*')
   const sent: string[]=[]
   page.on('request',r=>{if(r.method()==='PUT' && r.url().includes('uploadId=')) sent.push(new URL(r.url()).searchParams.get('partNumber')!)})
-  await panel.getByLabel('重新选择文件').setInputFiles(file)
+  const chooser = page.waitForEvent('filechooser')
+  await panel.getByRole('button', { name: '继续上传', exact: true }).click()
+  await (await chooser).setFiles(file)
   await expect(panel.getByRole('status',{name:'上传进度'})).toContainText('上传完成',{timeout:60000})
   expect(sent).toEqual(['2'])
   const pending=page.waitForEvent('download')

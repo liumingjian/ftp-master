@@ -34,9 +34,12 @@ export function RegistrationPage() {
   }
   return (
     <AuthLayout title={done ? "申请已提交" : "注册"} description={done ? undefined : "提交后由管理员审批，通过后即可登录"}
-      onSubmit={submit} footer={<a href="/sign-in">返回登录</a>}>
+      onSubmit={submit} footer={done ? null : <a href="/sign-in">返回登录</a>}>
         {done ? (
-          <p className="banner success" role="status">注册已提交，等待管理员审批</p>
+          <>
+            <p className="muted" role="status">注册已提交，等待管理员审批。通过后即可登录。</p>
+            <a className="button primary" href="/sign-in">返回登录</a>
+          </>
         ) : (
           <>
             <label>

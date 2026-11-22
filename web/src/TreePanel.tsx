@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type Ref } from 'react'
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, FolderOpen, FolderPlus, MoreHorizontal, PanelLeft, Search, ShieldCheck, Upload, X } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref } from 'react'
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, Eye, FolderOpen, FolderPlus, History, MoreHorizontal, PanelLeft, Search, ShieldCheck, Upload, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { TextEditor } from './TextEditor'
 import { copiedItemId, CopyItemLink, previewKind } from './BrowseTools'
@@ -10,7 +10,7 @@ import { RecycleBin } from './RecycleBin'
 import { DirectoryPicker } from './DirectoryPicker'
 import { DirectorySidebar } from './DirectorySidebar'
 import { FolderUpload } from './FolderUpload'
-import { UploadRow } from './UploadRow'
+import { UploadRow, type FileUploadState } from './UploadRow'
 import { GrantsPanel, PermissionInspection } from './GrantsPanel'
 import { FileIcon, formatSize } from './FileIcon'
 import { api } from './api/client'
@@ -28,6 +28,7 @@ const DELETE = 16
 const GRANT = 32
 
 type SortKey = 'name' | 'size' | 'username' | 'createdAt'
+const modalDetailViewport = '(max-width: 1040px)'
 type Props = {
   administrator: boolean
   active: boolean
@@ -62,15 +63,22 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const [detail, setDetail] = useState<{ node: Node; mode: 'info' | 'versions' | 'permission' }>()
   const [viewedFile, setViewedFile] = useState<Node>()
   const [action, setAction] = useState<'create' | 'rename' | 'move'>()
+  const [formBusy, setFormBusy] = useState(false)
+  const [formError, setFormError] = useState('')
   const [grantNode, setGrantNode] = useState<Node>()
   const [grantDirty, setGrantDirty] = useState(false)
   const [uploadActivity, setUploadActivity] = useState<Record<string, boolean>>({})
+  const [fileUploads, setFileUploads] = useState<Record<number, FileUploadState>>({})
   const [uploadStatus, setUploadStatus] = useState<Record<string, boolean>>({})
   const [uploadPaths, setUploadPaths] = useState<Node[][]>([])
   const [directoryOpen, setDirectoryOpen] = useState(false)
+  const [modalDetail, setModalDetail] = useState(() => window.matchMedia(modalDetailViewport).matches)
   const [dropZone, setDropZone] = useState<HTMLDivElement | null>(null)
   const drawerTrigger = useRef<HTMLButtonElement>(null)
   const detailCloseButton = useRef<HTMLButtonElement>(null)
+  const explorerRef = useRef<HTMLElement>(null)
+  const scrollPositions = useRef(new Map<string, number>())
+  const restoredLocation = useRef<string>(undefined)
   const officeEditStarted = useRef(false)
   const current = path.at(-1)
   const currentId = current?.id ?? ROOT
@@ -94,6 +102,8 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const otherUploads = Object.keys(uploadActivity).filter(key =>
     uploadActivity[key] && (!browsing || !!query || Number(key.split(':')[1]) !== currentId))
   const selectedNode = detail && (nodes.find(node => node.id === detail.node.id) ?? detail.node)
+  const fileUpload = fileUploads[currentId] ?? 'idle'
+  const parentLabel = query ? selectedNode?.parentPath : '/' + path.map(node => node.name).join('/')
   const canMoveSelected = query ? selectedNode?.canMoveFromParent : current ? !!(current.rights & DELETE) : administrator
   const viewerNode = viewedFile && (nodes.find(node => node.id === viewedFile.id) ?? viewedFile)
   const pending = locationPending || (query ? searching : loading)
@@ -101,10 +111,28 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const EmptyIcon = query ? Search : FolderOpen
   const detailId = selectedNode?.id
   const drawer = usePanelDismissal(browsing && (!!detail || action === 'create'), closeDrawer, !action)
+  const DetailContainer = modalDetail ? 'dialog' : 'aside'
+  const scrollKey = JSON.stringify([hash, query])
 
   useEffect(() => {
-    if (detailId && browsing) detailCloseButton.current?.focus()
-  }, [detailId, browsing])
+    const viewport = window.matchMedia(modalDetailViewport)
+    const update = () => setModalDetail(viewport.matches)
+    viewport.addEventListener('change', update)
+    return () => viewport.removeEventListener('change', update)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (pending || !browsing || restoredLocation.current === scrollKey || !explorerRef.current) return
+    explorerRef.current.scrollTop = scrollPositions.current.get(scrollKey) ?? 0
+    restoredLocation.current = scrollKey
+  }, [browsing, pending, scrollKey])
+
+  useLayoutEffect(() => {
+    if (!detailId || !browsing) return
+    const panel = drawer.current
+    if (panel instanceof HTMLDialogElement && !panel.open) panel.showModal()
+    detailCloseButton.current?.focus()
+  }, [detailId, browsing, modalDetail, drawer])
 
   useEffect(() => {
     const root = document.documentElement
@@ -197,6 +225,11 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
 
   useEffect(() => {
     setSelected([])
+    setDetail(undefined)
+    setAction(undefined)
+  }, [query])
+
+  useEffect(() => {
     setSearchFailed(false)
     if (!query) {
       setResults([])
@@ -256,6 +289,8 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   }
 
   function closeDrawer(restoreFocus = true) {
+    if (formBusy) return
+    if (drawer.current instanceof HTMLDialogElement) drawer.current.close()
     setDetail(undefined)
     setAction(undefined)
     if (restoreFocus) drawerTrigger.current?.focus()
@@ -267,24 +302,32 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     refresh(value => value + 1)
   }
 
-  async function create(form: FormData) {
-    const { response } = await api.POST('/tree', {
-      body: { name: String(form.get('name')), parentId: current?.id },
-    })
-    if (response.ok) closeDrawer()
-    update(response.ok ? '目录已创建' : `HTTP ${response.status}`)
-  }
-
-  async function rename(node: Node, form: FormData) {
-    const name = String(form.get('name'))
-    const { response } = await api.POST('/tree/{id}/rename', {
-      params: { path: { id: node.id } }, body: { name },
-    })
-    if (response.ok) {
-      setAction(undefined)
-      setDetail({ node: { ...node, name }, mode: 'info' })
+  async function saveName(event: FormEvent<HTMLFormElement>, node?: Node) {
+    event.preventDefault()
+    if (formBusy) return
+    const name = String(new FormData(event.currentTarget).get('name'))
+    setFormBusy(true)
+    setFormError('')
+    try {
+      const { response } = node
+        ? await api.POST('/tree/{id}/rename', { params: { path: { id: node.id } }, body: { name } })
+        : await api.POST('/tree', { body: { name, parentId: current?.id } })
+      if (response.ok) {
+        if (node) {
+          setAction(undefined)
+          setDetail({ node: { ...node, name }, mode: 'info' })
+        } else closeDrawer()
+        update(node ? '名称已更新' : '目录已创建')
+      } else {
+        setFormError(response.status === 409 ? '此位置已有同名项目，请更换名称'
+          : response.status === 400 ? '名称不可用，请检查后重试'
+          : response.status === 403 ? '当前账户没有此操作的权限' : '保存失败，请重试')
+      }
+    } catch {
+      setFormError('无法连接服务，请重试')
+    } finally {
+      setFormBusy(false)
     }
-    update(response.ok ? '名称已更新' : response.status === 409 ? '目标位置已有同名项目' : `HTTP ${response.status}`)
   }
 
   async function deleteNode(id: number) {
@@ -300,7 +343,10 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       path={path} branches={branches} revision={revision} width={sidebarWidth} resize={resizeSidebar}
       drawerOpen={directoryOpen} closeDrawer={() => setDirectoryOpen(false)}
     />
-    <main className="shell-main explorer" hidden={!browsing}>
+    <main className="shell-main explorer" ref={explorerRef} hidden={!browsing} onScroll={event => {
+      if (browsing && !pending && restoredLocation.current === scrollKey) scrollPositions.current.set(scrollKey, event.currentTarget.scrollTop)
+    }}>
+      <div className={selectedNode ? 'explorer-workspace has-details' : 'explorer-workspace'}>
       <section aria-label="共享目录">
         <nav className="breadcrumbs" aria-label="目录路径">
           <button className="directory-trigger" aria-haspopup="dialog" aria-expanded={directoryOpen} aria-controls="file-directories"
@@ -323,18 +369,19 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
             </p>
           </div>
           {!query && (canCreate || !!hasGrant) && <div className="explorer-actions">
-            {!!hasGrant && <button className="button" aria-label="管理当前权限" disabled={locationPending}
-              onClick={() => current && showGrants(current.id)}>
-              <ShieldCheck size={16} />管理权限
-            </button>}
+            {canUpload && <UploadPickers parentId={currentId} disabled={locationPending} state={fileUpload} />}
             {canCreate && <button data-panel-trigger disabled={locationPending} className={canUpload ? '' : 'primary'} onClick={event => {
               drawerTrigger.current = event.currentTarget
               setDetail(undefined)
+              setFormError('')
               setAction('create')
             }}>
               <FolderPlus size={16} />新建文件夹
             </button>}
-            {canUpload && <UploadPickers parentId={currentId} disabled={locationPending} />}
+            {!!hasGrant && <button className="button" aria-label="管理当前权限" disabled={locationPending}
+              onClick={() => current && showGrants(current.id)}>
+              <ShieldCheck size={16} />管理权限
+            </button>}
           </div>}
         </div>
         {!query && current && !(current.rights & BROWSE) && <p className="notice">
@@ -362,7 +409,10 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                 const hasStatus = uploadStatus[`file:${id}`] || uploadStatus[`folder:${id}`]
                 return <tr key={id} className="transfer-row" hidden={!visible || !hasStatus}>
                   <td colSpan={6}>
-                    <UploadRow parentId={id} visible={visible} dropZone={visible ? dropZone : null} onActivityChange={value => report('file', value)}
+                    <UploadRow parentId={id} visible={visible} dropZone={visible ? dropZone : null} onActivityChange={state => {
+                      setFileUploads(previous => ({ ...previous, [id]: state }))
+                      report('file', state !== 'idle')
+                    }}
                       onStatusChange={value => reportStatus('file', value)} completed={() => refresh(v => v + 1)} />
                     <FolderUpload parentId={id} visible={visible} dropZone={visible ? dropZone : null} onActivityChange={value => report('folder', value)}
                       onStatusChange={value => reportStatus('folder', value)} completed={() => refresh(v => v + 1)} />
@@ -387,9 +437,19 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                       } else openFolder(node.id)
                     }} title={node.name}><FileIcon node={node} tile /><span className="ellipsis">{node.name}</span></button>}
                     {node.traversable && <small className="access-note">仅通行</small>}
+                    {query && node.parentPath && <a className="file-subtitle file-parent ellipsis" title={node.parentPath}
+                      aria-label={`打开所在目录 ${node.parentPath}`}
+                      href={node.parentId ? `/#item=${node.parentId}` : '/'}
+                      onClick={event => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                        event.preventDefault()
+                        openFolder(node.parentId)
+                      }}>{node.parentPath === '/' ? '共享目录' : node.parentPath}</a>}
+                    {!query && node.latestVersion?.createdAt && <time className="file-subtitle compact-file-time"
+                      dateTime={node.latestVersion.createdAt}>{formatFileTime(node.latestVersion.createdAt)}</time>}
                   </td>
-                  <td className="file-author">{node.latestVersion?.username && <><span className="avatar">{node.latestVersion.username.slice(-1)}</span><span className="ellipsis">{node.latestVersion.username}</span></>}</td>
-                  <td className="file-time muted">{node.latestVersion?.createdAt && <time dateTime={node.latestVersion.createdAt}>{new Date(node.latestVersion.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</time>}</td>
+                  <td className="file-author">{node.latestVersion?.username && <span className="ellipsis">{node.latestVersion.username}</span>}</td>
+                  <td className="file-time muted">{node.latestVersion?.createdAt && <time dateTime={node.latestVersion.createdAt}>{formatFileTime(node.latestVersion.createdAt)}</time>}</td>
                   <td className="file-size">{node.latestVersion && formatSize(node.latestVersion.size)}</td>
                   <td><div className="row-actions">
                     <OfficeEditAction node={node} officePlugin={officePlugin} onOpen={trackOfficeEdit} icon />
@@ -407,7 +467,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
           </table>
           {!pending && (failed || !rows.length) && (
             !failed && !query && canUpload ? (
-              <button type="button" className="table-empty" disabled={uploadActivity[`file:${currentId}`]}
+              <button type="button" className="table-empty" disabled={fileUpload !== 'idle'}
                 onClick={() => chooseUploadFile(currentId)}>
                 <span className="empty-icon"><Upload size={24} aria-hidden="true" /></span>
                 <strong>点击选择文件，或拖到这里上传</strong>
@@ -428,62 +488,89 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
           )}
         </div>
         {!!selectedIds.length && <div className="selection-bar">
-          <span>已选 {selectedIds.length} 项</span><ZipDownload selected={selectedIds} />
+          <span>已选 {selectedIds.length} 项</span><ZipDownload key={selectedIds.join(',')} selected={selectedIds} />
           <button className="ghost icon" aria-label="取消选择" onClick={() => setSelected([])}><X size={16} /></button>
         </div>}
       </section>
       {action === 'create' && <section ref={drawer} className="drawer" aria-label="新建文件夹">
         <DrawerHeading title="新建文件夹" close={() => closeDrawer()} />
-        <form className="stack" action={create}>
-          <label>目录名称<input name="name" autoFocus required maxLength={255} /></label>
-          <button className="primary">创建目录</button>
+        <form className="stack" onSubmit={saveName}>
+          <label>目录名称<input name="name" autoFocus readOnly={formBusy} required maxLength={255} /></label>
+          {formError && <p className="bad" role="alert">{formError}</p>}
+          <button className="primary" disabled={formBusy}>{formBusy ? '正在创建…' : '创建目录'}</button>
         </form>
       </section>}
-      {detail && selectedNode && action !== 'create' && <aside ref={drawer} className="drawer" aria-label="项目详情" key={selectedNode.id}>
-        <DrawerHeading title={selectedNode.name} node={selectedNode} close={() => closeDrawer()} closeRef={detailCloseButton} />
-        {detail.mode === 'versions' ? <VersionsPanel node={selectedNode} close={() => {
-          setDetail({ node: selectedNode, mode: 'info' })
-          refresh(v => v + 1)
-        }} /> : detail.mode === 'permission' ? <PermissionInspection node={selectedNode} administrator={administrator} /> : <>
+      {detail && selectedNode && action !== 'create' && <DetailContainer ref={panel => { drawer.current = panel }}
+        className="drawer file-details" aria-label="项目详情" key={selectedNode.id} onCancel={event => {
+          event.preventDefault()
+          closeDrawer()
+        }} onClick={event => {
+          if (!modalDetail || action || event.target !== event.currentTarget) return
+          const bounds = event.currentTarget.getBoundingClientRect()
+          if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeDrawer()
+        }}>
+        <header className="file-details-header">
+          <DrawerHeading title={selectedNode.name} node={selectedNode} close={() => closeDrawer()} closeRef={detailCloseButton} />
+          {parentLabel && <p className="detail-path"><FolderOpen size={16} aria-hidden="true" /><span>{parentLabel === '/' ? '共享目录' : parentLabel}</span></p>}
+          {selectedNode.latestVersion && <p className="detail-version">
+            当前版本 {selectedNode.latestVersion.id}
+            {selectedNode.latestVersion.username && ` · ${selectedNode.latestVersion.username}`}
+          </p>}
+        </header>
+        {action === undefined && <nav className="detail-nav" aria-label="项目详情视图">
+          <button className="ghost" aria-current={detail.mode === 'info' ? 'page' : undefined}
+            onClick={() => setDetail({ node: selectedNode, mode: 'info' })}>概览</button>
+          {selectedNode.isFile && !!(selectedNode.rights & BROWSE) && <button className="ghost"
+            aria-current={detail.mode === 'versions' ? 'page' : undefined}
+            onClick={() => setDetail({ node: selectedNode, mode: 'versions' })}><History size={16} />文件版本</button>}
+          <button className="ghost" aria-current={detail.mode === 'permission' ? 'page' : undefined}
+            onClick={() => setDetail({ node: selectedNode, mode: 'permission' })}><ShieldCheck size={16} />查看有效权限</button>
+        </nav>}
+        {detail.mode === 'versions' ? <VersionsPanel node={selectedNode} restored={() => refresh(v => v + 1)}
+          close={() => setDetail({ node: selectedNode, mode: 'info' })} />
+          : detail.mode === 'permission' ? <PermissionInspection node={selectedNode} administrator={administrator} /> : <>
           <dl className="file-metadata">
             <dt>访问权限</dt><dd>{rightsLabel(selectedNode)}</dd>
             {selectedNode.latestVersion && <>
               <dt>大小</dt><dd>{formatSize(selectedNode.latestVersion.size)}</dd>
-              {selectedNode.latestVersion.username && <><dt>修改人</dt><dd>{selectedNode.latestVersion.username}</dd></>}
               {selectedNode.latestVersion.createdAt && <><dt>修改时间</dt><dd><time dateTime={selectedNode.latestVersion.createdAt}>
-                {new Date(selectedNode.latestVersion.createdAt).toLocaleString('zh-CN', { hour12: false })}
+                {formatFileTime(selectedNode.latestVersion.createdAt, true)}
               </time></dd></>}
             </>}
           </dl>
           <div className="detail-actions">
-            {selectedNode.isFile && !!(selectedNode.rights & BROWSE) && <>
-              {previewKind(selectedNode) && <button onClick={() => setViewedFile(selectedNode)}>预览</button>}
-              <button onClick={() => setDetail({ node: selectedNode, mode: 'versions' })}>文件版本</button>
-            </>}
+            {officePreview && canPreviewOffice(selectedNode) ? <a className="button primary"
+              href={`/api/files/${selectedNode.id}/office-edits`} data-ftp-office-preview="1"
+              data-ftp-office-version={selectedNode.latestVersion?.id} onClick={event => event.preventDefault()}>
+              <Eye size={16} />预览</a> : previewKind(selectedNode) && <button className="primary" onClick={() => setViewedFile(selectedNode)}>
+              <Eye size={16} />预览</button>}
+            {selectedNode.isFile && !!(selectedNode.rights & DOWNLOAD) && <a className="button"
+              href={`/api/tree/${selectedNode.id}/download`} download><Download size={16} />下载</a>}
             <OfficeEditAction node={selectedNode} officePlugin={officePlugin} onOpen={trackOfficeEdit} />
-            <CopyItemLink node={selectedNode} />
-            <button onClick={() => setDetail({ node: selectedNode, mode: 'permission' })}>查看有效权限</button>
             {selectedNode.isFile && <TextEditor node={selectedNode} saved={() => refresh(value => value + 1)} />}
           </div>
+          <CopyItemLink node={selectedNode} />
           <div className="detail-actions detail-management">
             {!!(selectedNode.rights & GRANT) && <button onClick={() => showGrants(selectedNode.id)}>管理权限</button>}
-            {!!(selectedNode.rights & MODIFY) && <button onClick={() => setAction('rename')}>重命名</button>}
+            {!!(selectedNode.rights & MODIFY) && <button onClick={() => { setFormError(''); setAction('rename') }}>重命名</button>}
             {canMoveSelected && <button aria-label={`移动 ${selectedNode.name}`}
               onClick={() => setAction('move')}>移动</button>}
             {!!(selectedNode.rights & DELETE) && <button className="danger" aria-label={`删除 ${selectedNode.name}`}
               onClick={() => void deleteNode(selectedNode.id)}>移入回收站</button>}
           </div>
-          {action === 'rename' && <form className="stack" action={form => rename(selectedNode, form)}>
-            <label>新名称<input name="name" defaultValue={selectedNode.name} autoFocus required maxLength={255} /></label>
+          {action === 'rename' && <form className="stack" onSubmit={event => void saveName(event, selectedNode)}>
+            <label>新名称<input name="name" defaultValue={selectedNode.name} autoFocus readOnly={formBusy} required maxLength={255} /></label>
+            {formError && <p className="bad" role="alert">{formError}</p>}
             <div className="detail-actions">
-              <button type="button" onClick={() => setAction(undefined)}>取消</button>
-              <button className="primary">保存名称</button>
+              <button type="button" disabled={formBusy} onClick={() => setAction(undefined)}>取消</button>
+              <button className="primary" disabled={formBusy}>{formBusy ? '正在保存…' : '保存名称'}</button>
             </div>
           </form>}
           {action === 'move' && <MovePicker node={selectedNode} administrator={administrator}
             close={() => setAction(undefined)} moved={() => { setAction(undefined); setDetail(undefined) }} report={update} />}
         </>}
-      </aside>}
+      </DetailContainer>}
+      </div>
       {browsing && viewerNode && <FileViewer key={viewerNode.id} node={viewerNode} officePreview={officePreview}
         close={() => setViewedFile(undefined)} saved={() => refresh(value => value + 1)} />}
     </main>
@@ -493,13 +580,30 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     {active && grantId && grantNode?.id !== grantId && <main className="shell-main"><button onClick={() => navigate(hash)}>返回目录</button></main>}
     {grantNode && <main className="shell-main" hidden={!active || grantNode.id !== grantId}><GrantsPanel key={grantNode.id} administrator={administrator} node={grantNode} onDirtyChange={setGrantDirty}
       close={() => { navigate(hash); refresh(v => v + 1) }} /></main>}
-    {active && message && <p className="toast" role="status">{message}<button className="icon ghost" aria-label="关闭提示" onClick={() => setMessage('')}><X size={15} /></button></p>}
+    {active && message && <div className="toast">
+      <span role="status">{message}</span>
+      {message === '已移入回收站' && <a href={recycleHref} onClick={event => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        setMessage('')
+        openRecycle()
+      }}>前往回收站</a>}
+      <button className="icon ghost" aria-label="关闭提示" onClick={() => setMessage('')}><X size={15} /></button>
+    </div>}
     {transferSlot && !!otherUploads.length && createPortal(<details className="upload-indicator">
       <summary><Upload size={16} /><span className="upload-indicator-label">其他目录上传 {otherUploads.length}</span></summary>
-      <div className="popup">{uploadPaths.filter(target => otherUploads.some(key => key.endsWith(`:${target.at(-1)!.id}`))).map(target =>
-        <button key={target.at(-1)!.id} onClick={event => { event.currentTarget.closest('details')!.open = false; openFolder(target.at(-1)!.id) }}>
-          {target.map(node => node.name).join('/')}
-        </button>)}</div>
+      <div className="popup">{uploadPaths.filter(target => otherUploads.some(key => key.endsWith(`:${target.at(-1)!.id}`))).map(target => {
+        const id = target.at(-1)!.id
+        const label = target.map(node => node.name).join('/')
+        const state = fileUploads[id]
+        const status = state && state !== 'idle' ? {
+          resume: '等待选择原文件', conflict: '需要处理同名文件', uploading: '文件上传中',
+        }[state] : undefined
+        return <button key={id} aria-label={label} aria-describedby={status ? `upload-status-${id}` : undefined}
+          onClick={event => { event.currentTarget.closest('details')!.open = false; openFolder(id) }}>
+          <span>{label}</span>{status && <small id={`upload-status-${id}`}>{status}</small>}
+        </button>
+      })}</div>
     </details>, transferSlot)}
   </>
 }
@@ -540,11 +644,21 @@ function chooseUploadFile(parentId: number) {
   document.getElementById(`upload-file-${parentId}`)?.click()
 }
 
-function UploadPickers({ parentId, disabled }: { parentId: number; disabled: boolean }) {
+function formatFileTime(value: string, full = false) {
+  return new Date(value).toLocaleString('zh-CN', {
+    year: full ? 'numeric' : undefined, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+}
+
+function UploadPickers({ parentId, disabled, state }: { parentId: number; disabled: boolean; state: FileUploadState }) {
+  const label = { idle: '上传文件', resume: '继续上传', uploading: '正在上传…', conflict: '等待处理同名文件' }[state]
   return <div className="upload-pickers">
-    <button className="primary" disabled={disabled} onClick={() => chooseUploadFile(parentId)}><Upload size={16} />上传文件</button>
-    <button className="icon" disabled={disabled} aria-label="上传文件夹" title="上传文件夹"
-      onClick={() => document.getElementById(`upload-folder-${parentId}`)?.click()}><FolderOpen size={16} /></button>
+    <button className="primary" disabled={disabled || (state !== 'idle' && state !== 'resume')} onClick={() => {
+      if (state === 'resume') document.getElementById(`resume-file-${parentId}`)?.click()
+      else chooseUploadFile(parentId)
+    }}><Upload size={16} />{label}</button>
+    <button disabled={disabled} onClick={() => document.getElementById(`upload-folder-${parentId}`)?.click()}>
+      <FolderOpen size={16} />上传文件夹</button>
   </div>
 }
 
@@ -552,21 +666,31 @@ function MovePicker({ node, administrator, close, moved, report }: {
   node: Node; administrator: boolean; close: () => void; moved: () => void; report: (message: string) => void
 }) {
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   async function move(parentId: number | null) {
     if (busy) return
     setBusy(true)
+    setError('')
     try {
       const { response } = await api.POST('/tree/{id}/move', {
         params: { path: { id: node.id } }, body: { parentId },
       })
-      if (response.ok) moved()
-      report(response.ok ? '项目已移动' : response.status === 409 ? '目标位置已有同名项目，或目标位于自身子目录' : `HTTP ${response.status}`)
+      if (response.ok) {
+        moved()
+        report('项目已移动')
+      } else {
+        setError(response.status === 409 ? '目标位置已有同名项目，或目标位于自身子目录'
+          : response.status === 403 ? '当前账户没有移动到此目录的权限' : '移动失败，请重试')
+      }
     } catch {
-      report('无法连接服务器，移动失败')
+      setError('无法连接服务，请重试')
     } finally {
       setBusy(false)
     }
   }
-  return <DirectoryPicker label="移动目标" submitLabel="移动到此目录" administrator={administrator}
-    excludeId={node.id} busy={busy} choose={id => void move(id)} close={close} />
+  return <>
+    <DirectoryPicker label="移动目标" submitLabel="移动到此目录" administrator={administrator}
+      excludeId={node.id} busy={busy} choose={id => void move(id)} close={close} />
+    {error && <p className="bad" role="alert">{error}</p>}
+  </>
 }
