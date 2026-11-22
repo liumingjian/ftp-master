@@ -6,7 +6,7 @@ import { FileIcon } from './FileIcon'
 
 type Node = components['schemas']['TreeNode']
 type Branches = Record<number, Node[]>
-const narrowViewport = '(max-width: 720px)'
+const narrowViewport = '(max-width: 880px)'
 export const minSidebarWidth = 232
 export const defaultSidebarWidth = 280
 export const maxSidebarWidth = 400

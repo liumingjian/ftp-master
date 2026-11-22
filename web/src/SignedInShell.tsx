@@ -191,6 +191,9 @@ function Workspace({ user }: { user: CurrentUser }) {
         sidebarWidth={sidebarWidth} resizeSidebar={resizeSidebar} />
       {adminPage && <aside className="sidebar management-sidebar">
         <nav aria-label="管理导航">
+          <select className="management-picker" aria-label="管理页面" value={adminPage.id} onChange={event => navigate(event.target.value)}>
+            {management.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+          </select>
           {management.map(({ id, label, icon: Icon }) => <a key={id} className="sidebar-link" href={href(id)}
             aria-current={adminPage.id === id ? 'page' : undefined}
             onClick={event => follow(event, id)}><Icon size={16} />{label}</a>)}

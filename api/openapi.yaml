@@ -24,7 +24,15 @@ paths:
           content:
             application/zip:
               schema: {type: string, format: binary}
-        '204': {description: Preflight accepted; no download or audit event.}
+        '204':
+          description: Preflight accepted; no download or audit event.
+          headers:
+            X-File-Count:
+              required: true
+              schema: {type: integer}
+            X-Total-Bytes:
+              required: true
+              schema: {type: integer, format: int64}
         default: {$ref: '#/components/responses/Unauthorized'}
   /recycle-bin:
     get:

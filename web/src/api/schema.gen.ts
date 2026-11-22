@@ -1026,6 +1026,8 @@ export interface operations {
             /** @description Preflight accepted; no download or audit event. */
             204: {
                 headers: {
+                    "X-File-Count": number;
+                    "X-Total-Bytes": number;
                     [name: string]: unknown;
                 };
                 content?: never;

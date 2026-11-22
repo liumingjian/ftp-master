@@ -14,6 +14,8 @@ test('selected items hand one ZIP download off to the browser', async ({ page })
   await panel.getByRole('checkbox', {name:'hello.txt'}).check()
   const pending = page.waitForEvent('download')
   await zipPanel.getByRole('button', {name:'打包下载所选项目'}).click()
+  await expect(zipPanel).toContainText('可下载 1 个文件')
+  await zipPanel.getByRole('link', {name:'下载 ZIP'}).click()
   const download = await pending
   expect(download.suggestedFilename()).toBe('download.zip')
   const stream = await download.createReadStream()

@@ -108,7 +108,9 @@ func (s *Server) DownloadZip(ctx context.Context, r api.DownloadZipRequestObject
 		entries = append(entries, zipEntry{node.ID, snap.Path(node.ID), name, version})
 	}
 	if r.Params.Preflight != nil && *r.Params.Preflight {
-		return api.DownloadZip204Response{}, nil
+		return api.DownloadZip204Response{Headers: api.DownloadZip204ResponseHeaders{
+			XFileCount: len(entries), XTotalBytes: total,
+		}}, nil
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err

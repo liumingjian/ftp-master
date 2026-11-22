@@ -4,7 +4,7 @@ import {putPart, UPLOAD_COMPLETE_MESSAGE_MS} from './UploadRow'
 import {systemClock} from './clock'
 type DirectoryHandle={kind:'directory';name:string;values:()=>AsyncIterable<DirectoryHandle|{kind:'file';name:string;getFile:()=>Promise<File>}>}
 type Manifest = {name:string; files:{path:string;size:number;id:string;partSize:number;partCount:number}[]}
-export function FolderUpload({parentId,visible,dropZone,completed,onActivityChange,onStatusChange}:{parentId:number;visible:boolean;dropZone?:HTMLElement|null;completed:()=>void;onActivityChange?:(active:boolean)=>void;onStatusChange?:(visible:boolean)=>void}) {
+export function FolderUpload({parentId,visible,dropZone,completed,onTaskChange,onActivityChange,onStatusChange}:{parentId:number;visible:boolean;dropZone?:HTMLElement|null;completed:()=>void;onTaskChange?:(label:string)=>void;onActivityChange?:(active:boolean)=>void;onStatusChange?:(visible:boolean)=>void}) {
  const key=`ftp-folder:${parentId}`
  const [manifest,setManifest]=useState<Manifest|undefined>(()=>{ try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
  const [folder,setFolder]=useState('')
@@ -21,6 +21,10 @@ export function FolderUpload({parentId,visible,dropZone,completed,onActivityChan
  const running=useRef(false)
  useEffect(()=>{if(!busy)return;const leave=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',leave);return()=>window.removeEventListener('beforeunload',leave)},[busy])
  useEffect(()=>{const online=()=>{if(selected.current.length&&!running.current)void upload(selected.current)};window.addEventListener('online',online);return()=>window.removeEventListener('online',online)})
+ const taskCallback = useRef(onTaskChange)
+ taskCallback.current = onTaskChange
+ const taskLabel = [manifest?.name || folder, status?.text].filter(Boolean).join(' · ')
+ useEffect(() => { taskCallback.current?.(taskLabel) }, [taskLabel])
  const activityCallback = useRef(onActivityChange); activityCallback.current=onActivityChange
  const active= busy || !!manifest
  useEffect(()=>{activityCallback.current?.(active)},[active])

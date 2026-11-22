@@ -54,7 +54,7 @@ test('browser sends real multipart bytes to public storage and shows in-place pr
   await picker.setFiles({ name: 'multipart.txt', mimeType: 'text/plain', buffer: Buffer.alloc(9 * 1024 * 1024, 65) })
   await expect(panel.getByRole('status', { name: '上传进度' })).toContainText('上传完成', {timeout: 60000})
   await expect(transferRow).toBeVisible()
-  await expect(panel.getByRole('status', { name: '上传进度' })).toContainText('MB/s')
+  await expect(panel.getByRole('status', { name: '上传进度' })).not.toContainText('剩余')
   await page.clock.fastForward(3500)
   await expect(panel.getByRole('status', { name: '上传进度' })).toHaveCount(0)
   await expect(transferRow).toHaveAttribute('hidden', '')

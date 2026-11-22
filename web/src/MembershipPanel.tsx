@@ -173,8 +173,8 @@ export function MembershipPanel() {
             <td><span className="organization-name" style={{ paddingInlineStart: query.trim() ? 0 : Math.min(ancestors.length, 6) * 16 }}>
               <Building2 size={16} /><span><strong>{organization.name}</strong><small>编号 {organization.id}</small></span>
             </span></td>
-            <td title={ancestors.map(parent => parent.name).join(' / ')}>{ancestors.at(-1)?.name ?? '—'}</td>
-            <td>{memberCounts.get(organization.id) ?? 0}</td>
+            <td data-label="上级组织" title={ancestors.map(parent => parent.name).join(' / ')}>{ancestors.at(-1)?.name ?? '—'}</td>
+            <td data-label="直属用户">{memberCounts.get(organization.id) ?? 0}</td>
             <td><button className="ghost" aria-label={'编辑组织 ' + organization.name}
               onClick={() => open({ kind: 'organization', id: organization.id, name: organization.name, parentId: String(organization.parentId ?? '') })}>
               编辑<ChevronRight size={14} />
@@ -185,7 +185,7 @@ export function MembershipPanel() {
           <thead><tr><th scope="col">用户组</th><th scope="col">成员</th><th scope="col">操作</th></tr></thead>
           <tbody>{filteredGroups.map(group => <tr key={group.id}>
             <td><span className="organization-name"><Users size={16} /><span><strong>{group.name}</strong><small>编号 {group.id}</small></span></span></td>
-            <td>{group.userIds.length} 位</td>
+            <td data-label="成员">{group.userIds.length} 位</td>
             <td><button className="ghost" aria-label={'管理成员 ' + group.name}
               onClick={() => open({ kind: 'members', id: group.id, ids: group.userIds })}>管理成员<ChevronRight size={14} /></button></td>
           </tr>)}</tbody>
@@ -194,7 +194,7 @@ export function MembershipPanel() {
           <thead><tr><th scope="col">用户</th><th scope="col">所属组织</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead>
           <tbody>{filteredUsers.map(user => <tr key={user.id}>
             <td><UserName user={user} /></td>
-            <td>{organizationNames.get(user.organizationId) ?? '—'}</td>
+            <td data-label="所属组织">{organizationNames.get(user.organizationId) ?? '—'}</td>
             <td><span className={'pill ' + (user.status === 'active' ? 'positive' : 'neutral')}>
               {user.status === 'active' ? '已激活' : '已停用'}
             </span></td>

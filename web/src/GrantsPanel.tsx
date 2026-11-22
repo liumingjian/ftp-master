@@ -13,12 +13,28 @@ type Source = components['schemas']['SourcedGrant']
 type PrincipalKind = Grant['principalKind']
 type Principal = { id: number; name: string; detail?: string }
 const presets = [[1, '仅浏览'], [3, '只读'], [15, '读写'], [31, '读写删除'], [63, '完全控制'], [4, '投递箱']] as const
-const rights = [[1, '浏览'], [2, '下载'], [4, '上传'], [8, '修改'], [16, '删除'], [32, '授权']] as const
+export const rights = [[1, '浏览'], [2, '下载'], [4, '上传'], [8, '修改'], [16, '删除'], [32, '授权']] as const
 const principalLabels = { user: '用户', organization: '组织', user_group: '用户组' }
 const principalKinds = ['user_group', 'organization', 'user'] as const
 const principalIcons = { user: UserRound, organization: Building2, user_group: Users }
 const principalOrder = (grant: Grant) => grant.creator ? -1 : principalKinds.indexOf(grant.principalKind)
 const individualGrantWarningThreshold = 10
+
+function useUserOptions(administrator: boolean) {
+  const [users, setUsers] = useState<Principal[]>()
+  useEffect(() => {
+    if (!administrator) return
+    const controller = new AbortController()
+    void api.GET('/managed-users', { signal: controller.signal }).then(({ data }) => {
+      if (!controller.signal.aborted) setUsers(data?.map(user => ({
+        id: user.id, name: user.displayName + '（' + user.username + '）',
+        detail: user.status === 'deactivated' ? '已停用' : undefined,
+      })))
+    }).catch(() => {})
+    return () => controller.abort()
+  }, [administrator])
+  return administrator ? users : undefined
+}
 
 function toggleRight(value: number, bit: number, checked: boolean) {
   if (checked) {
@@ -52,7 +68,12 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
   const [saving, setSaving] = useState(false)
   const [parentCanGrant, setParentCanGrant] = useState(administrator)
   const grantTree = useRef<HTMLElement>(null)
-  const dirty = added.length > 0 || Object.keys(changes).length > 0
+  const users = useUserOptions(administrator)
+  const [transferSource, setTransferSource] = useState<Source>()
+  const [successor, setSuccessor] = useState<number>()
+  const [handover, setHandover] = useState<{ source: Source; userId: number }>()
+  const dirty = !!handover || added.length > 0 || Object.keys(changes).length > 0
+  const options = principalKind === 'user' ? users : principals[principalKind]
   const canGrant = !!(selected.rights & 32)
   const direct = sources.filter(entry => !entry.inherited).sort((a, b) => principalOrder(a.grant) - principalOrder(b.grant))
   const inherited = sources.filter(entry => entry.inherited)
@@ -107,14 +128,10 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
     if (!administrator) return
     const controller = new AbortController()
     const options = { signal: controller.signal }
-    void Promise.all([api.GET('/managed-users', options), api.GET('/organizations', options), api.GET('/user-groups', options)])
-      .then(([users, organizations, groups]) => {
+    void Promise.all([api.GET('/organizations', options), api.GET('/user-groups', options)])
+      .then(([organizations, groups]) => {
         if (controller.signal.aborted) return
         setPrincipals({
-          user: users.data?.map(user => ({
-            id: user.id, name: user.displayName + '（' + user.username + '）',
-            detail: user.status === 'deactivated' ? '已停用' : undefined,
-          })),
           organization: organizations.data,
           user_group: groups.data?.map(group => ({ id: group.id, name: group.name, detail: group.userIds.length + ' 位成员' })),
         })
@@ -125,7 +142,7 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
   }, [administrator])
 
   function principalName(grant: Grant) {
-    return principals[grant.principalKind]?.find(entry => entry.id === grant.principalId)?.name
+    return (grant.principalKind === 'user' ? users : principals[grant.principalKind])?.find(entry => entry.id === grant.principalId)?.name
       ?? principalLabels[grant.principalKind] + ' #' + grant.principalId
   }
 
@@ -138,8 +155,10 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
 
   function draft() {
     return {
-      add: [...added, ...Object.values(changes).filter((grant): grant is Grant => grant !== null)],
-      remove: Object.keys(changes).map(Number),
+      add: [...added, ...(handover ? [{
+        principalKind: 'user' as const, principalId: handover.userId, rights: 63, scope: 'subtree' as const, creator: true,
+      }] : []), ...Object.values(changes).filter((grant): grant is Grant => grant !== null)],
+      remove: [...Object.keys(changes).map(Number), ...(handover ? [handover.source.grant.id] : [])],
     }
   }
 
@@ -157,9 +176,12 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
       if (!controller.signal.aborted) setMessage('无法预览授权影响')
     })
     return () => controller.abort()
-  }, [selected.id, changes, added, dirty])
+  }, [selected.id, changes, added, handover, dirty])
 
   function discard() {
+    setTransferSource(undefined)
+    setSuccessor(undefined)
+    setHandover(undefined)
     setChanges({})
     setAdded([])
     setImpact(undefined)
@@ -196,18 +218,6 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
     } finally {
       setSaving(false)
     }
-  }
-
-  function transfer(source: Source) {
-    const raw = window.prompt('请输入接任创建者的用户 ID')
-    if (raw === null) return
-    const id = Number(raw)
-    if (!Number.isSafeInteger(id) || id <= 0) {
-      setMessage('请输入有效的用户 ID')
-      return
-    }
-    setChanges(previous => ({ ...previous, [source.grant.id]: null }))
-    setAdded(previous => [...previous, { principalKind: 'user', principalId: id, rights: 63, scope: 'subtree', creator: true }])
   }
 
   function change(original: Source['grant'], grant: Grant | null) {
@@ -269,7 +279,7 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
         <form className="grant-form" onSubmit={event => {
           event.preventDefault()
           const form = new FormData(event.currentTarget)
-          const id = principals[principalKind] ? principalId : Number(form.get('principal'))
+          const id = options ? principalId : Number(form.get('principal'))
           if (!id || !Number.isSafeInteger(id) || id < 1) return
           setAdded(previous => [...previous, {
             principalKind,
@@ -290,14 +300,14 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
                 }}><Icon size={16} />{principalLabels[kind]}</button>
               })}
             </div>
-            {principals[principalKind] ? <GrantPrincipalPicker key={principalKind} kind={principalKind} options={principals[principalKind]}
+            {options ? <GrantPrincipalPicker key={principalKind} kind={principalKind} options={options}
               selected={principalId} onPick={setPrincipalId} disabled={saving} />
               : <label>{principalLabels[principalKind]}编号<input key={principalKind} name="principal" type="number" min="1" required disabled={saving} /></label>}
           </div>
           <div className="grant-config">
             <label>权限预设<Preset value={value} setValue={setValue} disabled={saving} /></label>
             {!selected.isFile && <label>范围<Scope name="scope" disabled={saving} /></label>}
-            <button className="primary" disabled={!value || busy || saving || (!!principals[principalKind] && !principalId)}>添加到草稿</button>
+            <button className="primary" disabled={!value || busy || saving || (!!options && !principalId)}>添加到草稿</button>
           </div>
           <fieldset><legend>权限细项</legend>{rights.map(([bit, label]) =>
             <label key={bit}><input type="checkbox" disabled={saving} checked={!!(value & bit)} onChange={event =>
@@ -329,9 +339,9 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
                   </td>)}
                   <td>{grant && (selected.isFile ? '此文件' : <Scope value={grant.scope} disabled={saving || locked}
                     onChange={scope => change(original, { ...grant, scope })} />)}</td>
-                  <td><button className="ghost" disabled={saving || (locked && !parentCanGrant)}
+                  <td><button className="ghost" disabled={saving || transferSource?.grant.id === original.id || handover?.source.grant.id === original.id || (locked && !parentCanGrant)}
                     onClick={() => change(original, changed ? original : null)}>{changed ? '撤销草稿' : '删除授权'}</button>
-                    {grant && locked && parentCanGrant && <button onClick={() => transfer(source)}>转移创建者</button>}</td>
+                    {grant && locked && parentCanGrant && <button disabled={saving || !!handover} onClick={() => { setSuccessor(undefined); setTransferSource(source) }}>转移创建者</button>}</td>
                 </tr>
               })}
               {added.map((grant, index) => <tr className="draft-row" key={index}>
@@ -356,14 +366,28 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
             </tbody>
           </table>
         </div>}
+        {transferSource && <fieldset className="stack">
+          <legend>转移创建者</legend>
+          <p>{selected.name} · 原创建者 {principalName(transferSource.grant)}</p>
+          {administrator ? <GrantPrincipalPicker kind="user" options={users?.filter(user => !user.detail && user.id !== transferSource.grant.principalId)}
+            selected={successor} onPick={setSuccessor} disabled={saving} />
+            : <label>接任者用户 ID<input type="number" min="1" onChange={event => setSuccessor(event.target.valueAsNumber)} /></label>}
+          <div className="form-actions">
+            <button onClick={() => setTransferSource(undefined)}>取消移交</button>
+            <button disabled={saving || !Number.isSafeInteger(successor) || !successor || successor < 1 || successor === transferSource.grant.principalId}
+              onClick={() => { setHandover({source: transferSource, userId: successor!}); setTransferSource(undefined) }}>加入移交草稿</button>
+          </div>
+        </fieldset>}
         {dirty && <div className="grant-save">
+          {handover && <p>移交「{selected.name}」：{principalName(handover.source.grant)} → {principalName({ ...handover.source.grant, principalId: handover.userId })}
+            <button disabled={saving} onClick={() => setHandover(undefined)}>撤销移交</button></p>}
           {impact && <div aria-label="授权影响预览">
             <p>权限变化：{impact.changedUsers} 位用户，覆盖 {impact.coveredItems} 个项目。</p>
             {impact.warnings.map(warning => <p role="alert" key={warning}>{warning === 'self_grant_loss'
               ? '保存后您将失去此项目的授权权限。' : '此授权将向大型组织或用户组开放整个大型子树，请确认范围。'}</p>)}
           </div>}
           <button type="button" className="ghost" disabled={saving} onClick={discard}>放弃更改</button>
-          <button type="button" className="primary" disabled={!impact || saving} onClick={() => void save()}>保存全部授权</button>
+          <button type="button" className="primary" disabled={!impact || saving || !!transferSource} onClick={() => void save()}>保存全部授权</button>
         </div>}
         <details className="permission-inspection"><summary>有效权限查询</summary>
           <PermissionInspection key={`${selected.id}-${revision}`} node={selected} administrator={administrator} />
@@ -419,6 +443,8 @@ function Scope({ name, value, disabled, onChange }: {
 }
 
 export function PermissionInspection({ node, administrator }: { node: Node; administrator: boolean }) {
+  const users = useUserOptions(administrator)
+  const [person, setPerson] = useState<number>()
   const [inspection, setInspection] = useState<components['schemas']['PermissionInspection']>()
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
@@ -445,15 +471,15 @@ export function PermissionInspection({ node, administrator }: { node: Node; admi
     <div className="form-actions"><button className="primary" disabled={busy} onClick={() => void inspect()}>查询我的有效权限</button></div>
     {administrator && <form onSubmit={event => {
       event.preventDefault()
-      void inspect(Number(new FormData(event.currentTarget).get('userId')))
+      if (person) void inspect(person)
     }}>
-      <label>用户 ID<input name="userId" type="number" min="1" required /></label>
-      <button disabled={busy}>查询用户有效权限</button>
+      <GrantPrincipalPicker kind="user" options={users} selected={person} onPick={setPerson} disabled={busy} />
+      <button disabled={busy || !person}>查询用户有效权限</button>
     </form>}
     {busy && <p className="muted" role="status">正在查询…</p>}
     {message && <p className="banner error" role="alert">{message}</p>}
     {inspection && <div>
-      <div className="section-heading"><h3>用户 #{inspection.userId}</h3>
+      <div className="section-heading"><h3>{users?.find(user => user.id === inspection.userId)?.name ?? '用户 #' + inspection.userId}</h3>
         {inspection.administrator && <span className="pill">管理员</span>}</div>
       <div className="chip-list">
         {rights.filter(([bit]) => inspection.rights & bit).map(([bit, label]) => <span key={bit} className="pill">{label}</span>)}

@@ -90,7 +90,7 @@ test('file details dismiss from the surrounding workspace and keep active rename
     name: 'details.txt', mimeType: 'text/plain', buffer: Buffer.from('File details'),
   })
 
-  const open = page.getByRole('button', { name: '更多操作 details.txt', exact: true })
+  const open = page.getByRole('button', { name: '详情与操作 details.txt', exact: true })
   const detail = page.getByRole('complementary', { name: '项目详情' })
   await open.click()
   await detail.getByRole('heading', { name: 'details.txt' }).click()
@@ -118,7 +118,7 @@ test('clicking an image opens only the preview and uses the saved format after r
     name: 'image.png', mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf2sAAAAASUVORK5CYII=', 'base64'),
   })
-  await page.getByRole('button', { name: '更多操作 image.png' }).click()
+  await page.getByRole('button', { name: '详情与操作 image.png' }).click()
   await page.getByRole('button', { name: '重命名', exact: true }).click()
   await page.getByLabel('新名称').fill('image-renamed')
   await page.getByRole('button', { name: '保存名称', exact: true }).click()
@@ -144,7 +144,7 @@ test("Administrator renames and moves a directory using the destination picker",
  const create=async(name:string,parentId?:number)=>{const response=await page.request.post("/api/tree",{data:{name,parentId}});expect(response.status()).toBe(201);return await response.json() as {id:number}};
  const source=await create(`Move-source-${suffix}`);const target=await create(`Move-target-${suffix}`);await create(`Original-${suffix}`,source.id);
  await page.reload();await page.getByRole("button",{name:`Move-source-${suffix}`,exact:true}).click();
- await page.getByRole('button', {name: `更多操作 Original-${suffix}`, exact: true}).click()
+ await page.getByRole('button', {name: `详情与操作 Original-${suffix}`, exact: true}).click()
  await page.getByRole('button', {name: '重命名', exact: true}).click()
  await page.getByLabel('新名称').fill(`Renamed-${suffix}`)
  await page.getByRole('button', {name: '保存名称', exact: true}).click()
@@ -197,7 +197,7 @@ test('a copied file link survives sign-in and header search returns from the rec
   await expect(openParent).toBeVisible()
 
   await page.setViewportSize({ width: 390, height: 844 })
-  const more = table.getByRole('button', { name: `更多操作 ${filename}` })
+  const more = table.getByRole('button', { name: `详情与操作 ${filename}` })
   await more.click()
   const details = page.getByRole('dialog', { name: '项目详情' })
   await expect(details).toContainText(`/${folder}`)
@@ -221,7 +221,7 @@ test('Administrator restores a deleted item into a directory selected in the rec
   await page.getByRole('button', { name: '根目录', exact: true }).click()
   await createAndOpenFolder(page, original)
   await page.getByRole('button', { name: '根目录', exact: true }).click()
-  await table.getByRole('button', { name: `更多操作 ${original}`, exact: true }).click()
+  await table.getByRole('button', { name: `详情与操作 ${original}`, exact: true }).click()
   await page.getByRole('button', { name: `删除 ${original}`, exact: true }).click()
   await expect(table.getByRole('button', { name: original, exact: true })).toHaveCount(0)
 
@@ -236,4 +236,31 @@ test('Administrator restores a deleted item into a directory selected in the rec
   await expect(recycle.getByRole('status')).toHaveText('项目已恢复')
   await page.getByRole('navigation', { name: '目录树' }).getByRole('link', { name: target, exact: true }).click()
   await expect(table.getByRole('button', { name: original, exact: true })).toBeVisible()
+})
+
+test('monthly versions remain distinguishable across list widths', async ({ page }) => {
+  await page.goto('/sign-in')
+  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  await createAndOpenFolder(page, `Versions-${Date.now()}`)
+  const table = page.getByRole('table', {name: '文件列表'})
+  const prefix = '项目进度汇报_内部评审版_'.repeat(3)
+  for (const month of [11, 12]) {
+    const name = prefix + `2026年${month}月.docx`
+    await page.getByLabel('上传文件', {exact: true}).setInputFiles({name, mimeType: 'application/octet-stream', buffer: Buffer.from('review')})
+    await expect(table.getByRole('button', {name, exact: true})).toBeVisible()
+  }
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    await page.setViewportSize({width, height: 900})
+    for (const tail of await table.locator('.list-name > span:last-child').all()) {
+      await expect.poll(() => tail.evaluate(el => el.scrollWidth <= el.clientWidth), {message: width + ' px 版本后缀'}).toBe(true)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  await page.setViewportSize({width: 390, height: 844})
+  await page.getByRole('combobox', {name: '排序'}).selectOption('size:true')
+  await page.locator('summary').filter({hasText: '更多'}).click()
+  await expect(page.getByRole('button', {name: '新建文件夹'})).toBeInViewport()
+  await page.getByRole('link', {name:'管理',exact:true}).click()
+  await page.getByRole('combobox', {name:'管理页面'}).selectOption('settings')
+  await expect(page.getByRole('heading', {name:'上传设置',exact:true})).toBeVisible()
 })
