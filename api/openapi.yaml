@@ -1287,13 +1287,15 @@ components:
         rights: {type: integer}
         traversable: {type: boolean}
         latestVersion:
-          description: Latest immutable content metadata, included for browsable files in tree listings.
+          description: Latest immutable content metadata, included for browsable files.
           type: object
           required: [id, size, format]
           properties:
             id: {type: integer, format: int64}
             size: {type: integer, format: int64}
             format: {type: string}
+            username: {type: string}
+            createdAt: {type: string, format: date-time}
     GrantImpact:
       type: object
       required: [changedUsers, coveredItems, warnings]

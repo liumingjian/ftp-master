@@ -1,9 +1,11 @@
+import { openAccountPage } from './explorer'
 import { expect, test } from '@playwright/test'
 import { ADMINISTRATOR_PASSWORD, ADMINISTRATOR_USERNAME, signIn } from './signin'
 
 test('password change validates the current password and Administrator reset restores the credential', async ({ page }) => {
   await page.goto('/sign-in')
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  await openAccountPage(page, '账户设置')
   await expect(page.getByTestId('current-user')).toBeVisible()
   const session = await page.request.get('/api/session')
   const user = await session.json()

@@ -1,37 +1,68 @@
-import { test, expect } from "@playwright/test";
-import {
-  signIn,
-  ADMINISTRATOR_USERNAME,
-  ADMINISTRATOR_PASSWORD,
-} from "./signin";
-test("Administrator queries audit events, opens details and exports CSV", async ({
-  page,
-}) => {
-  await page.goto("/sign-in");
-  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD);
-  const panel = page.getByRole("region", { name: "审计记录" });
-  await expect(panel).toBeVisible();
-  const today = new Date();
-  const tomorrow = new Date(today.getTime() + 86400000);
-  await panel
-    .getByLabel("开始时间（UTC）")
-    .fill(today.toISOString().slice(0, 10) + "T00:00");
-  await panel
-    .getByLabel("结束时间（UTC）")
-    .fill(tomorrow.toISOString().slice(0, 10) + "T00:00");
-  await panel.getByRole("button", { name: "查询审计", exact: true }).click();
-  await expect(panel.getByRole("status")).toContainText("条记录");
-  await panel.getByRole("button", { name: "查看详情" }).first().click();
-  await expect(
-    panel.getByRole("complementary", { name: "审计详情" }),
-  ).toBeVisible();
-  await panel.getByRole("button", { name: "仅此人员" }).click();
-  await expect(panel.getByRole("status")).toContainText("条记录");
-  await panel.getByRole("button", { name: "关闭详情" }).click();
-  const download = page.waitForEvent("download");
-  await panel.getByRole("button", { name: "导出 CSV" }).click();
-  expect((await download).suggestedFilename()).toBe("audit.csv");
-  await panel.getByLabel("结束时间（UTC）").fill("2027-11-22T00:00");
-  await panel.getByRole("button", { name: "查询审计", exact: true }).click();
-  await expect(panel.getByRole("alert")).toContainText("180 天");
-});
+import { expect, test } from '@playwright/test'
+import { openManagementPage } from './explorer'
+import { ADMINISTRATOR_PASSWORD, ADMINISTRATOR_USERNAME, signIn } from './signin'
+
+test('Administrator applies audit filters, pivots by user and exports the applied query', async ({ page }) => {
+  await page.goto('/sign-in')
+  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  await openManagementPage(page, '审计日志')
+  const panel = page.getByRole('region', { name: '审计记录' })
+  const toolbar = panel.getByRole('group', { name: '审计筛选' })
+  const dialog = page.getByRole('dialog', { name: '筛选审计日志' })
+  const more = toolbar.getByRole('button', { name: '更多筛选', exact: true })
+  const action = dialog.getByRole('combobox', { name: '精确操作', exact: true })
+  const apply = dialog.getByRole('button', { name: '应用筛选', exact: true })
+  const time = dialog.getByRole('combobox', { name: '时间范围', exact: true })
+
+  await expect(panel.getByRole('status')).toContainText('条记录')
+  await expect(action).toHaveCount(0)
+  await more.click()
+  await action.selectOption('move')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(more).toBeFocused()
+  await expect(panel.getByRole('list', { name: '已应用的筛选' })).toHaveCount(0)
+
+  await toolbar.getByRole('combobox', { name: '时间范围' }).selectOption('custom')
+  await expect(time).toHaveValue('custom')
+  const health = await (await page.request.get('/api/health')).json()
+  const today = new Date(health.checkedAt)
+  const tomorrow = new Date(today.getTime() + 86400000)
+  await dialog.getByLabel('开始时间（UTC）').fill(today.toISOString().slice(0, 10) + 'T00:00')
+  await dialog.getByLabel('结束时间（UTC）').fill(tomorrow.toISOString().slice(0, 10) + 'T00:00')
+  await action.selectOption('sign_in')
+  await apply.click()
+  await expect(dialog).toHaveCount(0)
+  const conditions = panel.getByRole('list', { name: '已应用的筛选' })
+  await expect(conditions).toContainText('登录')
+  const openDetails = panel.getByRole('button', { name: '查看详情' }).first()
+  const details = panel.getByRole('complementary', { name: '审计详情' })
+  await openDetails.click()
+  await expect(details.getByRole('button', { name: '关闭详情' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(details).toHaveCount(0)
+  await expect(openDetails).toBeFocused()
+  await openDetails.click()
+  await panel.getByRole('heading', { name: '审计日志' }).click()
+  await expect(details).toHaveCount(0)
+  await openDetails.click()
+  await expect(details).toBeVisible()
+  await details.getByRole('button', { name: '仅此人员' }).click()
+  await expect(details).toHaveCount(0)
+  await expect(conditions).toContainText('人员')
+  const download = page.waitForEvent('download')
+  const exportRequest = page.waitForRequest(request => request.url().endsWith('/api/audit/query') && request.postDataJSON().export)
+  await panel.getByRole('button', { name: '导出 CSV' }).click()
+  expect((await download).suggestedFilename()).toBe('audit.csv')
+  expect((await exportRequest).postDataJSON()).toMatchObject({ action: 'sign_in', userIds: [expect.any(Number)] })
+
+  await more.click()
+  await dialog.getByLabel('结束时间（UTC）').fill('2099-01-01T00:00')
+  await apply.click()
+  await expect(dialog.getByRole('alert')).toContainText('180 天')
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(conditions).toContainText('登录')
+  await toolbar.getByRole('button', { name: '重置', exact: true }).click()
+  await expect(conditions).toHaveCount(0)
+  await expect(toolbar.getByRole('combobox', { name: '时间范围' })).toHaveValue('week')
+})

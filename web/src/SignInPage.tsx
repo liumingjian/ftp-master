@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react'
+import { AuthLayout } from './AuthLayout'
+import { PasswordInput } from './PasswordInput'
 import { api } from './api/client'
 import { pathAfterSignIn } from './navigation'
 import { unreachableText } from './requestOnMount'
@@ -28,43 +30,31 @@ export function SignInPage() {
   }
 
   return (
-    <div className="sign-in">
-      <form className="sign-in-form" onSubmit={submit}>
-        <h1>ftp-master</h1>
-        <h2>登录</h2>
+    <AuthLayout title="登录" hideHeading
+      onSubmit={submit} footer={<a href="/register">注册新用户</a>}>
         <label>
           用户名
           <input
             name="username"
             autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
             required
             maxLength={150}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
         </label>
-        <label>
-          密码
-          <input
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            maxLength={1024}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
+        <PasswordInput name="password" autoComplete="current-password" required maxLength={1024}
+          value={password} onChange={(e) => setPassword(e.target.value)} />
         {error && (
-          <p className="bad" role="alert">
+          <p className="banner error" role="alert">
             {error}
           </p>
         )}
-        <button type="submit" disabled={submitting}>
-          登录
+        <button className="primary" type="submit" disabled={submitting}>
+          {submitting ? "正在登录…" : "登录"}
         </button>
-      <a href="/register">注册新用户</a>
-      </form>
-    </div>
+    </AuthLayout>
   )
 }

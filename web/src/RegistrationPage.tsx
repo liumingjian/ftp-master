@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from "react";
+import { AuthLayout } from "./AuthLayout";
+import { PasswordInput } from "./PasswordInput";
 import { api } from "./api/client";
 export function RegistrationPage() {
   const [error, setError] = useState("");
@@ -31,16 +33,15 @@ export function RegistrationPage() {
     setBusy(false);
   }
   return (
-    <div className="sign-in">
-      <form className="sign-in-form" onSubmit={submit}>
-        <h1>注册</h1>
+    <AuthLayout title={done ? "申请已提交" : "注册"} description={done ? undefined : "提交后由管理员审批，通过后即可登录"}
+      onSubmit={submit} footer={<a href="/sign-in">返回登录</a>}>
         {done ? (
-          <p role="status">注册已提交，等待管理员审批。</p>
+          <p className="banner success" role="status">注册已提交，等待管理员审批</p>
         ) : (
           <>
             <label>
               姓名
-              <input name="displayName" required maxLength={150} />
+              <input name="displayName" required maxLength={150} autoComplete="name" />
             </label>
             <label>
               用户名
@@ -49,28 +50,19 @@ export function RegistrationPage() {
                 required
                 maxLength={150}
                 autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
               />
             </label>
             <label>
               所属组织说明
               <input name="organizationHint" required maxLength={150} />
             </label>
-            <label>
-              密码
-              <input
-                name="password"
-                type="password"
-                required
-                maxLength={1024}
-                autoComplete="new-password"
-              />
-            </label>
-            {error && <p role="alert">{error}</p>}
-            <button disabled={busy}>提交注册</button>
+            <PasswordInput name="password" required maxLength={1024} autoComplete="new-password" />
+            {error && <p className="banner error" role="alert">{error}</p>}
+            <button className="primary" disabled={busy}>{busy ? "正在提交…" : "提交注册"}</button>
           </>
         )}
-        <a href="/sign-in">返回登录</a>
-      </form>
-    </div>
+    </AuthLayout>
   );
 }

@@ -141,16 +141,19 @@ func (q *Queries) ListGrants(ctx context.Context) ([]Grant, error) {
 }
 
 const listLatestTreeVersions = `-- name: ListLatestTreeVersions :many
-SELECT DISTINCT ON (file_id) file_id, id, size, format
-FROM file_versions WHERE file_id = ANY($1::bigint[])
-ORDER BY file_id, id DESC
+SELECT DISTINCT ON (v.file_id) v.file_id, v.id, v.size, v.format, v.created_at, u.username
+FROM file_versions v JOIN users u ON u.id = v.created_by
+WHERE v.file_id = ANY($1::bigint[])
+ORDER BY v.file_id, v.id DESC
 `
 
 type ListLatestTreeVersionsRow struct {
-	FileID int64
-	ID     int64
-	Size   int64
-	Format string
+	FileID    int64
+	ID        int64
+	Size      int64
+	Format    string
+	CreatedAt pgtype.Timestamptz
+	Username  string
 }
 
 func (q *Queries) ListLatestTreeVersions(ctx context.Context, fileIds []int64) ([]ListLatestTreeVersionsRow, error) {
@@ -167,6 +170,8 @@ func (q *Queries) ListLatestTreeVersions(ctx context.Context, fileIds []int64) (
 			&i.ID,
 			&i.Size,
 			&i.Format,
+			&i.CreatedAt,
+			&i.Username,
 		); err != nil {
 			return nil, err
 		}

@@ -30,7 +30,7 @@ func (s *Server) SearchTree(ctx context.Context, r api.SearchTreeRequestObject) 
 			result = append(result, treeResponse(n, snap))
 		}
 	}
-	return result, nil
+	return result, s.attachLatestVersions(ctx, result)
 }
 func (e membershipFailure) VisitSearchTreeResponse(w http.ResponseWriter) error  { return e.write(w) }
 func (e membershipFailure) VisitPreviewFileResponse(w http.ResponseWriter) error { return e.write(w) }

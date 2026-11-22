@@ -18,6 +18,8 @@ Requires Go (see `backend/go.mod`), Node 24 with pnpm, and Docker.
 ```sh
 make up                # build and start PostgreSQL, MinIO, Redis, the service and the web shell
                        # then open http://localhost:8088 and sign in as admin / admin-local-only
+make qa-up             # start the local stack with Vite hot updates
+make qa-down           # stop the QA stack and keep its data volumes
 make down              # stop the stack
                        # port taken? e.g. FTP_MASTER_WEB_PORT=18088 FTP_MASTER_REDIS_PORT=16379 make up
                        # (also FTP_MASTER_POSTGRES_PORT, _MINIO_PORT, _MINIO_CONSOLE_PORT, _APP_PORT)
@@ -29,6 +31,10 @@ make test-unit         # backend and web unit tests + web typecheck, no Docker n
 make test-integration  # HTTP API against real PostgreSQL, MinIO, Redis via testcontainers
 make test-e2e          # Playwright against the running stack (`make up` first)
 ```
+
+During QA, open the address printed by `make qa-up`. Saving React, CSS or other
+source files under `web/src` updates the running page. Rerun `make qa-up` after
+changing package dependencies or build configuration.
 
 ## Conventions
 

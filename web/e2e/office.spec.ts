@@ -1,9 +1,10 @@
 /// <reference lib="dom" />
 
 import { expect, test } from '@playwright/test';
-import { ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD, signIn } from './signin';
+import { ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD, signIn } from './signin'
+import { createAndOpenFolder } from './explorer'
 
-test('Office edit entries require presence, Modify, supported actual format and at most 25 MiB', async ({page}) => {
+test('eligible Office rows show disabled icons and the viewer requires plugin presence', async ({page}) => {
   const formats = ['doc', 'docx', 'wps', 'xls', 'xlsx'];
   const nodes = formats.map((format, index) => ({id: index + 100, name: `renamed-${format}.txt`, isFile: true, rights: 11, traversable: false, latestVersion: {id: index + 200, format, size: 26214400}}));
   const rejected = [
@@ -18,22 +19,46 @@ test('Office edit entries require presence, Modify, supported actual format and 
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD);
   await expect(page.getByTestId('current-user')).toBeVisible();
   await expect(page.locator('a[data-ftp-office-edit]')).toHaveCount(0);
+  const officeName = nodes[1].name;
+  const fileList = page.getByRole('table', {name: '文件列表'});
+  const listedActions = fileList.getByRole('button', {name: /^在线编辑 /});
+  const listedAction = fileList.getByRole('button', {name: `在线编辑 ${officeName}`, exact: true});
+  await expect(listedAction).toBeVisible();
+  await expect(listedAction).toBeDisabled();
+  await expect(listedAction).toHaveText('');
+  await expect(listedAction.locator('svg')).toBeVisible();
+  await expect(fileList.getByTitle('在线编辑暂不可用')).toHaveCount(nodes.length);
+  await expect(listedActions).toHaveCount(nodes.length);
+  await page.getByRole('button', {name: officeName, exact: true}).click();
+  const viewer = page.getByRole('dialog', {name: officeName});
+  await expect(viewer.getByText(/未检测到 ftp-master WPS 插件/)).toBeVisible();
+  await expect(viewer.getByRole('link', {name: '下载', exact: true})).toBeVisible();
+  await expect(viewer.getByRole('link', {name: `在线编辑 ${officeName}`})).toHaveCount(0);
+  await expect(viewer.getByRole('button', {name: `在线编辑 ${officeName}，需要 WPS 插件`})).toBeDisabled();
   await page.evaluate(() => document.documentElement.setAttribute('data-ftp-office-plugin', '0.1.0'));
-  await expect(page.locator('a[data-ftp-office-edit]')).toHaveCount(5);
+  const editLink = viewer.getByRole('link', {name: `在线编辑 ${officeName}`});
+  await expect(editLink).toBeVisible();
+  await expect(editLink).toHaveAttribute('href', `/api/files/${nodes[1].id}/office-edits`);
+  await expect(editLink).toHaveAttribute('data-ftp-office-version', String(nodes[1].latestVersion.id));
+  await expect(editLink).toHaveAttribute('target', '_blank');
+  await viewer.getByRole('button', {name: '关闭文件查看'}).click();
+  await expect(fileList.locator('a[data-ftp-office-edit]')).toHaveCount(0);
+  await expect(listedActions).toHaveCount(nodes.length);
   for (const node of nodes) {
-    const link = page.getByRole('link', {name: `在线编辑 ${node.name}`});
-    await expect(link).toHaveAttribute('href', `/api/files/${node.id}/office-edits`);
-    await expect(link).toHaveAttribute('data-ftp-office-version', String(node.latestVersion.id));
-    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(fileList.getByRole('button', {name: `在线编辑 ${node.name}`, exact: true})).toBeDisabled();
   }
   for (const link of await page.locator('a[download]').all()) {
     expect(new URL((await link.getAttribute('href'))!, page.url()).pathname).not.toMatch(/\.(doc|docx|wps|xls|xlsx)$/i);
     await expect(link).not.toHaveAttribute('data-ftp-office-edit');
   }
+  await page.getByRole('button', {name: officeName, exact: true}).click();
+  await expect(editLink).toBeVisible();
   await page.evaluate(() => document.documentElement.setAttribute('data-ftp-office-plugin', '  '));
-  await expect(page.locator('a[data-ftp-office-edit]')).toHaveCount(0);
+  await expect(editLink).toHaveCount(0);
+  await page.evaluate(() => document.documentElement.setAttribute('data-ftp-office-plugin', '0.1.0'));
+  await expect(editLink).toBeVisible();
   await page.evaluate(() => document.documentElement.removeAttribute('data-ftp-office-plugin'));
-  await expect(page.locator('a[data-ftp-office-edit]')).toHaveCount(0);
+  await expect(editLink).toHaveCount(0);
 });
 
 // This substitutes only the extension and native WPS process; every HTTP call
@@ -43,6 +68,8 @@ for (const format of ['docx', 'xlsx']) {
     const { readFile } = await import('node:fs/promises');
     const { createHash } = await import('node:crypto');
     const bytes = await readFile(new URL(`./fixtures/office.${format}`, import.meta.url));
+    const editedBytes = await readFile(new URL(`./fixtures/office-edited.${format}`, import.meta.url));
+    expect(editedBytes).not.toEqual(bytes);
     await page.addInitScript(() => {
       document.addEventListener('DOMContentLoaded', () => document.documentElement.setAttribute('data-ftp-office-plugin', '0.1.0'));
     });
@@ -50,9 +77,7 @@ for (const format of ['docx', 'xlsx']) {
     await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD);
     const panel = page.getByRole('region', {name: '共享目录'});
     const dir = `Office-${format}-${Date.now()}`;
-    await panel.getByLabel('目录名称').fill(dir);
-    await panel.getByRole('button', {name: '创建目录'}).click();
-    await panel.getByRole('button', {name: dir, exact: true}).click();
+    await createAndOpenFolder(page, dir);
     const name = `office.${format}`;
     const dirs = await (await page.request.get('/api/tree')).json();
     const parentId = dirs.find((entry: {name: string}) => entry.name === dir).id;
@@ -62,8 +87,11 @@ for (const format of ['docx', 'xlsx']) {
     expect((await page.request.post(`/api/uploads/${session.id}/complete`)).status()).toBe(200);
     await panel.getByRole('button', {name:'根目录', exact:true}).click();
     await panel.getByRole('button', {name:dir, exact:true}).click();
-    const link = panel.getByRole('link', {name: `在线编辑 ${name}`});
-    await expect(link).toBeVisible();
+    const rowEdit = panel.getByRole('button', {name: `在线编辑 ${name}`, exact: true});
+    await expect(rowEdit).toBeDisabled();
+    await panel.getByRole('button', {name, exact: true}).click();
+    const viewer = page.getByRole('dialog', {name});
+    const link = viewer.getByRole('link', {name: `在线编辑 ${name}`});
     const baseVersion = Number(await link.getAttribute('data-ftp-office-version'));
     await page.evaluate(({content, md5, format}) => {
       const state = window as typeof window & {officeResult?: Promise<Record<string, unknown>>};
@@ -90,7 +118,7 @@ for (const format of ['docx', 'xlsx']) {
           return {before: before.delivered, after: after.delivered, downloaded, gateway: gateway.status, save: save.status, receipt: await save.json()};
         })();
       }, true);
-    }, {content: Array.from(bytes), md5: createHash('md5').update(bytes).digest('hex'), format});
+    }, {content: Array.from(editedBytes), md5: createHash('md5').update(editedBytes).digest('hex'), format});
     await link.click();
     const result = await page.evaluate(async () => (window as typeof window & {officeResult: Promise<any>}).officeResult);
     expect(result.before).toBe(false);
@@ -101,6 +129,9 @@ for (const format of ['docx', 'xlsx']) {
     expect(result.receipt.Success).toBe(true);
     expect(result.receipt.Data.baseVersionId).toBe(baseVersion);
     expect(result.receipt.Data.versionId).not.toBe(baseVersion);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(link).toHaveAttribute('data-ftp-office-version', String(result.receipt.Data.versionId));
+    await viewer.getByRole('button', {name: '关闭文件查看'}).click();
     const pendingDownload = page.waitForEvent('download');
     await panel.getByRole('link', {name: `下载 ${name}`, exact:true}).click();
     const download = await pendingDownload;
@@ -108,8 +139,9 @@ for (const format of ['docx', 'xlsx']) {
     const stream = await download.createReadStream();
     const chunks: Buffer[] = [];
     for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
-    expect(Buffer.concat(chunks)).toEqual(bytes);
+    expect(Buffer.concat(chunks)).toEqual(editedBytes);
 
+    await page.getByRole('button', {name: `更多操作 ${name}`, exact:true}).click();
     await page.getByRole('button', {name:'文件版本', exact:true}).click();
     await expect(page.getByRole('region', {name:'文件版本'})).toContainText(`版本 ${result.receipt.Data.versionId} ·`);
   });

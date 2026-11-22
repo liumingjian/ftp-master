@@ -3,7 +3,8 @@ import { api } from './api/client'
 import { systemClock, type Clock } from './clock'
 
 type Session = { id: string; partCount: number; partSize: number; name: string; size: number }
-type Row = { name: string; bytes: number; total: number; speed: number; status: string }
+type Row = { name: string; bytes: number; total: number; speed: number; status: string; complete?: true }
+export const UPLOAD_COMPLETE_MESSAGE_MS = 3000
 export function putPart(url: string, bytes: Blob, progress: (loaded: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -15,7 +16,7 @@ export function putPart(url: string, bytes: Blob, progress: (loaded: number) => 
     xhr.send(bytes)
   })
 }
-export function UploadRow({ parentId, completed, clock = systemClock, onActivityChange }: { onActivityChange?: (active: boolean) => void; parentId: number; completed: () => void; clock?: Clock }) {
+export function UploadRow({ parentId, visible, dropZone, completed, clock = systemClock, onActivityChange }: { onActivityChange?: (active: boolean) => void; parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; clock?: Clock }) {
   const key = `ftp-upload:${parentId}`
   const [savedSession, setSession] = useState<Session | undefined>(() => { try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
   const fileRef = useRef<File>(undefined)
@@ -28,6 +29,12 @@ export function UploadRow({ parentId, completed, clock = systemClock, onActivity
     return () => { window.removeEventListener('offline', off); window.removeEventListener('online', on) }
   })
   const [row, setRow] = useState<Row>()
+  useEffect(() => {
+    if (!row?.complete) return
+    return clock.after(UPLOAD_COMPLETE_MESSAGE_MS, () => {
+      setRow(current => current === row ? undefined : current)
+    })
+  }, [clock, row])
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState<string>()
   useEffect(() => {
@@ -39,6 +46,26 @@ export function UploadRow({ parentId, completed, clock = systemClock, onActivity
  const activityCallback = useRef(onActivityChange); activityCallback.current=onActivityChange
  const active= busy || !!savedSession || !!conflict
  useEffect(()=>{activityCallback.current?.(active)},[active])
+  useEffect(() => {
+    if (!dropZone) return
+    const dragover = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+    }
+    const drop = (event: DragEvent) => {
+      const items = Array.from(event.dataTransfer?.items ?? [])
+      if (items.length !== 1 || items[0]?.webkitGetAsEntry()?.isDirectory) return
+      const file = items[0]?.getAsFile()
+      if (!file) return
+      event.preventDefault()
+      if (!running.current && !busy && !conflict) void upload(file)
+    }
+    dropZone.addEventListener('dragover', dragover)
+    dropZone.addEventListener('drop', drop)
+    return () => {
+      dropZone.removeEventListener('dragover', dragover)
+      dropZone.removeEventListener('drop', drop)
+    }
+  })
   function clear() { localStorage.removeItem(key); setSession(undefined); fileRef.current = undefined }
   async function upload(file: File) {
     if (savedSession && (savedSession.name !== file.name || savedSession.size !== file.size)) {
@@ -78,7 +105,11 @@ export function UploadRow({ parentId, completed, clock = systemClock, onActivity
         if (finish.error?.message === 'upload_name_conflict') { setConflict(session.id); setRow(previous => previous && ({ ...previous, status: '同名文件已存在' })); return }
         throw new Error(finish.error?.message ?? '发布失败')
       }
-      setRow({ name: file.name, total: file.size, bytes: file.size, speed: file.size / Math.max((clock.now() - start) / 1000, 0.001), status: '上传完成' })
+      setRow({
+        name: file.name, total: file.size, bytes: file.size,
+        speed: file.size / Math.max((clock.now() - start) / 1000, 0.001),
+        status: '上传完成', complete: true,
+      })
       clear()
       completed()
     } catch (error) {
@@ -93,31 +124,20 @@ export function UploadRow({ parentId, completed, clock = systemClock, onActivity
       if (!finish.data) throw new Error(finish.error?.message ?? '发布失败')
       clear()
       setConflict(undefined)
-      setRow(previous => previous && ({ ...previous, status: '上传完成' }))
+      setRow(previous => previous && ({ ...previous, status: '上传完成', complete: true }))
       completed()
     } catch (error) { setRow(previous => previous && ({ ...previous, status: error instanceof Error ? error.message : '上传失败' })) }
     finally { setBusy(false) }
   }
   return <>
     {offline && <p role="alert">网络已中断，已保存的分片会保留；网络恢复后自动继续上传。</p>}
-    {savedSession && !busy && !conflict && <label>重新选择文件<input type="file" onChange={event => { const file = event.target.files?.[0]; if(file) void upload(file); event.target.value='' }} /></label>}
-    <label>上传文件<input type="file" disabled={busy || !!conflict || !!savedSession} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = '' }} /></label>
+    {visible && savedSession && !busy && !conflict && <label>重新选择文件<input type="file" onChange={event => { const file = event.target.files?.[0]; if(file) void upload(file); event.target.value='' }} /></label>}
+    {visible && <label className="visually-hidden">上传文件<input id={`upload-file-${parentId}`} type="file" disabled={busy || !!conflict || !!savedSession} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = '' }} /></label>}
     {row && <div role="status" aria-label="上传进度" className="upload-row">
       {conflict && <><button disabled={busy} onClick={() => void resolve('new_version')}>存为新版本</button><button disabled={busy} onClick={() => void resolve('keep_both')}>保留两者</button></>}
-      <span>{row.name} · {row.status}</span>
+      <span className="transfer-name">{row.name} · {row.status}</span>
       <progress aria-label="文件上传进度" value={row.bytes} max={row.total || 1} />
       <span>{Math.round(row.bytes / (row.total || 1) * 100)}% · {(row.speed / 1024 / 1024).toFixed(1)} MB/s · 剩余 {row.speed > 0 ? Math.ceil((row.total - row.bytes) / row.speed) : '—'} 秒</span>
     </div>}
   </>
-}
-
-export function UploadPolicyEditor() {
-  const [message, setMessage] = useState('')
-  const [extensions, setExtensions] = useState('')
-  async function load() { const {data} = await api.GET('/upload-policy'); if(data) setExtensions(data.blockedExtensions.join(', ')) }
-  async function save() {
-    const { response, error } = await api.PUT('/upload-policy', { body: { blockedExtensions: extensions.split(',').map(value => value.trim()).filter(Boolean) } })
-    setMessage(response.ok ? '上传限制已保存' : error?.message ?? '保存失败')
-  }
-  return <details onToggle={event => {if(event.currentTarget.open) void load()}}><summary>上传扩展名限制</summary><label>禁止扩展名（逗号分隔）<input value={extensions} onChange={event => setExtensions(event.target.value)} /></label><button onClick={() => void save()}>保存上传限制</button><p role="status">{message}</p></details>
 }

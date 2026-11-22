@@ -1,3 +1,4 @@
+import { openManagementPage } from './explorer'
 import { test, expect } from "@playwright/test";
 import {
   signIn,
@@ -22,6 +23,7 @@ test("Registration is approved with an Organization before sign-in", async ({
   const admin = await browser.newPage();
   await admin.goto("/sign-in");
   await signIn(admin, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD);
+  await openManagementPage(admin, '注册审批')
   const row = admin.getByRole("listitem").filter({ hasText: username });
   await expect(row).toContainText("Engineering");
   await row.getByLabel("分配组织").selectOption("1");

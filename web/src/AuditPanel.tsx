@@ -1,366 +1,266 @@
-import { useState } from "react";
-import { api } from "./api/client";
-import { redirectToSignIn } from "./navigation";
-import { useRequestOnMount } from "./requestOnMount";
+import { ChevronRight, Download, RefreshCw, SlidersHorizontal, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { PageHeading } from './PageHeading'
+import { actionNames, AuditFilterDialog, auditCategories, auditRanges, defaultAuditFilters, withAuditRange,
+  type AuditFilters, type HistoricalDirectory } from './AuditFilters'
+import { api } from './api/client'
+import type { components } from './api/schema.gen'
+import { redirectToSignIn } from './navigation'
+import { useRequestOnMount } from './requestOnMount'
+import { usePanelDismissal } from './usePanelDismissal'
 
 type Event = {
-  id: number;
-  time: string;
-  userId: number | null;
-  username: string;
-  sourceIp: string;
-  action: string;
-  outcome: string;
-  itemId: number | null;
-  path: string;
-  detail: unknown;
-};
+  id: number
+  time: string
+  userId: number | null
+  username: string
+  sourceIp: string
+  action: string
+  outcome: string
+  itemId: number | null
+  path: string
+  detail: unknown
+}
 type Results = {
-  events: Event[];
-  total: number;
-  page: number;
-  directories: { path: string; exists: boolean }[];
-};
+  events: Event[]
+  total: number
+  page: number
+  directories: HistoricalDirectory[]
+}
+
+function archivePaths(event: Event): string[] {
+  if (event.action !== 'zip_download' || !event.detail || typeof event.detail !== 'object' || !('files' in event.detail)) return []
+  const files: unknown = event.detail.files
+  if (!Array.isArray(files)) return []
+  return files.flatMap((file: unknown) =>
+    file && typeof file === 'object' && 'path' in file && typeof file.path === 'string' ? [file.path] : [])
+}
+
 export function AuditPanel() {
-  const [from, setFrom] = useState(""),
-    [to, setTo] = useState(""),
-    [users, setUsers] = useState(""),
-    [org, setOrg] = useState(""),
-    [directory, setDirectory] = useState(""),
-    [action, setAction] = useState(""),
-    [category, setCategory] = useState(""),
-    [recursive, setRecursive] = useState(true),
-    [failures, setFailures] = useState(false),
-    [item, setItem] = useState<number>(),
-    [result, setResult] = useState<Results>(),
-    [detail, setDetail] = useState<Event>(),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const people = useRequestOnMount<{ id: number; username: string }[]>(
-    [],
-    async () => {
-      const { data } = await api.GET("/managed-users");
-      return data ?? [];
-    },
-  );
-  const organizations = useRequestOnMount<{ id: number; name: string }[]>(
-    [],
-    async () => {
-      const { data } = await api.GET("/organizations");
-      return data ?? [];
-    },
-  );
-  useRequestOnMount(null, async () => {
-    const { data } = await api.GET("/health");
-    if (data) {
-      setFrom(data.checkedAt.slice(0, 10) + "T00:00");
-      setTo(data.checkedAt.slice(0, 16));
-    }
-    return null;
-  });
-  async function query(
-    page = 1,
-    exportCSV = false,
-    pivot?: { userId?: number; directory?: string; itemId?: number },
-  ) {
-    setBusy(true);
-    setError("");
+  const [filters, setFilters] = useState(defaultAuditFilters)
+  const [dialog, setDialog] = useState<'more' | 'custom'>()
+  const [result, setResult] = useState<Results>()
+  const [detail, setDetail] = useState<Event>()
+  const detailTrigger = useRef<HTMLButtonElement>(null)
+  const detailClose = useRef<HTMLButtonElement>(null)
+  const detailPanel = usePanelDismissal(!!detail, closeDetail)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [serverTime, setServerTime] = useState('')
+  const people = useRequestOnMount<components['schemas']['ManagedUser'][]>([], async () => {
+    const { data } = await api.GET('/managed-users')
+    return data ?? []
+  })
+  const organizations = useRequestOnMount<components['schemas']['Organization'][]>([], async () => {
+    const { data } = await api.GET('/organizations')
+    return data ?? []
+  })
+  const userList = Array.isArray(people) ? people : []
+  const organizationList = Array.isArray(organizations) ? organizations : []
+
+  useEffect(() => { if (detail) detailClose.current?.focus() }, [detail])
+
+  function closeDetail(restoreFocus = true) {
+    setDetail(undefined)
+    if (restoreFocus) detailTrigger.current?.focus()
+    detailTrigger.current = null
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void query(defaultAuditFilters, { refreshTime: true, signal: controller.signal })
+    return () => controller.abort()
+  }, [])
+
+  async function query(next: AuditFilters, { page = 1, csv = false, refreshTime = false, signal }: {
+    page?: number; csv?: boolean; refreshTime?: boolean; signal?: AbortSignal
+  } = {}) {
+    setBusy(true)
+    setError('')
     try {
-      const body = {
-        from: from + ":00Z",
-        to: to + ":00Z",
-        userIds: pivot?.itemId
-          ? []
-          : pivot?.userId
-            ? [pivot.userId]
-            : users.split(",").filter(Boolean).map(Number),
-        organizationId:
-          pivot?.itemId || pivot?.userId
-            ? undefined
-            : org
-              ? Number(org)
-              : undefined,
-        directory: pivot?.directory ?? directory,
-        action: pivot?.itemId ? "" : action,
-        category: pivot?.itemId ? undefined : category || undefined,
-        includeSubdirectories: recursive,
-        failuresOnly: pivot?.itemId ? false : failures,
-        itemId: pivot?.itemId ?? item,
-        page,
-        export: exportCSV,
-      };
-      const response = await fetch("/api/audit/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      if (refreshTime) {
+        const health = await api.GET('/health', { signal })
+        if (signal?.aborted) return false
+        const timestamp = (health.data ?? health.error)?.checkedAt
+        if (!timestamp) {
+          setError('无法读取服务器时间，请重试')
+          return false
+        }
+        setServerTime(timestamp)
+        next = withAuditRange(next, next.range, timestamp)
+      }
+      const response = await fetch('/api/audit/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: next.from + ':00Z',
+          to: next.to + ':00Z',
+          userIds: next.userIds,
+          organizationId: next.organizationId,
+          directory: next.directory,
+          action: next.action,
+          category: next.category || undefined,
+          includeSubdirectories: next.recursive,
+          failuresOnly: next.failures,
+          itemId: next.itemId,
+          page,
+          export: csv,
+        }),
+        signal,
+      })
       if (response.status === 401) {
-        redirectToSignIn();
-        return;
+        redirectToSignIn()
+        return false
       }
       if (!response.ok) {
-        setError(
-          response.status === 400
-            ? "时间范围必须精确到分钟且不超过 180 天"
-            : "查询失败（" + response.status + "）",
-        );
-        return;
+        setError(response.status === 400 ? '结束时间须晚于开始时间，且范围不超过 180 天（精确到分钟）'
+          : '查询失败（' + response.status + '）')
+        return false
       }
-      if (exportCSV) {
-        const url = URL.createObjectURL(await response.blob());
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "audit.csv";
-        a.click();
-        URL.revokeObjectURL(url);
-      } else setResult((await response.json()) as Results);
+      if (csv) {
+        const url = URL.createObjectURL(await response.blob())
+        const download = document.createElement('a')
+        download.href = url
+        download.download = 'audit.csv'
+        download.click()
+        URL.revokeObjectURL(url)
+      } else {
+        const nextResult = (await response.json()) as Results
+        if (signal?.aborted) return false
+        setResult(nextResult)
+        setFilters(next)
+        closeDetail(false)
+      }
+      return true
     } catch {
-      setError("无法连接服务");
+      if (!signal?.aborted) setError('无法连接服务')
+      return false
     } finally {
-      setBusy(false);
+      if (!signal?.aborted) setBusy(false)
     }
   }
-  return (
-    <section aria-label="审计记录" className="audit-panel">
-      <h2>审计记录</h2>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void query();
-        }}
-      >
-        <label>
-          开始时间（UTC）
-          <input
-            type="datetime-local"
-            required
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-          />
-        </label>
-        <label>
-          结束时间（UTC）
-          <input
-            type="datetime-local"
-            required
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-          />
-        </label>
-        <label>
-          人员
-          <select
-            multiple
-            value={users.split(",")}
-            onChange={(e) => {
-              setUsers(
-                Array.from(e.target.selectedOptions, (x) => x.value).join(","),
-              );
-              setOrg("");
-            }}
-          >
-            {Array.isArray(people) &&
-              people.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.username}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          组织（含下级）
-          <select
-            value={org}
-            onChange={(e) => {
-              setOrg(e.target.value);
-              setUsers("");
-            }}
-          >
-            <option value="">全部组织</option>
-            {Array.isArray(organizations) &&
-              organizations.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          历史目录
-          <input
-            list="audit-directories"
-            value={directory}
-            onChange={(e) => setDirectory(e.target.value)}
-          />
-        </label>
-        <datalist id="audit-directories">
-          {result?.directories.map((d) => (
-            <option key={d.path} value={d.path}>
-              {d.exists ? "当前目录" : "已不存在"}
-            </option>
-          ))}
-        </datalist>
-        <label>
-          <input
-            type="checkbox"
-            checked={recursive}
-            onChange={(e) => setRecursive(e.target.checked)}
-          />
-          包含子目录
-        </label>
-        <label>
-          动作类别
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            {[
-              ["", "全部动作"],
-              ["session", "登录"],
-              ["read", "查看与下载"],
-              ["write", "上传与修改"],
-              ["delete", "删除与恢复"],
-              ["grant", "授权变更"],
-              ["account", "账户"],
-            ].map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          动作
-          <input
-            value={action}
-            placeholder="例如 rename、download"
-            onChange={(e) => setAction(e.target.value)}
-          />
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={failures}
-            onChange={(e) => setFailures(e.target.checked)}
-          />
-          仅失败
-        </label>
-        {item !== undefined && (
-          <p>
-            项目历史：{item}{" "}
-            <button type="button" onClick={() => setItem(undefined)}>
-              清除项目筛选
-            </button>
-          </p>
-        )}
-        <button disabled={busy}>查询审计</button>
-        <button
-          type="button"
-          disabled={busy || !from || !to}
-          onClick={() => void query(1, true)}
-        >
-          导出 CSV
+
+  function openFilters(mode: 'more' | 'custom') {
+    setError('')
+    setDialog(mode)
+  }
+
+  const context = [
+    filters.userIds.length ? '人员 · ' + filters.userIds.map(id => userList.find(user => user.id === id)?.username ?? '#' + id).join('、') : '',
+    filters.organizationId ? '组织 · ' + (organizationList.find(org => org.id === filters.organizationId)?.name ?? '#' + filters.organizationId) : '',
+    filters.directory ? filters.directory + (filters.recursive ? '（含子目录）' : '（仅本层）') : '',
+    filters.action ? actionNames[filters.action] ?? filters.action : '',
+    filters.failures ? '只看失败' : '',
+    filters.itemId !== undefined ? '项目 #' + filters.itemId : '',
+  ].filter(Boolean)
+  const filtered = context.length > 0 || filters.range !== 'week' || !!filters.category
+
+  return <section aria-label="审计记录" className="audit-panel">
+    <PageHeading title="审计日志" actions={
+      <>
+        <button type="button" className="ghost" disabled={busy} onClick={() => void query(filters, {
+          refreshTime: !filters.from || filters.range !== 'custom',
+        })}><RefreshCw size={16} />刷新</button>
+        <button type="button" disabled={busy || !result} onClick={() => void query(filters, { csv: true })}>
+          <Download size={16} />导出 CSV
         </button>
-      </form>
-      {error && <p role="alert">{error}</p>}
-      {result && (
-        <>
-          <p role="status">
-            共 {result.total} 条记录，第 {result.page} 页
-          </p>
+      </>
+    } />
+    <div className="audit-toolbar" role="group" aria-label="审计筛选">
+      <select aria-label="时间范围" value={filters.range} disabled={busy || !filters.from} onChange={event => {
+        const range = event.target.value as AuditFilters['range']
+        if (range === 'custom') openFilters('custom')
+        else void query(withAuditRange(filters, range, serverTime), { refreshTime: true })
+      }}>
+        {Object.entries(auditRanges).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
+      <select aria-label="操作类别" value={filters.category} disabled={busy || !filters.from} onChange={event =>
+        void query({ ...filters, category: event.target.value as AuditFilters['category'], action: '' })}>
+        <option value="">全部操作类别</option>
+        {Object.entries(auditCategories).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
+      <button type="button" aria-haspopup="dialog" disabled={busy || !filters.from} onClick={() => openFilters('more')}>
+        <SlidersHorizontal size={16} />更多筛选
+      </button>
+      {filtered && <button className="ghost audit-reset" type="button" disabled={busy} onClick={() =>
+        void query(defaultAuditFilters, { refreshTime: true })}>重置</button>}
+    </div>
+    {context.length > 0 && <ul className="audit-applied" aria-label="已应用的筛选">
+      {context.map((value, index) => <li key={index} title={value}>{value}</li>)}
+    </ul>}
+    {dialog && <AuditFilterDialog filters={dialog === 'custom' ? { ...filters, range: 'custom' } : filters}
+      serverTime={serverTime} people={userList} organizations={organizationList} directories={result?.directories ?? []}
+      busy={busy} error={error} close={() => { setDialog(undefined); setError('') }}
+      apply={query} />}
+    {error && !dialog && <p className="banner error audit-feedback" role="alert">{error}</p>}
+    {!result && busy && <p className="audit-feedback muted" role="status">正在加载审计记录…</p>}
+    <div className={detail ? 'audit-results has-detail' : 'audit-results'}>
+      {result && <div className="audit-list" aria-busy={busy}>
+        <div className="audit-result-meta">
+          <p role="status">共 {result.total.toLocaleString('zh-CN')} 条记录</p>
+          <span>{filters.from.replace('T', ' ')} 至 {filters.to.replace('T', ' ')} UTC</span>
+        </div>
+        <div className="audit-table" tabIndex={0} role="region" aria-label="审计记录表">
           <table>
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>人员</th>
-                <th>动作</th>
-                <th>历史路径</th>
-                <th>结果</th>
-                <th>详情</th>
-              </tr>
-            </thead>
+            <thead><tr>
+              <th scope="col">时间</th><th scope="col">用户</th><th scope="col">来源 IP</th><th scope="col">操作</th>
+              <th scope="col">对象（当时路径）</th><th scope="col">结果</th><th scope="col"><span className="visually-hidden">详情</span></th>
+            </tr></thead>
             <tbody>
-              {result.events.map((e) => (
-                <tr key={e.time + "-" + e.id}>
-                  <td>{e.time}</td>
-                  <td>{e.username}</td>
-                  <td>{e.action}</td>
-                  <td>{e.path}</td>
-                  <td>{e.outcome === "success" ? "成功" : "失败"}</td>
-                  <td>
-                    <button onClick={() => setDetail(e)}>查看详情</button>
-                  </td>
-                </tr>
-              ))}
+              {result.events.map(event => <tr key={event.time + '-' + event.id} className={detail?.id === event.id ? 'selected' : undefined}>
+                <td className="audit-time-cell"><time dateTime={event.time} title={event.time}>{event.time.replace('T', ' ').slice(5, 19)}</time></td>
+                <td>{event.username || '—'}</td>
+                <td className="audit-time-cell">{event.sourceIp || '—'}</td>
+                <td title={event.action}>{actionNames[event.action] ?? event.action}</td>
+                <td className="audit-object"><span title={event.path}>{event.path || (event.action === 'zip_download' ? archivePaths(event).length + ' 个文件' : '—')}</span></td>
+                <td className={event.outcome === 'success' ? 'muted' : 'bad'}>{event.outcome === 'success' ? '成功' : '失败'}</td>
+                <td><button className="ghost icon" data-panel-trigger aria-label="查看详情" title="查看详情"
+                  aria-expanded={detail?.id === event.id} onClick={click => {
+                    detailTrigger.current = click.currentTarget
+                    setDetail(event)
+                  }}>
+                  <ChevronRight size={16} />
+                </button></td>
+              </tr>)}
+              {!result.events.length && <tr><td colSpan={7} className="audit-empty">没有符合当前条件的记录</td></tr>}
             </tbody>
           </table>
-          <button
-            disabled={busy || result.page <= 1}
-            onClick={() => void query(result.page - 1)}
-          >
-            上一页
-          </button>
-          <button
-            disabled={busy || result.page * 50 >= result.total}
-            onClick={() => void query(result.page + 1)}
-          >
-            下一页
-          </button>
-        </>
-      )}
-      {detail && (
-        <aside aria-label="审计详情">
-          <button onClick={() => setDetail(undefined)}>关闭详情</button>
-          <p>
-            {detail.username} · {detail.time} · {detail.sourceIp}
-          </p>
-          <p>
-            {detail.action} · {detail.outcome === "success" ? "成功" : "失败"} ·
-            项目 {detail.itemId ?? "—"}
-          </p>
-          <p>{detail.path}</p>
-          <pre>{JSON.stringify(detail.detail, null, 2)}</pre>
-          {detail.userId !== null && (
-            <button
-              onClick={() => {
-                setUsers(String(detail.userId));
-                setOrg("");
-                void query(1, false, { userId: detail.userId! });
-              }}
-            >
-              仅此人员
-            </button>
-          )}
-          {detail.path && (
-            <button
-              onClick={() => {
-                const d =
-                  detail.path.slice(0, detail.path.lastIndexOf("/")) || "/";
-                setDirectory(d);
-                void query(1, false, { directory: d });
-              }}
-            >
-              仅此目录
-            </button>
-          )}
-          {detail.itemId !== null && (
-            <button
-              onClick={() => {
-                setItem(detail.itemId!);
-                setUsers("");
-                setOrg("");
-                setAction("");
-                setCategory("");
-                setFailures(false);
-                setDirectory("");
-                void query(1, false, { itemId: detail.itemId!, directory: "" });
-              }}
-            >
-              此项目完整历史
-            </button>
-          )}
-        </aside>
-      )}
-    </section>
-  );
+        </div>
+        {result.total > 50 && <div className="audit-pagination">
+          <span className="muted">第 {result.page} / {Math.ceil(result.total / 50)} 页</span>
+          <button disabled={busy || result.page <= 1} onClick={() => void query(filters, { page: result.page - 1 })}>上一页</button>
+          <button disabled={busy || result.page * 50 >= result.total} onClick={() => void query(filters, { page: result.page + 1 })}>下一页</button>
+        </div>}
+      </div>}
+      {detail && <aside ref={detailPanel} className="audit-details panel" aria-label="审计详情">
+        <div className="drawer-heading"><h2>审计详情</h2>
+          <button ref={detailClose} className="ghost icon" aria-label="关闭详情" onClick={() => closeDetail()}><X size={16} /></button>
+        </div>
+        <dl>
+          <dt>时间</dt><dd><time dateTime={detail.time}>{detail.time.replace('T', ' ').slice(0, 19)} UTC</time></dd>
+          <dt>用户</dt><dd>{detail.username || '—'}</dd>
+          <dt>来源 IP</dt><dd>{detail.sourceIp || '—'}</dd>
+          <dt>操作</dt><dd>{actionNames[detail.action] ?? detail.action}</dd>
+          <dt>结果</dt><dd>{detail.outcome === 'success' ? '成功' : '失败'}</dd>
+          <dt>记录编号</dt><dd>#{detail.id}</dd>
+          {detail.itemId !== null && <><dt>项目编号</dt><dd>#{detail.itemId}</dd></>}
+          {detail.path && <><dt>当时路径</dt><dd>{detail.path}</dd></>}
+        </dl>
+        {detail.action === 'zip_download' ? <>
+          <h3>压缩包文件</h3><ul>{archivePaths(detail).map(path => <li key={path}>{path}</li>)}</ul>
+        </> : <details><summary>事件数据</summary><pre>{JSON.stringify(detail.detail, null, 2)}</pre></details>}
+        <div className="audit-detail-actions">
+          {detail.userId !== null && <button disabled={busy} onClick={() => void query({
+            ...filters, userIds: [detail.userId!], organizationId: undefined, itemId: undefined,
+          })}>仅此人员</button>}
+          {detail.path && <button disabled={busy} onClick={() => void query({
+            ...filters, directory: detail.path.slice(0, detail.path.lastIndexOf('/')) || '/', itemId: undefined,
+          })}>仅此目录</button>}
+          {detail.itemId !== null && <button disabled={busy} onClick={() => void query({
+            ...defaultAuditFilters, range: filters.range, from: filters.from, to: filters.to, itemId: detail.itemId!,
+          })}>此项目完整历史</button>}
+        </div>
+      </aside>}
+    </div>
+  </section>
 }

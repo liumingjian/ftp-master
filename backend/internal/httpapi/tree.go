@@ -12,6 +12,7 @@ import (
 	"github.com/liumingjian/ftp-master/backend/internal/tree"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func (s *Server) treeSnapshot(ctx context.Context, q *sqlcdb.Queries) (*tree.Snapshot, error) {
@@ -60,15 +61,22 @@ func (s *Server) ListTree(ctx context.Context, r api.ListTreeRequestObject) (api
 			result = append(result, treeResponse(n, snap))
 		}
 	}
+	return result, s.attachLatestVersions(ctx, result)
+}
+
+func (s *Server) attachLatestVersions(ctx context.Context, result []api.TreeNode) error {
 	ids := make([]int64, 0, len(result))
 	for _, n := range result {
 		if n.IsFile && n.Rights&int(permission.Browse) != 0 {
 			ids = append(ids, n.Id)
 		}
 	}
+	if len(ids) == 0 {
+		return nil
+	}
 	versions, err := sqlcdb.New(s.membership.Pool).ListLatestTreeVersions(ctx, ids)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	byFile := make(map[int64]sqlcdb.ListLatestTreeVersionsRow, len(versions))
 	for _, v := range versions {
@@ -77,13 +85,15 @@ func (s *Server) ListTree(ctx context.Context, r api.ListTreeRequestObject) (api
 	for i := range result {
 		if v, ok := byFile[result[i].Id]; ok {
 			result[i].LatestVersion = &struct {
-				Format string `json:"format"`
-				Id     int64  `json:"id"`
-				Size   int64  `json:"size"`
-			}{Format: v.Format, Id: v.ID, Size: v.Size}
+				CreatedAt *time.Time `json:"createdAt,omitempty"`
+				Format    string     `json:"format"`
+				Id        int64      `json:"id"`
+				Size      int64      `json:"size"`
+				Username  *string    `json:"username,omitempty"`
+			}{CreatedAt: &v.CreatedAt.Time, Format: v.Format, Id: v.ID, Size: v.Size, Username: &v.Username}
 		}
 	}
-	return result, nil
+	return nil
 }
 func (s *Server) GetTreeNode(ctx context.Context, r api.GetTreeNodeRequestObject) (api.GetTreeNodeResponseObject, error) {
 	snap, err := s.treeSnapshot(ctx, sqlcdb.New(s.membership.Pool))
@@ -94,7 +104,11 @@ func (s *Server) GetTreeNode(ctx context.Context, r api.GetTreeNodeRequestObject
 		return err.(membershipFailure), nil
 	}
 	n, _ := snap.Node(r.Id)
-	return api.GetTreeNode200JSONResponse(treeResponse(n, snap)), nil
+	result := []api.TreeNode{treeResponse(n, snap)}
+	if err := s.attachLatestVersions(ctx, result); err != nil {
+		return nil, err
+	}
+	return api.GetTreeNode200JSONResponse(result[0]), nil
 }
 
 // Tree mutations serialize authorization, writes, and their Audit Event together.

@@ -1,18 +1,17 @@
 import { expect, test } from '@playwright/test'
 import { ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD, signIn } from './signin'
+import { createAndOpenFolder } from './explorer'
 
 test('selected items start one native ZIP download without an in-app transfer message', async ({ page }) => {
   await page.goto('/sign-in')
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
   const panel = page.getByRole('region', { name: '共享目录' })
   const dir = `ZIP-${Date.now()}`
-  await panel.getByLabel('目录名称').fill(dir)
-  await panel.getByRole('button', { name: '创建目录' }).click()
-  await panel.getByRole('button', { name: dir, exact: true }).click()
+  await createAndOpenFolder(page, dir)
   await panel.getByLabel('上传文件', {exact:true}).setInputFiles({ name: 'hello.txt', mimeType: 'text/plain', buffer: Buffer.from('ZIP bytes') })
   await expect(panel.getByRole('status', {name:'上传进度'})).toContainText('上传完成')
   const zipPanel = panel.getByRole('region', {name:'打包下载',exact:true})
-  await zipPanel.getByRole('checkbox', {name:'hello.txt'}).check()
+  await panel.getByRole('checkbox', {name:'hello.txt'}).check()
   const pending = page.waitForEvent('download')
   await zipPanel.getByRole('button', {name:'打包下载所选项目'}).click()
   const download = await pending

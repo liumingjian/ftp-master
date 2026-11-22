@@ -84,6 +84,9 @@ with content. Metadata comes from the latest immutable File Version in one
 batched query per listing. It is never inferred from the current filename.
 The browser shows an entry only for a file with Modify, a supported actual
 format (`doc`, `docx`, `wps`, `xls`, `xlsx`), and size at most 26,214,400 bytes.
+The file list currently shows a disabled edit icon for eligible files. In the
+file viewer and item details, an otherwise eligible file shows a disabled edit
+control explaining that the WPS extension is required when the marker is unavailable.
 Missing metadata hides the entry. The explicit version is submitted to start,
 so a concurrent upload cannot silently change the document selected by a click.
 
