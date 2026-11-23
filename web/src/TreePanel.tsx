@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type ReactNode } from 'react'
 import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, Eye, FolderOpen, FolderPlus, History, MoreHorizontal, PanelLeft, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { TextEditor } from './TextEditor'
@@ -16,6 +16,9 @@ import { FileIcon, fileTypeLabel, formatSize } from './FileIcon'
 import { api } from './api/client'
 import { loadAncestors, loadBranches } from './treePath'
 import { usePanelDismissal } from './usePanelDismissal'
+import { InfoDetails, InlineDetails, PreviewDetails, PrototypeSwitcher, SidebarDetails,
+  prototypeEnabled, readDetailsVariant, type DetailsVariant } from './FileDetailsPrototype'
+import { sampleFileId } from './fileDetailsPrototype.fixture'
 import type { components } from './api/schema.gen'
 
 type Node = components['schemas']['TreeNode']
@@ -28,6 +31,7 @@ const DELETE = 16
 const GRANT = 32
 
 type SortKey = 'name' | 'size' | 'username' | 'createdAt'
+const prototypeLayouts = { sidebar: SidebarDetails, info: InfoDetails, preview: PreviewDetails, inline: InlineDetails }
 const modalDetailViewport = '(max-width: 1040px)'
 type Props = {
   administrator: boolean
@@ -74,7 +78,9 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const [uploadStatus, setUploadStatus] = useState<Record<string, boolean>>({})
   const [uploadPaths, setUploadPaths] = useState<Node[][]>([])
   const [directoryOpen, setDirectoryOpen] = useState(false)
-  const [modalDetail, setModalDetail] = useState(() => window.matchMedia(modalDetailViewport).matches)
+  const [inlineColumns, setInlineColumns] = useState(6)
+  const [variant, setVariant] = useState<DetailsVariant>(() => prototypeEnabled ? readDetailsVariant() : 'current')
+  const [narrowDetail, setNarrowDetail] = useState(() => window.matchMedia(modalDetailViewport).matches)
   const [dropZone, setDropZone] = useState<HTMLDivElement | null>(null)
   const [dragTarget, setDragTarget] = useState(false)
   const [taskLabels, setTaskLabels] = useState<Record<string, string>>({})
@@ -119,15 +125,24 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const failed = query ? searchFailed : loadFailed
   const EmptyIcon = query ? Search : FolderOpen
   const detailId = selectedNode?.id
-  const drawer = usePanelDismissal(browsing && (!!detail || action === 'create'), closeDrawer, !action)
+  const Layout = variant === 'current' ? null : prototypeLayouts[variant]
+  const modalDetail = variant !== 'inline' && (narrowDetail || variant === 'info' || variant === 'preview')
+  const drawer = usePanelDismissal(browsing && (!!detail || action === 'create'), closeDrawer, !action && variant === 'current')
   const DetailContainer = modalDetail ? 'dialog' : 'aside'
   const scrollKey = JSON.stringify([hash, query])
 
   useEffect(() => {
     const viewport = window.matchMedia(modalDetailViewport)
-    const update = () => setModalDetail(viewport.matches)
+    const update = () => setNarrowDetail(viewport.matches)
     viewport.addEventListener('change', update)
     return () => viewport.removeEventListener('change', update)
+  }, [])
+
+  useEffect(() => {
+    if (!prototypeEnabled) return
+    const syncVariant = () => setVariant(readDetailsVariant())
+    window.addEventListener('popstate', syncVariant)
+    return () => window.removeEventListener('popstate', syncVariant)
   }, [])
 
   useLayoutEffect(() => {
@@ -137,11 +152,25 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   }, [browsing, pending, scrollKey])
 
   useLayoutEffect(() => {
+    if (variant !== 'inline' || pending || !browsing) return
+    const table = explorerRef.current?.querySelector('.file-table')
+    if (!table) return
+    const headers = table.querySelectorAll('thead th')
+    function updateColumns() {
+      setInlineColumns(Array.from(headers).filter(header => header.getClientRects().length > 0).length)
+    }
+    updateColumns()
+    const observer = new ResizeObserver(updateColumns)
+    observer.observe(table)
+    return () => observer.disconnect()
+  }, [variant, pending, browsing])
+
+  useLayoutEffect(() => {
     if (!detailId || !browsing) return
     const panel = drawer.current
     if (panel instanceof HTMLDialogElement && !panel.open) panel.showModal()
     detailCloseButton.current?.focus()
-  }, [detailId, browsing, modalDetail, drawer])
+  }, [detailId, browsing, modalDetail, drawer, variant])
 
   useEffect(() => {
     const root = document.documentElement
@@ -196,7 +225,10 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
         const ancestors = await loadAncestors(node, controller.signal)
         if (controller.signal.aborted) return
         setPath(node.isFile ? ancestors : [...ancestors, node])
-        if (node.isFile) setViewedFile(node)
+        if (node.isFile) {
+          if (prototypeEnabled) setDetail({ node, mode: 'info' })
+          else setViewedFile(node)
+        }
       } catch {
         if (!controller.signal.aborted) {
           setPath([])
@@ -325,7 +357,10 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     if (drawer.current instanceof HTMLDialogElement) drawer.current.close()
     setDetail(undefined)
     setAction(undefined)
-    if (restoreFocus) drawerTrigger.current?.focus()
+    if (restoreFocus) {
+      const trigger = drawerTrigger.current ?? (prototypeEnabled && detailId ? document.getElementById(`detail-trigger-${detailId}`) : null)
+      trigger?.focus()
+    }
     drawerTrigger.current = null
   }
 
@@ -379,7 +414,103 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     }
   }
 
+  function changeVariant(next: DetailsVariant) {
+    const url = new URL(window.location.href)
+    url.searchParams.set('variant', next)
+    window.history.replaceState(null, '', url)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    setAction(undefined)
+    const node = selectedNode ?? nodes.find(item => item.id === sampleFileId)
+    if (node) setDetail({ node, mode: 'info' })
+  }
+
   const hasGrant = current?.rights && current.rights & GRANT
+  const prototypeSwitcher = prototypeEnabled && <PrototypeSwitcher variant={variant} change={changeVariant} />
+  const detailTools = selectedNode && <div className="detail-actions inspector-tools">
+    {variant === 'preview' && detail?.mode === 'info' && !action ? null : previewOffice ? <a className="button primary" href={`/api/files/${selectedNode.id}/office-edits`}
+      data-ftp-office-preview="1" data-ftp-office-version={selectedNode.latestVersion?.id} onClick={event => event.preventDefault()}>
+      <Eye size={16} />预览</a> : previewAvailable && <button className="primary" onClick={() => setViewedFile(selectedNode)}>
+      <Eye size={16} />预览</button>}
+    {selectedNode.isFile && !!(selectedNode.rights & DOWNLOAD) && <a className={previewAvailable ? 'button' : 'button primary'}
+      href={`/api/tree/${selectedNode.id}/download`} download><Download size={16} />下载</a>}
+    <details className="inspector-more" onBlur={event => {
+      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false
+    }} onKeyDown={event => {
+      if (event.key !== 'Escape' || !event.currentTarget.open || (event.target as Element).closest('.text-dialog')) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.currentTarget.open = false
+      event.currentTarget.querySelector('summary')?.focus()
+    }}>
+      <summary className="button" aria-label="更多操作"><MoreHorizontal size={16} />更多</summary>
+      <div className="popup">
+        <OfficeEditAction node={selectedNode} officePlugin={officePlugin} onOpen={trackOfficeEdit} />
+        {selectedNode.isFile && <TextEditor node={selectedNode} saved={() => refresh(value => value + 1)} />}
+        <CopyItemLink node={selectedNode} />
+        {!!(selectedNode.rights & MODIFY) && <button onClick={() => { setFormError(''); setAction('rename') }}>重命名</button>}
+        {canMoveSelected && <button aria-label={`移动 ${selectedNode.name}`} onClick={() => setAction('move')}>移动</button>}
+      </div>
+    </details>
+  </div>
+  const detailLinks = selectedNode && <nav className="inspector-links" aria-label="项目详情视图">
+    {selectedNode.isFile && !!(selectedNode.rights & BROWSE) && <button className="ghost"
+      onClick={() => setDetail({ node: selectedNode, mode: 'versions' })}><History size={16} />版本历史<ChevronRight size={16} /></button>}
+    <button className="ghost" onClick={() => setDetail({ node: selectedNode, mode: 'permission' })}>
+      <ShieldCheck size={16} />我的权限<small>{grantedRights.length > 2
+        ? `${grantedRights.length} 项权限`
+        : grantedRights.join('、') || rightsLabel(selectedNode)}</small><ChevronRight size={16} /></button>
+  </nav>
+  const detailPanel = detail && selectedNode && action !== 'create' && <DetailContainer ref={panel => { drawer.current = panel }}
+    className={'drawer file-details' + (Layout ? ' prototype-details prototype-' + variant : '')}
+    aria-label="项目详情" key={selectedNode.id + ':' + variant} onCancel={event => {
+      if (event.target !== event.currentTarget) return
+      event.preventDefault()
+      closeDrawer()
+    }} onClick={event => {
+      if (!modalDetail || action || event.target !== event.currentTarget) return
+      const bounds = event.currentTarget.getBoundingClientRect()
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeDrawer()
+    }}>
+    {Layout && !action && detail.mode === 'info' ? <Layout node={selectedNode} path={parentLabel}
+      modified={selectedNode.latestVersion?.createdAt && formatFileTime(selectedNode.latestVersion.createdAt, true)}
+      permissions={grantedRights.join('、') || rightsLabel(selectedNode)}
+      tools={detailTools} links={detailLinks} close={() => closeDrawer()} closeRef={detailCloseButton} /> : <>
+      {action === 'rename' ? <form className="stack inspector-rename" onSubmit={event => void saveName(event, selectedNode)}>
+        <label>新名称<input name="name" defaultValue={selectedNode.name} autoFocus readOnly={formBusy} required maxLength={255} /></label>
+        {formError && <p className="bad" role="alert">{formError}</p>}
+        <div className="detail-actions">
+          <button className="primary" disabled={formBusy}>{formBusy ? '正在保存…' : '保存名称'}</button>
+          <button type="button" disabled={formBusy} onClick={() => setAction(undefined)}>取消</button>
+        </div>
+      </form> : <header className="file-details-header">
+        <DrawerHeading title={selectedNode.name} node={selectedNode} close={() => closeDrawer()} closeRef={detailCloseButton} />
+        <p>{fileTypeLabel(selectedNode)}{selectedNode.latestVersion && ` · ${formatSize(selectedNode.latestVersion.size)}`}</p>
+      </header>}
+      {action === 'move' ? <MovePicker node={selectedNode} administrator={administrator}
+        close={() => setAction(undefined)} moved={parentId => {
+          movedItem.current = { id: selectedNode.id, parentId: parentId ?? ROOT, previousListing: branches[parentId ?? ROOT] }
+          openFolder(parentId ?? ROOT)
+          update('项目已移动')
+        }} /> : action === 'rename' ? null : detail.mode === 'versions' ? <VersionsPanel node={selectedNode}
+        restored={() => refresh(v => v + 1)} close={() => setDetail({ node: selectedNode, mode: 'info' })} />
+        : detail.mode === 'permission' ? <>
+          <button className="ghost inspector-back" onClick={() => setDetail({ node: selectedNode, mode: 'info' })}><ArrowLeft size={16} />返回文件详情</button>
+          <dl className="file-metadata"><dt>我的权限</dt><dd>{grantedRights.join('、') || rightsLabel(selectedNode)}</dd></dl>
+          <PermissionInspection node={selectedNode} administrator={administrator} />
+          {!!(selectedNode.rights & GRANT) && <button onClick={() => showGrants(selectedNode.id)}>管理权限</button>}
+        </> : <>
+        {detailTools}
+        <dl className="file-metadata">
+          {parentLabel && <><dt>所在位置</dt><dd>{parentLabel === '/' ? '共享目录' : parentLabel}</dd></>}
+          {selectedNode.latestVersion?.createdAt && <><dt>修改时间</dt><dd><time dateTime={selectedNode.latestVersion.createdAt}>
+            {formatFileTime(selectedNode.latestVersion.createdAt, true)}</time></dd></>}
+          {selectedNode.latestVersion?.username && <><dt>修改人</dt><dd>{selectedNode.latestVersion.username}</dd></>}
+        </dl>
+        {detailLinks}
+      </>}
+    </>}
+    {modalDetail && prototypeSwitcher}
+  </DetailContainer>
   return <>
     <DirectorySidebar visible={active && !grantId} browsing={browsing && !query} rootSelected={browsing && !query && !current}
       recycle={recycle} recycleHref={recycleHref} openRecycle={openRecycle} openFolder={openFolder}
@@ -389,7 +520,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     <main className="shell-main explorer" ref={explorerRef} hidden={!browsing} onScroll={event => {
       if (browsing && !pending && restoredLocation.current === scrollKey) scrollPositions.current.set(scrollKey, event.currentTarget.scrollTop)
     }}>
-      <div className={selectedNode ? 'explorer-workspace has-details' : 'explorer-workspace'}>
+      <div className={selectedNode && (variant === 'current' || variant === 'sidebar') ? 'explorer-workspace has-details' : 'explorer-workspace'}>
       <section aria-label="共享目录">
         <nav className="breadcrumbs" aria-label="目录路径">
           <button className="directory-trigger" aria-haspopup="dialog" aria-expanded={directoryOpen} aria-controls="file-directories"
@@ -493,7 +624,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                 </tr>
               })}
               {pending ? <tr><td colSpan={6} className="table-loading" role="status">正在加载…</td></tr> :
-                !failed && rows.map(node => <tr key={node.id} className={selectedIds.includes(node.id) ? 'selected' : undefined}
+                !failed && rows.map(node => <Fragment key={node.id}><tr className={selectedIds.includes(node.id) ? 'selected' : undefined}
                   data-detail-open={selectedNode?.id === node.id || undefined}>
                   <td><input type="checkbox" aria-label={node.name} checked={selectedIds.includes(node.id)}
                     onChange={event => setSelected(ids => event.target.checked ? [...ids, node.id] : ids.filter(id => id !== node.id))} /></td>
@@ -535,7 +666,11 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                       setDetail({ node, mode: 'info' })
                     }}><MoreHorizontal size={16} /></button>
                   </div></td>
-                </tr>)}
+                </tr>
+                  {variant === 'inline' && detailId === node.id && <tr className="prototype-inline-row">
+                    <td colSpan={inlineColumns}>{detailPanel}</td>
+                  </tr>}
+                </Fragment>)}
             </tbody>
           </table>
           {!pending && (failed || !rows.length) && (
@@ -575,82 +710,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
           <button className="primary" disabled={formBusy}>{formBusy ? '正在创建…' : '创建目录'}</button>
         </form>
       </section>}
-      {detail && selectedNode && action !== 'create' && <DetailContainer ref={panel => { drawer.current = panel }}
-        className="drawer file-details" aria-label="项目详情" key={selectedNode.id} onCancel={event => {
-          if (event.target !== event.currentTarget) return
-          event.preventDefault()
-          closeDrawer()
-        }} onClick={event => {
-          if (!modalDetail || action || event.target !== event.currentTarget) return
-          const bounds = event.currentTarget.getBoundingClientRect()
-          if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeDrawer()
-        }}>
-        {action === 'rename' ? <form className="stack inspector-rename" onSubmit={event => void saveName(event, selectedNode)}>
-          <label>新名称<input name="name" defaultValue={selectedNode.name} autoFocus readOnly={formBusy} required maxLength={255} /></label>
-          {formError && <p className="bad" role="alert">{formError}</p>}
-          <div className="detail-actions">
-            <button className="primary" disabled={formBusy}>{formBusy ? '正在保存…' : '保存名称'}</button>
-            <button type="button" disabled={formBusy} onClick={() => setAction(undefined)}>取消</button>
-          </div>
-        </form> : <header className="file-details-header">
-          <DrawerHeading title={selectedNode.name} node={selectedNode} close={() => closeDrawer()} closeRef={detailCloseButton} />
-          <p>{fileTypeLabel(selectedNode)}{selectedNode.latestVersion && ` · ${formatSize(selectedNode.latestVersion.size)}`}</p>
-        </header>}
-        {action === 'move' ? <MovePicker node={selectedNode} administrator={administrator}
-          close={() => setAction(undefined)} moved={parentId => {
-            movedItem.current = { id: selectedNode.id, parentId: parentId ?? ROOT, previousListing: branches[parentId ?? ROOT] }
-            openFolder(parentId ?? ROOT)
-            update('项目已移动')
-          }} /> : action === 'rename' ? null : detail.mode === 'versions' ? <VersionsPanel node={selectedNode}
-          restored={() => refresh(v => v + 1)} close={() => setDetail({ node: selectedNode, mode: 'info' })} />
-          : detail.mode === 'permission' ? <>
-            <button className="ghost inspector-back" onClick={() => setDetail({ node: selectedNode, mode: 'info' })}><ArrowLeft size={16} />返回文件详情</button>
-            <dl className="file-metadata"><dt>我的权限</dt><dd>{grantedRights.join('、') || rightsLabel(selectedNode)}</dd></dl>
-            <PermissionInspection node={selectedNode} administrator={administrator} />
-            {!!(selectedNode.rights & GRANT) && <button onClick={() => showGrants(selectedNode.id)}>管理权限</button>}
-          </> : <>
-          <div className="detail-actions inspector-tools">
-            {previewOffice ? <a className="button primary" href={`/api/files/${selectedNode.id}/office-edits`}
-              data-ftp-office-preview="1" data-ftp-office-version={selectedNode.latestVersion?.id} onClick={event => event.preventDefault()}>
-              <Eye size={16} />预览</a> : previewAvailable && <button className="primary" onClick={() => setViewedFile(selectedNode)}>
-              <Eye size={16} />预览</button>}
-            {selectedNode.isFile && !!(selectedNode.rights & DOWNLOAD) && <a className={previewAvailable ? 'button' : 'button primary'}
-              href={`/api/tree/${selectedNode.id}/download`} download><Download size={16} />下载</a>}
-            <details className="inspector-more" onBlur={event => {
-              if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false
-            }} onKeyDown={event => {
-              if (event.key !== 'Escape' || !event.currentTarget.open || (event.target as Element).closest('.text-dialog')) return
-              event.preventDefault()
-              event.stopPropagation()
-              event.currentTarget.open = false
-              event.currentTarget.querySelector('summary')?.focus()
-            }}>
-              <summary className="button" aria-label="更多操作"><MoreHorizontal size={16} />更多</summary>
-              <div className="popup">
-                <OfficeEditAction node={selectedNode} officePlugin={officePlugin} onOpen={trackOfficeEdit} />
-                {selectedNode.isFile && <TextEditor node={selectedNode} saved={() => refresh(value => value + 1)} />}
-                <CopyItemLink node={selectedNode} />
-                {!!(selectedNode.rights & MODIFY) && <button onClick={() => { setFormError(''); setAction('rename') }}>重命名</button>}
-                {canMoveSelected && <button aria-label={`移动 ${selectedNode.name}`} onClick={() => setAction('move')}>移动</button>}
-              </div>
-            </details>
-          </div>
-          <dl className="file-metadata">
-            {parentLabel && <><dt>所在位置</dt><dd>{parentLabel === '/' ? '共享目录' : parentLabel}</dd></>}
-            {selectedNode.latestVersion?.createdAt && <><dt>修改时间</dt><dd><time dateTime={selectedNode.latestVersion.createdAt}>
-              {formatFileTime(selectedNode.latestVersion.createdAt, true)}</time></dd></>}
-            {selectedNode.latestVersion?.username && <><dt>修改人</dt><dd>{selectedNode.latestVersion.username}</dd></>}
-          </dl>
-          <nav className="inspector-links" aria-label="项目详情视图">
-            {selectedNode.isFile && !!(selectedNode.rights & BROWSE) && <button className="ghost"
-              onClick={() => setDetail({ node: selectedNode, mode: 'versions' })}><History size={16} />版本历史<ChevronRight size={16} /></button>}
-            <button className="ghost" onClick={() => setDetail({ node: selectedNode, mode: 'permission' })}>
-              <ShieldCheck size={16} />我的权限<small>{grantedRights.length > 2
-                ? `${grantedRights.length} 项权限`
-                : grantedRights.join('、') || rightsLabel(selectedNode)}</small><ChevronRight size={16} /></button>
-          </nav>
-        </>}
-      </DetailContainer>}
+      {variant !== 'inline' && detailPanel}
       </div>
       {browsing && viewerNode && <FileViewer key={viewerNode.id} node={viewerNode} officePreview={officePreview}
         close={() => setViewedFile(undefined)} saved={() => refresh(value => value + 1)} />}
@@ -661,6 +721,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     {active && grantId && grantNode?.id !== grantId && <main className="shell-main"><button onClick={() => navigate(hash)}>返回目录</button></main>}
     {grantNode && <main className="shell-main" hidden={!active || grantNode.id !== grantId}><GrantsPanel key={grantNode.id} administrator={administrator} node={grantNode} onDirtyChange={setGrantDirty}
       close={() => { navigate(hash); refresh(v => v + 1) }} /></main>}
+    {(!browsing || !selectedNode || !modalDetail || action === 'create') && prototypeSwitcher}
     {active && message && <div className="toast">
       <span role="status">{message}</span>
       {message.endsWith('」已移入回收站') && <a href={recycleHref} onClick={event => {
