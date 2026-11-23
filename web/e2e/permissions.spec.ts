@@ -75,9 +75,11 @@ test('non-admin search uses Delete on each result’s source directory', async (
     const detail = reader.getByRole('complementary', { name: '项目详情' })
     await table.getByRole('button', { name: '详情与操作 ' + fixedFile }).click()
     await expect(detail.getByRole('heading', { name: fixedFile })).toBeVisible()
+    await detail.getByLabel('更多操作').click()
     await expect(detail.getByRole('button', { name: '移动 ' + fixedFile })).toHaveCount(0)
     await detail.getByRole('button', { name: '关闭详情' }).click()
     await table.getByRole('button', { name: '详情与操作 ' + movableFile }).click()
+    await detail.getByLabel('更多操作').click()
     await expect(detail.getByRole('button', { name: '移动 ' + movableFile })).toBeVisible()
   } finally {
     await reader.close()
@@ -159,6 +161,7 @@ test('creator handover distinguishes namesakes and applies only the saved draft'
   const file = '移交测试.txt'
   await upload(page, parent, file)
   await page.getByRole('button', {name: '详情与操作 ' + file}).click()
+  await page.getByRole('button', {name:/我的权限/}).click()
   await page.getByRole('button', {name:'管理权限', exact:true}).click()
   await page.getByRole('button', {name:'转移创建者'}).click()
   const form = page.getByRole('group', {name:'转移创建者'})

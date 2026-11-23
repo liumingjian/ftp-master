@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type ReactNode } from 'react'
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, Eye, FolderOpen, FolderPlus, History, MoreHorizontal, PanelLeft, Search, ShieldCheck, Upload, X } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, Eye, FolderOpen, FolderPlus, History, MoreHorizontal, PanelLeft, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { TextEditor } from './TextEditor'
 import { copiedItemId, CopyItemLink, previewKind } from './BrowseTools'
@@ -12,7 +12,7 @@ import { DirectorySidebar } from './DirectorySidebar'
 import { FolderUpload } from './FolderUpload'
 import { UploadRow, type FileUploadState } from './UploadRow'
 import { GrantsPanel, PermissionInspection, rights } from './GrantsPanel'
-import { FileIcon, formatSize } from './FileIcon'
+import { FileIcon, fileTypeLabel, formatSize } from './FileIcon'
 import { api } from './api/client'
 import { loadAncestors, loadBranches } from './treePath'
 import { usePanelDismissal } from './usePanelDismissal'
@@ -59,6 +59,8 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const [searching, setSearching] = useState(false)
   const [searchFailed, setSearchFailed] = useState(false)
   const [sort, setSort] = useState<{ key: SortKey; descending: boolean }>({ key: 'name', descending: false })
+  const [recycling, setRecycling] = useState(false)
+  const movedItem = useRef<{ id: number; parentId: number; previousListing?: Node[] }>(undefined)
   const [selected, setSelected] = useState<number[]>([])
   const [detail, setDetail] = useState<{ node: Node; mode: 'info' | 'versions' | 'permission' }>()
   const [viewedFile, setViewedFile] = useState<Node>()
@@ -102,9 +104,13 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     return sort.descending ? -order : order
   })
   const selectedIds = selected.filter(id => nodes.some(node => node.id === id))
+  const checkedNode = selectedIds.length === 1 ? nodes.find(node => node.id === selectedIds[0]) : undefined
   const otherUploads = Object.keys(uploadActivity).filter(key =>
     uploadActivity[key] && (!browsing || !!query || Number(key.split(':')[1]) !== currentId))
   const selectedNode = detail && (nodes.find(node => node.id === detail.node.id) ?? detail.node)
+  const grantedRights = rights.filter(([bit]) => selectedNode && (selectedNode.rights & bit)).map(([, label]) => label)
+  const previewOffice = selectedNode && officePreview && canPreviewOffice(selectedNode)
+  const previewAvailable = selectedNode && (previewOffice || previewKind(selectedNode))
   const fileUpload = fileUploads[currentId] ?? 'idle'
   const parentLabel = query ? selectedNode?.parentPath : '/' + path.map(node => node.name).join('/')
   const canMoveSelected = query ? selectedNode?.canMoveFromParent : current ? !!(current.rights & DELETE) : administrator
@@ -276,6 +282,24 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     setDragTarget(false)
   }, [currentId, browsing, query])
 
+  useEffect(() => {
+    const moved = movedItem.current
+    if (!moved) return
+    if (query || (itemId ?? ROOT) !== moved.parentId) {
+      movedItem.current = undefined
+      return
+    }
+    const listing = branches[moved.parentId]
+    if (locationPending || currentId !== moved.parentId || loading || !listing || listing === moved.previousListing) return
+    const node = listing.find(entry => entry.id === moved.id)
+    movedItem.current = undefined
+    setMessage('项目已移动')
+    if (node) {
+      drawerTrigger.current = document.getElementById(`detail-trigger-${node.id}`)
+      setDetail({ node, mode: 'info' })
+    }
+  }, [query, locationPending, currentId, itemId, loading, branches])
+
   function showGrants(id: number) {
     if (grantDirty && id !== grantNode?.id && !window.confirm('有未保存的更改，确定切换授权项目？')) return
     setMessage('')
@@ -338,10 +362,21 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     }
   }
 
-  async function deleteNode(id: number) {
-    const { response } = await api.DELETE('/tree/{id}', { params: { path: { id } } })
-    if (response.ok) setDetail(undefined)
-    update(response.ok ? '已移入回收站' : `HTTP ${response.status}`)
+  async function recycleNode(node: Node) {
+    if (recycling || (!node.isFile && !window.confirm(`将文件夹「${node.name}」及其内容移入回收站？`))) return
+    setRecycling(true)
+    try {
+      const { response } = await api.DELETE('/tree/{id}', { params: { path: { id: node.id } } })
+      if (response.ok) {
+        setSelected(ids => ids.filter(id => id !== node.id))
+        setDetail(previous => previous?.node.id === node.id ? undefined : previous)
+        update(`「${node.name}」已移入回收站`)
+      } else setMessage(response.status === 403 ? '当前账户没有删除权限' : '移入回收站失败，请刷新后重试')
+    } catch {
+      setMessage('无法连接服务，请重试')
+    } finally {
+      setRecycling(false)
+    }
   }
 
   const hasGrant = current?.rights && current.rights & GRANT
@@ -493,7 +528,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                     <OfficeEditAction node={node} officePlugin={officePlugin} onOpen={trackOfficeEdit} icon />
                     {node.isFile && !!(node.rights & DOWNLOAD) && <a className="button icon" href={`/api/tree/${node.id}/download`}
                       download aria-label={`下载 ${node.name}`} title="下载"><Download size={15} /></a>}
-                    <button className="icon" data-panel-trigger aria-expanded={selectedNode?.id === node.id}
+                    <button id={`detail-trigger-${node.id}`} className="icon" data-panel-trigger aria-expanded={selectedNode?.id === node.id}
                       title="详情与操作" aria-label={`详情与操作 ${node.name}`} onClick={event => {
                       drawerTrigger.current = event.currentTarget
                       setAction(undefined)
@@ -527,6 +562,8 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
         </div>
         {!!selectedIds.length && <div className="selection-bar">
           <span>已选 {selectedIds.length} 项</span><ZipDownload key={selectedIds.join(',')} selected={selectedIds} />
+          {checkedNode && !!(checkedNode.rights & DELETE) && <button className="ghost" disabled={pending || recycling}
+            onClick={() => void recycleNode(checkedNode)}><Trash2 size={16} />移入回收站</button>}
           <button className="ghost icon" aria-label="取消选择" onClick={() => setSelected([])}><X size={16} /></button>
         </div>}
       </section>
@@ -540,6 +577,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       </section>}
       {detail && selectedNode && action !== 'create' && <DetailContainer ref={panel => { drawer.current = panel }}
         className="drawer file-details" aria-label="项目详情" key={selectedNode.id} onCancel={event => {
+          if (event.target !== event.currentTarget) return
           event.preventDefault()
           closeDrawer()
         }} onClick={event => {
@@ -547,65 +585,70 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
           const bounds = event.currentTarget.getBoundingClientRect()
           if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeDrawer()
         }}>
-        <header className="file-details-header">
-          <DrawerHeading title={selectedNode.name} node={selectedNode} close={() => closeDrawer()} closeRef={detailCloseButton} />
-          {parentLabel && <p className="detail-path"><FolderOpen size={16} aria-hidden="true" /><span>{parentLabel === '/' ? '共享目录' : parentLabel}</span></p>}
-          {selectedNode.latestVersion && <p className="detail-version">
-            当前版本 {selectedNode.latestVersion.id}
-            {selectedNode.latestVersion.username && ` · ${selectedNode.latestVersion.username}`}
-          </p>}
-        </header>
-        {action === undefined && <nav className="detail-nav" aria-label="项目详情视图">
-          <button className="ghost" aria-current={detail.mode === 'info' ? 'page' : undefined}
-            onClick={() => setDetail({ node: selectedNode, mode: 'info' })}>概览</button>
-          {selectedNode.isFile && !!(selectedNode.rights & BROWSE) && <button className="ghost"
-            aria-current={detail.mode === 'versions' ? 'page' : undefined}
-            onClick={() => setDetail({ node: selectedNode, mode: 'versions' })}><History size={16} />文件版本</button>}
-          <button className="ghost" aria-current={detail.mode === 'permission' ? 'page' : undefined}
-            onClick={() => setDetail({ node: selectedNode, mode: 'permission' })}><ShieldCheck size={16} />查看有效权限</button>
-        </nav>}
-        {detail.mode === 'versions' ? <VersionsPanel node={selectedNode} restored={() => refresh(v => v + 1)}
-          close={() => setDetail({ node: selectedNode, mode: 'info' })} />
-          : detail.mode === 'permission' ? <PermissionInspection node={selectedNode} administrator={administrator} /> : <>
-          <dl className="file-metadata">
-            <dt>访问权限</dt><dd>{rights.filter(([bit]) => selectedNode.rights & bit).map(([,label]) => label).join('、') || rightsLabel(selectedNode)}</dd>
-            {selectedNode.latestVersion && <>
-              <dt>大小</dt><dd>{formatSize(selectedNode.latestVersion.size)}</dd>
-              {selectedNode.latestVersion.createdAt && <><dt>修改时间</dt><dd><time dateTime={selectedNode.latestVersion.createdAt}>
-                {formatFileTime(selectedNode.latestVersion.createdAt, true)}
-              </time></dd></>}
-            </>}
-          </dl>
+        {action === 'rename' ? <form className="stack inspector-rename" onSubmit={event => void saveName(event, selectedNode)}>
+          <label>新名称<input name="name" defaultValue={selectedNode.name} autoFocus readOnly={formBusy} required maxLength={255} /></label>
+          {formError && <p className="bad" role="alert">{formError}</p>}
           <div className="detail-actions">
-            {officePreview && canPreviewOffice(selectedNode) ? <a className="button primary"
-              href={`/api/files/${selectedNode.id}/office-edits`} data-ftp-office-preview="1"
-              data-ftp-office-version={selectedNode.latestVersion?.id} onClick={event => event.preventDefault()}>
-              <Eye size={16} />预览</a> : previewKind(selectedNode) && <button className="primary" onClick={() => setViewedFile(selectedNode)}>
-              <Eye size={16} />预览</button>}
-            {selectedNode.isFile && !!(selectedNode.rights & DOWNLOAD) && <a className="button"
-              href={`/api/tree/${selectedNode.id}/download`} download><Download size={16} />下载</a>}
-            <OfficeEditAction node={selectedNode} officePlugin={officePlugin} onOpen={trackOfficeEdit} />
-            {selectedNode.isFile && <TextEditor node={selectedNode} saved={() => refresh(value => value + 1)} />}
+            <button className="primary" disabled={formBusy}>{formBusy ? '正在保存…' : '保存名称'}</button>
+            <button type="button" disabled={formBusy} onClick={() => setAction(undefined)}>取消</button>
           </div>
-          <CopyItemLink node={selectedNode} />
-          <div className="detail-actions detail-management">
+        </form> : <header className="file-details-header">
+          <DrawerHeading title={selectedNode.name} node={selectedNode} close={() => closeDrawer()} closeRef={detailCloseButton} />
+          <p>{fileTypeLabel(selectedNode)}{selectedNode.latestVersion && ` · ${formatSize(selectedNode.latestVersion.size)}`}</p>
+        </header>}
+        {action === 'move' ? <MovePicker node={selectedNode} administrator={administrator}
+          close={() => setAction(undefined)} moved={parentId => {
+            movedItem.current = { id: selectedNode.id, parentId: parentId ?? ROOT, previousListing: branches[parentId ?? ROOT] }
+            openFolder(parentId ?? ROOT)
+            update('项目已移动')
+          }} /> : action === 'rename' ? null : detail.mode === 'versions' ? <VersionsPanel node={selectedNode}
+          restored={() => refresh(v => v + 1)} close={() => setDetail({ node: selectedNode, mode: 'info' })} />
+          : detail.mode === 'permission' ? <>
+            <button className="ghost inspector-back" onClick={() => setDetail({ node: selectedNode, mode: 'info' })}><ArrowLeft size={16} />返回文件详情</button>
+            <dl className="file-metadata"><dt>我的权限</dt><dd>{grantedRights.join('、') || rightsLabel(selectedNode)}</dd></dl>
+            <PermissionInspection node={selectedNode} administrator={administrator} />
             {!!(selectedNode.rights & GRANT) && <button onClick={() => showGrants(selectedNode.id)}>管理权限</button>}
-            {!!(selectedNode.rights & MODIFY) && <button onClick={() => { setFormError(''); setAction('rename') }}>重命名</button>}
-            {canMoveSelected && <button aria-label={`移动 ${selectedNode.name}`}
-              onClick={() => setAction('move')}>移动</button>}
-            {!!(selectedNode.rights & DELETE) && <button className="danger" aria-label={`删除 ${selectedNode.name}`}
-              onClick={() => void deleteNode(selectedNode.id)}>移入回收站</button>}
+          </> : <>
+          <div className="detail-actions inspector-tools">
+            {previewOffice ? <a className="button primary" href={`/api/files/${selectedNode.id}/office-edits`}
+              data-ftp-office-preview="1" data-ftp-office-version={selectedNode.latestVersion?.id} onClick={event => event.preventDefault()}>
+              <Eye size={16} />预览</a> : previewAvailable && <button className="primary" onClick={() => setViewedFile(selectedNode)}>
+              <Eye size={16} />预览</button>}
+            {selectedNode.isFile && !!(selectedNode.rights & DOWNLOAD) && <a className={previewAvailable ? 'button' : 'button primary'}
+              href={`/api/tree/${selectedNode.id}/download`} download><Download size={16} />下载</a>}
+            <details className="inspector-more" onBlur={event => {
+              if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false
+            }} onKeyDown={event => {
+              if (event.key !== 'Escape' || !event.currentTarget.open || (event.target as Element).closest('.text-dialog')) return
+              event.preventDefault()
+              event.stopPropagation()
+              event.currentTarget.open = false
+              event.currentTarget.querySelector('summary')?.focus()
+            }}>
+              <summary className="button" aria-label="更多操作"><MoreHorizontal size={16} />更多</summary>
+              <div className="popup">
+                <OfficeEditAction node={selectedNode} officePlugin={officePlugin} onOpen={trackOfficeEdit} />
+                {selectedNode.isFile && <TextEditor node={selectedNode} saved={() => refresh(value => value + 1)} />}
+                <CopyItemLink node={selectedNode} />
+                {!!(selectedNode.rights & MODIFY) && <button onClick={() => { setFormError(''); setAction('rename') }}>重命名</button>}
+                {canMoveSelected && <button aria-label={`移动 ${selectedNode.name}`} onClick={() => setAction('move')}>移动</button>}
+              </div>
+            </details>
           </div>
-          {action === 'rename' && <form className="stack" onSubmit={event => void saveName(event, selectedNode)}>
-            <label>新名称<input name="name" defaultValue={selectedNode.name} autoFocus readOnly={formBusy} required maxLength={255} /></label>
-            {formError && <p className="bad" role="alert">{formError}</p>}
-            <div className="detail-actions">
-              <button type="button" disabled={formBusy} onClick={() => setAction(undefined)}>取消</button>
-              <button className="primary" disabled={formBusy}>{formBusy ? '正在保存…' : '保存名称'}</button>
-            </div>
-          </form>}
-          {action === 'move' && <MovePicker node={selectedNode} administrator={administrator}
-            close={() => setAction(undefined)} moved={() => { setAction(undefined); setDetail(undefined) }} report={update} />}
+          <dl className="file-metadata">
+            {parentLabel && <><dt>所在位置</dt><dd>{parentLabel === '/' ? '共享目录' : parentLabel}</dd></>}
+            {selectedNode.latestVersion?.createdAt && <><dt>修改时间</dt><dd><time dateTime={selectedNode.latestVersion.createdAt}>
+              {formatFileTime(selectedNode.latestVersion.createdAt, true)}</time></dd></>}
+            {selectedNode.latestVersion?.username && <><dt>修改人</dt><dd>{selectedNode.latestVersion.username}</dd></>}
+          </dl>
+          <nav className="inspector-links" aria-label="项目详情视图">
+            {selectedNode.isFile && !!(selectedNode.rights & BROWSE) && <button className="ghost"
+              onClick={() => setDetail({ node: selectedNode, mode: 'versions' })}><History size={16} />版本历史<ChevronRight size={16} /></button>}
+            <button className="ghost" onClick={() => setDetail({ node: selectedNode, mode: 'permission' })}>
+              <ShieldCheck size={16} />我的权限<small>{grantedRights.length > 2
+                ? `${grantedRights.length} 项权限`
+                : grantedRights.join('、') || rightsLabel(selectedNode)}</small><ChevronRight size={16} /></button>
+          </nav>
         </>}
       </DetailContainer>}
       </div>
@@ -620,7 +663,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       close={() => { navigate(hash); refresh(v => v + 1) }} /></main>}
     {active && message && <div className="toast">
       <span role="status">{message}</span>
-      {message === '已移入回收站' && <a href={recycleHref} onClick={event => {
+      {message.endsWith('」已移入回收站') && <a href={recycleHref} onClick={event => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
         event.preventDefault()
         setMessage('')
@@ -741,8 +784,8 @@ function UploadPickers({ parentId, disabled, state }: { parentId: number; disabl
   </ActionGroup></div>
 }
 
-function MovePicker({ node, administrator, close, moved, report }: {
-  node: Node; administrator: boolean; close: () => void; moved: () => void; report: (message: string) => void
+function MovePicker({ node, administrator, close, moved }: {
+  node: Node; administrator: boolean; close: () => void; moved: (parentId: number | null) => void
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -755,8 +798,7 @@ function MovePicker({ node, administrator, close, moved, report }: {
         params: { path: { id: node.id } }, body: { parentId },
       })
       if (response.ok) {
-        moved()
-        report('项目已移动')
+        moved(parentId)
       } else {
         setError(response.status === 409 ? '目标位置已有同名项目，或目标位于自身子目录'
           : response.status === 403 ? '当前账户没有移动到此目录的权限' : '移动失败，请重试')

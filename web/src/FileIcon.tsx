@@ -16,6 +16,17 @@ export function FileIcon({ node, size = 16, tile = false }: { node: Node; size?:
   </span>
 }
 
+const typeLabels: Record<string, string> = {
+  doc: 'Word 文档', docx: 'Word 文档', wps: 'WPS 文档', xls: 'Excel 表格', xlsx: 'Excel 表格',
+  txt: '文本文档', md: 'Markdown 文档', pdf: 'PDF 文档',
+}
+
+export function fileTypeLabel(node: Node) {
+  if (!node.isFile) return '文件夹'
+  const format = node.latestVersion?.format.toLowerCase()
+  return format ? typeLabels[format] ?? `${format.toUpperCase()} 文件` : '文件'
+}
+
 export function formatSize(bytes: number) {
   const unit = Math.min(4, Math.floor(Math.log(Math.max(1, bytes)) / Math.log(1024)))
   return `${(bytes / 1024 ** unit).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} ${['B', 'KB', 'MB', 'GB', 'TB'][unit]}`

@@ -143,7 +143,7 @@ for (const format of ['docx', 'xlsx']) {
     expect(Buffer.concat(chunks)).toEqual(editedBytes);
 
     await page.getByRole('button', {name: `详情与操作 ${name}`, exact:true}).click();
-    await page.getByRole('button', {name:'文件版本', exact:true}).click();
+    await page.getByRole('button', {name:'版本历史', exact:true}).click();
     await expect(page.getByRole('region', {name:'文件版本'})).toContainText(`版本 ${result.receipt.Data.versionId} ·`);
   });
 }

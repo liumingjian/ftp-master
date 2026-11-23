@@ -99,6 +99,7 @@ test('file details dismiss from the surrounding workspace and keep active rename
   await expect(detail).toHaveCount(0)
 
   await open.click()
+  await detail.getByLabel('更多操作').click()
   await detail.getByRole('button', { name: '重命名' }).click()
   await detail.getByLabel('新名称').fill('draft.txt')
   await page.mouse.click(400, 650)
@@ -119,6 +120,7 @@ test('clicking an image opens only the preview and uses the saved format after r
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf2sAAAAASUVORK5CYII=', 'base64'),
   })
   await page.getByRole('button', { name: '详情与操作 image.png' }).click()
+  await page.getByLabel('更多操作').click()
   await page.getByRole('button', { name: '重命名', exact: true }).click()
   await page.getByLabel('新名称').fill('image-renamed')
   await page.getByRole('button', { name: '保存名称', exact: true }).click()
@@ -145,13 +147,16 @@ test("Administrator renames and moves a directory using the destination picker",
  const source=await create(`Move-source-${suffix}`);const target=await create(`Move-target-${suffix}`);await create(`Original-${suffix}`,source.id);
  await page.reload();await page.getByRole("button",{name:`Move-source-${suffix}`,exact:true}).click();
  await page.getByRole('button', {name: `详情与操作 Original-${suffix}`, exact: true}).click()
+ await page.getByLabel('更多操作').click()
  await page.getByRole('button', {name: '重命名', exact: true}).click()
  await page.getByLabel('新名称').fill(`Renamed-${suffix}`)
  await page.getByRole('button', {name: '保存名称', exact: true}).click()
  await expect(page.getByRole("button",{name:`Renamed-${suffix}`,exact:true})).toBeVisible();
+ await page.getByLabel('更多操作').click()
  await page.getByRole("button",{name:`移动 Renamed-${suffix}`,exact:true}).click();
  const picker=page.getByRole("region",{name:"移动目标"});await picker.getByRole("button",{name:`Move-target-${suffix}`,exact:true}).click();await picker.getByRole("button",{name:"移动到此目录",exact:true}).click();
- await expect(page.getByText("项目已移动",{exact:true})).toBeVisible();await expect(page.getByRole("button",{name:`Renamed-${suffix}`,exact:true})).toHaveCount(0);
+ await expect(page.getByText("项目已移动",{exact:true})).toBeVisible();await expect(page.getByRole('heading', { name: `Renamed-${suffix}`, exact: true })).toBeVisible();
+ await expect(page.locator('.file-metadata')).toContainText(`Move-target-${suffix}`);
  const response=await page.request.get(`/api/tree?parentId=${target.id}`);expect((await response.json()).map((n:{name:string})=>n.name)).toContain(`Renamed-${suffix}`);
 });
 
@@ -201,10 +206,10 @@ test('a copied file link survives sign-in and header search returns from the rec
   await more.click()
   const details = page.getByRole('dialog', { name: '项目详情' })
   await expect(details).toContainText(`/${folder}`)
-  await details.getByRole('button', { name: '文件版本', exact: true }).click()
+  await details.getByRole('button', { name: '版本历史', exact: true }).click()
   await expect(details.getByRole('region', { name: '文件版本' })).toContainText('当前版本')
   await details.getByRole('button', { name: '返回文件详情' }).click()
-  await expect(details.getByRole('button', { name: '概览' })).toHaveAttribute('aria-current', 'page')
+  await expect(details.getByRole('button', { name: '版本历史' })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(details).toHaveCount(0)
   await expect(more).toBeFocused()
@@ -221,11 +226,19 @@ test('Administrator restores a deleted item into a directory selected in the rec
   await page.getByRole('button', { name: '根目录', exact: true }).click()
   await createAndOpenFolder(page, original)
   await page.getByRole('button', { name: '根目录', exact: true }).click()
-  await table.getByRole('button', { name: `详情与操作 ${original}`, exact: true }).click()
-  await page.getByRole('button', { name: `删除 ${original}`, exact: true }).click()
+  await table.getByRole('checkbox', { name: original, exact: true }).check()
+  page.once('dialog', dialog => dialog.dismiss())
+  const trash = page.getByRole('button', { name: '移入回收站', exact: true })
+  await trash.click()
+  await expect(table.getByRole('checkbox', { name: original, exact: true })).toBeChecked()
+  page.once('dialog', async dialog => {
+    expect(dialog.message()).toContain(`「${original}」及其内容`)
+    await dialog.accept()
+  })
+  await trash.click()
   await expect(table.getByRole('button', { name: original, exact: true })).toHaveCount(0)
-
-  await page.getByRole('link', { name: '回收站', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: original })).toContainText('已移入回收站')
+  await page.getByRole('link', { name: '前往回收站', exact: true }).click()
   const recycle = page.getByRole('region', { name: '回收站', exact: true })
   const entry = recycle.getByRole('listitem').filter({ hasText: original })
   await entry.getByRole('button', { name: '恢复到指定目录', exact: true }).click()

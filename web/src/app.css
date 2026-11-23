@@ -348,11 +348,9 @@ button.table-empty:focus-visible { outline-offset: -3px; }
 .drawer-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .drawer-heading h2 { flex: 1; margin: 0; overflow-wrap: anywhere; }
 .drawer .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.drawer .detail-management { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
-.drawer .detail-management:empty { display: none; }
 .drawer-heading .icon { min-width: 36px; }
-.file-metadata { padding: 12px; margin: 0 0 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--hover); font-size: 13px; }
-.file-metadata dd { min-width: 0; overflow-wrap: anywhere; }
+.file-metadata { grid-template-columns: 4.5em minmax(0, 1fr); gap: 10px 12px; margin: 20px 0; font-size: 13px; }
+.file-metadata dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .drawer .stack, .drawer .directory-picker, .drawer form { margin-block: 16px; }
 .drawer section > button, .drawer li > button, .drawer li > a { margin: 4px; }
 .drawer pre { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -372,21 +370,29 @@ button.table-empty:focus-visible { outline-offset: -3px; }
 @media (max-width: 1040px) {
   .explorer-workspace.has-details { display: block; }
 }
-.file-details-header .drawer-heading { align-items: start; margin-bottom: 8px; }
-.file-details-header .drawer-heading h2 { padding-block: 4px; font-size: 18px; }
-.file-details-header .drawer-heading .icon { width: 28px; min-width: 28px; min-height: 28px; }
-.detail-path, .detail-version { color: var(--muted); font-size: 13px; margin: 4px 0 0; overflow-wrap: anywhere; }
-.detail-path { display: flex; align-items: start; gap: 8px; }
-.detail-path svg { margin-top: 2px; }
-.detail-nav { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px -4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-.detail-nav button { min-height: 36px; gap: 4px; padding-inline: 6px; font-size: 13px; color: var(--secondary); }
-.detail-nav button[aria-current] { color: var(--accent); background: var(--accent-soft); }
-.file-details .detail-actions { margin-block: 12px; }
-.file-details .detail-management { margin-bottom: 0; }
-.detail-share { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
-.detail-share small { color: var(--muted); font-size: 12px; }
-.file-details header:has(+ .stack), .file-details header:has(+ .file-metadata) { margin-bottom: 16px; }
-.file-details .file-metadata { border: 0; margin-bottom: 12px; }
+.file-details-header { margin-bottom: 18px; }
+.file-details-header .drawer-heading { align-items: flex-start; gap: 8px; margin: 0; }
+.file-details-header .drawer-heading h2 { padding-top: 3px; font-size: 18px; line-height: 1.4; }
+.file-details-header p { margin: 3px 0 0 36px; color: var(--secondary); font-size: 13px; }
+.file-details-header .drawer-heading .icon { color: var(--secondary); }
+.inspector-tools { align-items: center; }
+.inspector-more { position: relative; }
+.inspector-more > summary { list-style: none; cursor: pointer; }
+.inspector-more > summary::-webkit-details-marker { display: none; }
+.inspector-more .popup { inset-inline: 0 auto; min-width: 156px; }
+.inspector-tools > :not(:first-child).inspector-more .popup { inset-inline: auto 0; }
+.inspector-more .popup > button, .inspector-more .popup > a { width: 100%; background: transparent; }
+.inspector-more .popup > :is(button, a):hover { background: var(--hover); }
+.inspector-links { border-top: 1px solid var(--line); padding-top: 6px; }
+.inspector-links button { width: 100%; min-height: 44px; padding: 4px; justify-content: flex-start; gap: 10px; }
+.inspector-links svg { color: var(--secondary); }
+.inspector-links small { margin-inline-start: auto; color: var(--secondary); font-weight: normal; }
+.inspector-links svg:last-child { margin-inline-start: auto; }
+.inspector-links small + svg:last-child { margin-inline-start: 0; }
+.detail-share { display: grid; }
+.detail-share button { justify-content: flex-start; border: 0; background: transparent; padding: 0; }
+.detail-share small { color: var(--secondary); font-size: 12px; }
+.file-details form.inspector-rename { display: grid; margin: 0; }
 .file-details .version-restore { padding: 12px; background: var(--hover); border-radius: var(--radius); }
 .file-details .version-restore p { margin: 0 0 8px; font-size: 13px; }
 .file-details .version-current { color: var(--accent); font-size: 12px; }
@@ -1001,7 +1007,8 @@ dd { margin: 0; }
   .explorer-actions button.icon { width: 44px; }
   .table-empty { padding-block: 40px; }
   .file-details:is(dialog) { inset: 0; width: 100%; max-width: none; height: 100%; border: 0; border-radius: 0; }
-  .file-details .detail-nav button, .file-details .detail-actions .button, .file-details .detail-actions button { min-height: 44px; }
+  .file-details-header .drawer-heading .icon, .file-details .detail-actions .button, .file-details .detail-actions button, .selection-bar button { min-height: 44px; }
+  .file-details-header .drawer-heading .icon { min-width: 44px; }
   .row-actions .icon { min-height: 44px; }
 }
 
