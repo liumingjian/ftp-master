@@ -19,7 +19,7 @@ const management = [
   { id: 'membership', label: '组织与用户组管理', icon: Users, panel: MembershipPanel },
   { id: 'registrations', label: '注册审批', icon: UserRoundPlus, panel: RegistrationsPanel },
   { id: 'audit', label: '审计日志', icon: ScrollText, panel: AuditPanel },
-  { id: 'settings', label: '上传设置', icon: Settings, panel: UploadSettings },
+  { id: 'settings', label: '系统设置', icon: Settings, panel: UploadSettings },
 ] as const
 
 const personal = [

@@ -45,6 +45,15 @@ func (s *Server) StartOfficeEdit(ctx context.Context, r api.StartOfficeEditReque
 	if preview {
 		right = permission.Browse
 	}
+	if !preview {
+		enabled, err := q.LockOfficeEditEnabled(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !enabled {
+			return membershipFailure{403, "Office editing disabled"}, nil
+		}
+	}
 	if err = treeAccess(snap, r.Id, right); err != nil {
 		f, e := membershipError(err)
 		return f, e

@@ -425,6 +425,30 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/UploadReceipt'}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /office-edit-policy:
+    get:
+      operationId: getOfficeEditPolicy
+      responses:
+        '200':
+          description: Office editing policy for this installation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OfficeEditPolicy'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    put:
+      operationId: setOfficeEditPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OfficeEditPolicy'}
+      responses:
+        '200':
+          description: Office editing policy for this installation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OfficeEditPolicy'}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /upload-policy:
     get:
       operationId: getUploadPolicy
@@ -1586,6 +1610,11 @@ components:
       properties:
         fileId: {type: integer, format: int64}
         versionId: {type: integer, format: int64}
+    OfficeEditPolicy:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: {type: boolean, x-go-type: '*bool'}
     UploadPolicy:
       type: object
       required: [blockedExtensions]

@@ -275,5 +275,5 @@ test('monthly versions remain distinguishable across list widths', async ({ page
   await expect(page.getByRole('button', {name: '新建文件夹'})).toBeInViewport()
   await page.getByRole('link', {name:'管理',exact:true}).click()
   await page.getByRole('combobox', {name:'管理页面'}).selectOption('settings')
-  await expect(page.getByRole('heading', {name:'上传设置',exact:true})).toBeVisible()
+  await expect(page.getByRole('heading', {name:'系统设置',exact:true})).toBeVisible()
 })

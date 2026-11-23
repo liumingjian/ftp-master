@@ -111,6 +111,13 @@ func (s *Server) SaveOffice(ctx context.Context, r api.SaveOfficeRequestObject) 
 	if p.Preview {
 		return officeFailure{403, "read-only Office permit"}, nil
 	}
+	enabled, err := q.LockOfficeEditEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return officeFailure{403, "Office editing disabled"}, nil
+	}
 	if !p.DeliveredAt.Valid {
 		return officeFailure{409, "document not delivered"}, nil
 	}

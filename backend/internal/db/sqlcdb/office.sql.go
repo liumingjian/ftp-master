@@ -38,6 +38,17 @@ func (q *Queries) CreateOfficePermit(ctx context.Context, arg CreateOfficePermit
 	return err
 }
 
+const getOfficeEditEnabled = `-- name: GetOfficeEditEnabled :one
+SELECT enabled FROM office_edit_policy WHERE id
+`
+
+func (q *Queries) GetOfficeEditEnabled(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, getOfficeEditEnabled)
+	var enabled bool
+	err := row.Scan(&enabled)
+	return enabled, err
+}
+
 const getOfficePermit = `-- name: GetOfficePermit :one
 SELECT p.id, p.user_id, p.file_id, p.version_id, p.created_at, p.expires_at, p.delivered_at, p.object_key, p.size, p.format, p.preview,n.name FROM office_edit_permits p JOIN tree_nodes n ON n.id=p.file_id WHERE p.id=$1 AND n.deleted_at IS NULL
 `
@@ -75,6 +86,17 @@ func (q *Queries) GetOfficePermit(ctx context.Context, id string) (GetOfficePerm
 		&i.Name,
 	)
 	return i, err
+}
+
+const lockOfficeEditEnabled = `-- name: LockOfficeEditEnabled :one
+SELECT enabled FROM office_edit_policy WHERE id FOR SHARE
+`
+
+func (q *Queries) LockOfficeEditEnabled(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, lockOfficeEditEnabled)
+	var enabled bool
+	err := row.Scan(&enabled)
+	return enabled, err
 }
 
 const lockOfficePermit = `-- name: LockOfficePermit :one
@@ -127,5 +149,14 @@ type MarkOfficeDeliveredParams struct {
 
 func (q *Queries) MarkOfficeDelivered(ctx context.Context, arg MarkOfficeDeliveredParams) error {
 	_, err := q.db.Exec(ctx, markOfficeDelivered, arg.ID, arg.DeliveredAt)
+	return err
+}
+
+const setOfficeEditEnabled = `-- name: SetOfficeEditEnabled :exec
+UPDATE office_edit_policy SET enabled = $1 WHERE id
+`
+
+func (q *Queries) SetOfficeEditEnabled(ctx context.Context, enabled bool) error {
+	_, err := q.db.Exec(ctx, setOfficeEditEnabled, enabled)
 	return err
 }

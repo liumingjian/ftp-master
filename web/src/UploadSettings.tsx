@@ -66,8 +66,9 @@ export function UploadSettings() {
     }
   }
 
-  return <section className="workspace-page upload-settings" aria-label="上传设置">
-    <PageHeading title="上传设置" />
+  return <section className="workspace-page upload-settings" aria-label="系统设置">
+    <PageHeading title="系统设置" />
+    <OfficeEditSetting />
     <section className="panel upload-policy" aria-labelledby="upload-policy-title">
       <div className="upload-policy-heading">
         <span className="upload-policy-icon"><ShieldCheck size={18} aria-hidden="true" /></span>
@@ -109,5 +110,55 @@ export function UploadSettings() {
         </form>}
       </div>
     </section>
+  </section>
+}
+
+function OfficeEditSetting() {
+  const [enabled, setEnabled] = useState<boolean>()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [attempt, retry] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
+    setError('')
+    void api.GET('/office-edit-policy', { signal }).then(({ data }) => {
+      if (signal.aborted) return
+      if (data) setEnabled(data.enabled)
+      else setError('无法读取 Office 编辑设置')
+    }).catch(() => { if (!signal.aborted) setError('无法连接服务') })
+    return () => controller.abort()
+  }, [attempt])
+
+  async function change(value: boolean) {
+    const previous = enabled
+    setEnabled(value)
+    setSaving(true)
+    setError('')
+    try {
+      const { data } = await api.PUT('/office-edit-policy', { body: { enabled: value } })
+      if (data) setEnabled(data.enabled)
+      else { setEnabled(previous); setError('保存失败，请重试') }
+    } catch {
+      setEnabled(previous)
+      setError('无法连接服务，请重试')
+    } finally {
+      setSaving(false)
+    }
+  }
+  return <section className="panel upload-policy" aria-labelledby="office-setting-title">
+    <div className="upload-policy-heading">
+      <span className="upload-policy-icon"><Pencil size={18} aria-hidden="true" /></span>
+      <div><h2 id="office-setting-title">Office 在线编辑</h2>
+        <p id="office-setting-hint">启用后，有修改权限的用户可通过 WPS 插件编辑文件。关闭后将暂停编辑与保存，只读预览仍可使用。</p>
+      </div>
+      <label className="office-policy-toggle"><input type="checkbox" role="switch" aria-label="启用 Office 在线编辑"
+        aria-describedby="office-setting-hint" checked={enabled === true} disabled={enabled === undefined || saving}
+        onChange={event => void change(event.target.checked)} />
+        {saving ? '保存中…' : enabled === undefined ? '读取中…' : enabled ? '已启用' : '已关闭'}
+      </label>
+    </div>
+    {error && <p role="alert" className="banner error">{error} {enabled === undefined &&
+      <button onClick={() => retry(n => n + 1)}>重试</button>}</p>}
   </section>
 }

@@ -337,6 +337,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/office-edit-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getOfficeEditPolicy"];
+        put: operations["setOfficeEditPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/upload-policy": {
         parameters: {
             query?: never;
@@ -979,6 +995,9 @@ export interface components {
             fileId: number;
             /** Format: int64 */
             versionId: number;
+        };
+        OfficeEditPolicy: {
+            enabled: boolean;
         };
         UploadPolicy: {
             blockedExtensions: string[];
@@ -1636,6 +1655,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadReceipt"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getOfficeEditPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Office editing policy for this installation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeEditPolicy"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    setOfficeEditPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfficeEditPolicy"];
+            };
+        };
+        responses: {
+            /** @description Office editing policy for this installation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeEditPolicy"];
                 };
             };
             default: components["responses"]["Unauthorized"];

@@ -1135,3 +1135,5 @@ dd { margin: 0; }
   .file-name > .icon-tile { display: none; }
   .file-subtitle { margin-inline-start: 0; }
 }
+
+.office-policy-toggle { display: inline-flex; align-items: center; gap: 8px; margin-inline-start: auto; white-space: nowrap; }

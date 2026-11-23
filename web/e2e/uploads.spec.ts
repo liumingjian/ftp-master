@@ -14,7 +14,7 @@ test('upload settings separate the active rules from the editor', async ({ page 
   })
   await page.goto('/sign-in')
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
-  await openManagementPage(page, '上传设置')
+  await openManagementPage(page, '系统设置')
   const panel = page.getByRole('region', { name: '上传扩展名限制' })
   const edit = panel.getByRole('button', { name: '编辑规则' })
   const draft = panel.getByRole('textbox', { name: '禁止扩展名' })

@@ -1,5 +1,8 @@
 # Office integration contract
 
+Administrators can enable Office editing in **管理 → 系统设置 → Office 在线编辑**. Editing defaults to enabled. Disabling it blocks new edit permits, delivery of editable documents and saves from open editors. Read-only previews remain available. After re-enabling editing, a user with an open, delivered document can retry saving.
+
+
 [ADR 0005](adr/0005-office-editing-via-wps-plugin.md) defines the supported editing flows and the authorization and delivery model. All URLs below are same-origin relative URLs. Clients use the returned URLs.
 
 ## Start an edit

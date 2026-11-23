@@ -18,7 +18,7 @@ export const actionNames: Record<string, string> = {
   purge: '永久删除', automatic_purge: '自动清理回收站', grant_change: '变更授权',
   account_change: '变更账户', account_import: '导入账户', open_for_edit: '打开 Office 编辑',
   office_save: '保存 Office 文件', text_open: '打开文本编辑', text_save: '保存文本',
-  restore_version: '恢复版本', upload_policy_change: '变更上传设置',
+  restore_version: '恢复版本', upload_policy_change: '变更上传设置', office_edit_policy_change: '变更 Office 编辑设置',
 }
 
 export type AuditFilters = {
