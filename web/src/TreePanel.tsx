@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type ReactNode } from 'react'
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, Eye, FolderOpen, FolderPlus, History, MoreHorizontal, PanelLeft, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, Eye, FolderInput, FolderOpen, FolderPlus, History, MoreHorizontal, PanelLeft, PencilLine, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { TextEditor } from './TextEditor'
 import { copiedItemId, CopyItemLink, previewKind } from './BrowseTools'
@@ -16,9 +16,9 @@ import { FileIcon, fileTypeLabel, formatSize } from './FileIcon'
 import { api } from './api/client'
 import { loadAncestors, loadBranches } from './treePath'
 import { usePanelDismissal } from './usePanelDismissal'
-import { InfoDetails, InlineDetails, PreviewDetails, PrototypeSwitcher, SidebarDetails,
+import { CardDetails, DockDetails, InlineDetails, PrototypeSwitcher,
   prototypeEnabled, readDetailsVariant, type DetailsVariant } from './FileDetailsPrototype'
-import { sampleFileId } from './fileDetailsPrototype.fixture'
+import { sampleFileId, sampleFolderId } from './fileDetailsPrototype.fixture'
 import type { components } from './api/schema.gen'
 
 type Node = components['schemas']['TreeNode']
@@ -31,7 +31,7 @@ const DELETE = 16
 const GRANT = 32
 
 type SortKey = 'name' | 'size' | 'username' | 'createdAt'
-const prototypeLayouts = { sidebar: SidebarDetails, info: InfoDetails, preview: PreviewDetails, inline: InlineDetails }
+const prototypeLayouts = { card: CardDetails, dock: DockDetails, inline: InlineDetails }
 const modalDetailViewport = '(max-width: 1040px)'
 type Props = {
   administrator: boolean
@@ -79,7 +79,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const [uploadPaths, setUploadPaths] = useState<Node[][]>([])
   const [directoryOpen, setDirectoryOpen] = useState(false)
   const [inlineColumns, setInlineColumns] = useState(6)
-  const [variant, setVariant] = useState<DetailsVariant>(() => prototypeEnabled ? readDetailsVariant() : 'current')
+  const [variant, setVariant] = useState<DetailsVariant | 'current'>(() => prototypeEnabled ? readDetailsVariant() : 'current')
   const [narrowDetail, setNarrowDetail] = useState(() => window.matchMedia(modalDetailViewport).matches)
   const [dropZone, setDropZone] = useState<HTMLDivElement | null>(null)
   const [dragTarget, setDragTarget] = useState(false)
@@ -94,6 +94,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const current = path.at(-1)
   const currentId = current?.id ?? ROOT
   const itemId = copiedItemId(hash)
+  const openSample = useRef(prototypeEnabled && (itemId === sampleFolderId || !!query))
   const locationPending = resolvedHash !== hash
   const browsing = active && !recycle && !grantId
   const canUpload = !!(current && current.rights & UPLOAD)
@@ -126,7 +127,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const EmptyIcon = query ? Search : FolderOpen
   const detailId = selectedNode?.id
   const Layout = variant === 'current' ? null : prototypeLayouts[variant]
-  const modalDetail = variant !== 'inline' && (narrowDetail || variant === 'info' || variant === 'preview')
+  const modalDetail = variant === 'card' || (variant === 'current' && narrowDetail)
   const drawer = usePanelDismissal(browsing && (!!detail || action === 'create'), closeDrawer, !action && variant === 'current')
   const DetailContainer = modalDetail ? 'dialog' : 'aside'
   const scrollKey = JSON.stringify([hash, query])
@@ -166,11 +167,11 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   }, [variant, pending, browsing])
 
   useLayoutEffect(() => {
-    if (!detailId || !browsing) return
+    if (!detailId || !browsing || (variant === 'inline' && pending)) return
     const panel = drawer.current
     if (panel instanceof HTMLDialogElement && !panel.open) panel.showModal()
-    detailCloseButton.current?.focus()
-  }, [detailId, browsing, modalDetail, drawer, variant])
+    detailCloseButton.current?.focus({ preventScroll: variant === 'inline' })
+  }, [detailId, browsing, modalDetail, drawer, variant, pending])
 
   useEffect(() => {
     const root = document.documentElement
@@ -291,6 +292,15 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       })
     return () => controller.abort()
   }, [query, revision])
+
+  useEffect(() => {
+    if (!openSample.current || pending || !browsing) return
+    if (itemId !== sampleFolderId && !query) return
+    const node = nodes.find(item => item.id === sampleFileId)
+    if (!node) return
+    openSample.current = false
+    setDetail({ node, mode: 'info' })
+  }, [browsing, itemId, nodes, pending, query])
 
   useEffect(() => {
     if (!grantId || grantId === grantNode?.id) return
@@ -425,9 +435,9 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   }
 
   const hasGrant = current?.rights && current.rights & GRANT
-  const prototypeSwitcher = prototypeEnabled && <PrototypeSwitcher variant={variant} change={changeVariant} />
+  const prototypeSwitcher = variant !== 'current' && <PrototypeSwitcher variant={variant} change={changeVariant} />
   const detailTools = selectedNode && <div className="detail-actions inspector-tools">
-    {variant === 'preview' && detail?.mode === 'info' && !action ? null : previewOffice ? <a className="button primary" href={`/api/files/${selectedNode.id}/office-edits`}
+    {previewOffice ? <a className="button primary" href={`/api/files/${selectedNode.id}/office-edits`}
       data-ftp-office-preview="1" data-ftp-office-version={selectedNode.latestVersion?.id} onClick={event => event.preventDefault()}>
       <Eye size={16} />预览</a> : previewAvailable && <button className="primary" onClick={() => setViewedFile(selectedNode)}>
       <Eye size={16} />预览</button>}
@@ -460,8 +470,22 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
         ? `${grantedRights.length} 项权限`
         : grantedRights.join('、') || rightsLabel(selectedNode)}</small><ChevronRight size={16} /></button>
   </nav>
+  const showPrototypeLocation = !!query || itemId === detailId
+  const prototypeLocation = selectedNode && showPrototypeLocation && parentLabel ? {
+    label: parentLabel === '/' ? '共享目录' : parentLabel,
+    href: selectedNode.parentId ? `/#item=${selectedNode.parentId}` : '/',
+    open: () => openFolder(selectedNode.parentId),
+  } : undefined
+  const directActions = Layout && selectedNode && <div className="prototype-actions" role="group" aria-label="文件操作">
+    {selectedNode.isFile && <TextEditor node={selectedNode} saved={() => refresh(value => value + 1)} />}
+    <OfficeEditAction node={selectedNode} officePlugin={officePlugin} onOpen={trackOfficeEdit} />
+    <CopyItemLink node={selectedNode} compact />
+    {!!(selectedNode.rights & MODIFY) && <button onClick={() => { setFormError(''); setAction('rename') }}><PencilLine size={16} />重命名</button>}
+    {canMoveSelected && <button onClick={() => setAction('move')}><FolderInput size={16} />移动</button>}
+    {!!(selectedNode.rights & GRANT) && <button onClick={() => showGrants(selectedNode.id)}><ShieldCheck size={16} />管理权限</button>}
+  </div>
   const detailPanel = detail && selectedNode && action !== 'create' && <DetailContainer ref={panel => { drawer.current = panel }}
-    className={'drawer file-details' + (Layout ? ' prototype-details prototype-' + variant : '')}
+    className={'drawer file-details' + (Layout ? ' prototype-details prototype-' + variant + (action ? ' prototype-form' : '') : '')}
     aria-label="项目详情" key={selectedNode.id + ':' + variant} onCancel={event => {
       if (event.target !== event.currentTarget) return
       event.preventDefault()
@@ -471,10 +495,8 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       const bounds = event.currentTarget.getBoundingClientRect()
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeDrawer()
     }}>
-    {Layout && !action && detail.mode === 'info' ? <Layout node={selectedNode} path={parentLabel}
-      modified={selectedNode.latestVersion?.createdAt && formatFileTime(selectedNode.latestVersion.createdAt, true)}
-      permissions={grantedRights.join('、') || rightsLabel(selectedNode)}
-      tools={detailTools} links={detailLinks} close={() => closeDrawer()} closeRef={detailCloseButton} /> : <>
+    {Layout && !action && detail.mode === 'info' ? <Layout node={selectedNode} location={prototypeLocation}
+      tools={directActions} close={() => closeDrawer()} closeRef={detailCloseButton} /> : <>
       {action === 'rename' ? <form className="stack inspector-rename" onSubmit={event => void saveName(event, selectedNode)}>
         <label>新名称<input name="name" defaultValue={selectedNode.name} autoFocus readOnly={formBusy} required maxLength={255} /></label>
         {formError && <p className="bad" role="alert">{formError}</p>}
@@ -520,7 +542,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     <main className="shell-main explorer" ref={explorerRef} hidden={!browsing} onScroll={event => {
       if (browsing && !pending && restoredLocation.current === scrollKey) scrollPositions.current.set(scrollKey, event.currentTarget.scrollTop)
     }}>
-      <div className={selectedNode && (variant === 'current' || variant === 'sidebar') ? 'explorer-workspace has-details' : 'explorer-workspace'}>
+      <div className={selectedNode && variant === 'current' ? 'explorer-workspace has-details' : 'explorer-workspace'}>
       <section aria-label="共享目录">
         <nav className="breadcrumbs" aria-label="目录路径">
           <button className="directory-trigger" aria-haspopup="dialog" aria-expanded={directoryOpen} aria-controls="file-directories"
@@ -661,6 +683,10 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                       download aria-label={`下载 ${node.name}`} title="下载"><Download size={15} /></a>}
                     <button id={`detail-trigger-${node.id}`} className="icon" data-panel-trigger aria-expanded={selectedNode?.id === node.id}
                       title="详情与操作" aria-label={`详情与操作 ${node.name}`} onClick={event => {
+                      if (Layout && detailId === node.id && !action) {
+                        closeDrawer()
+                        return
+                      }
                       drawerTrigger.current = event.currentTarget
                       setAction(undefined)
                       setDetail({ node, mode: 'info' })

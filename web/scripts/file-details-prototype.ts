@@ -1,6 +1,6 @@
 // Local fixture middleware for the file details prototype.
 import type { Plugin } from 'vite'
-import { reportSource, sampleFileId, sampleNodes } from '../src/fileDetailsPrototype.fixture'
+import { reportSource, sampleFileId, sampleFolderId, sampleNodes } from '../src/fileDetailsPrototype.fixture'
 
 export function fileDetailsPrototype(): Plugin {
   return {
@@ -22,16 +22,21 @@ export function fileDetailsPrototype(): Plugin {
         if (url.pathname === '/tree/search') {
           const query = url.searchParams.get('q') ?? ''
           return json(sampleNodes.filter(node => node.name.includes(query)).map(node => ({
-            ...node, parentPath: node.parentId === 12 ? '/项目交付/华东区域/月度简报' : undefined,
+            ...node, parentPath: node.parentId === sampleFolderId ? '/项目交付/华东区域/月度简报' : undefined,
+            canMoveFromParent: node.parentId === sampleFolderId,
           })))
         }
         if (url.pathname === '/recycle-bin') return json([])
 
-        const match = /^\/tree\/(\d+)(?:\/(\w+))?$/.exec(url.pathname)
+        const match = /^\/tree\/(\d+)(?:\/([\w-]+))?$/.exec(url.pathname)
         const node = match && sampleNodes.find(item => item.id === Number(match[1]))
         if (!node) return json({}, 404)
         const endpoint = match[2]
         if (!endpoint) return json(node)
+        if (endpoint === 'grant-draft') return json([{
+          sourceId: node.id, sourcePath: '/项目交付/华东区域/月度简报/' + node.name, inherited: false,
+          grant: { id: 1, principalId: 1, principalKind: 'user', rights: node.rights, scope: 'this_level_only' },
+        }])
         if (endpoint === 'permission') return json({
           userId: 1, rights: node.rights, traversable: false, administrator: false, sources: [{
             sourceId: node.id, sourcePath: '/项目交付/华东区域/月度简报/' + node.name, inherited: false,

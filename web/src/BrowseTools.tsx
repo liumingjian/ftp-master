@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link2 } from "lucide-react";
 import type { components } from "./api/schema.gen";
 type Node = components["schemas"]["TreeNode"];
 
@@ -7,12 +8,12 @@ export function copiedItemId(hash: string) {
   return match ? Number(match[1]) : undefined;
 }
 
-export function CopyItemLink({ node }: { node: Node }) {
+export function CopyItemLink({ node, compact = false }: { node: Node; compact?: boolean }) {
   const [message, setMessage] = useState("");
-  return <div className="detail-share"><button aria-describedby={`share-note-${node.id}`} onClick={async () => {
-    try { const url = new URL("/", location.origin); url.hash = `item=${node.id}`; await navigator.clipboard.writeText(url.href); setMessage("链接已复制"); }
+  return <div className="detail-share"><button aria-describedby={compact ? undefined : `share-note-${node.id}`} onClick={async () => {
+    try { const url = new URL("/", location.origin); url.hash = `item=${node.id}`; await navigator.clipboard.writeText(url.href); setMessage(compact ? "链接已复制，仅已有访问权限的人可打开" : "链接已复制"); }
     catch { setMessage("无法复制链接，请检查浏览器剪贴板权限"); }
-  }}>复制链接</button><small id={`share-note-${node.id}`}>仅已有访问权限的人可打开链接</small>
+  }}>{compact && <Link2 size={16} aria-hidden="true" />}复制链接</button>{!compact && <small id={`share-note-${node.id}`}>仅已有访问权限的人可打开链接</small>}
     {message && <small role="status">{message}</small>}</div>;
 }
 export function previewKind(node: Node) {

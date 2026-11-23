@@ -2,8 +2,9 @@ import type { components } from './api/schema.gen'
 
 type Node = components['schemas']['TreeNode']
 
+export const sampleFolderId = 12
 export const sampleFileId = 21
-export const report = {
+const report = {
   period: '2026 年 11 月',
   title: '华东区域项目交付与风险跟踪',
   team: '项目交付组',
@@ -27,10 +28,10 @@ const modified = '2026-11-23T02:42:00Z'
 const directoryRights = 7
 const fileRights = 27
 function folder(id: number, name: string, parentId?: number): Node {
-  return { id, name, parentId, isFile: false, rights: directoryRights, traversable: false }
+  return { id, name, parentId, isFile: false, rights: id === sampleFolderId ? directoryRights | 16 : directoryRights, traversable: false }
 }
 function file(id: number, name: string, size: number, username: string, createdAt = modified): Node {
-  return { id, parentId: 12, name, isFile: true, rights: fileRights, traversable: false,
+  return { id, parentId: sampleFolderId, name, isFile: true, rights: id === sampleFileId ? fileRights | 32 : id === 22 ? 1 : fileRights, traversable: false,
     latestVersion: { id: id * 10 + 3, format: name.split('.').at(-1)!, size, username, createdAt } }
 }
 
