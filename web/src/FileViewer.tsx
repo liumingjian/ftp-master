@@ -1,18 +1,29 @@
-import { useLayoutEffect, useRef, useState } from 'react'
-import { Download, Pencil, X } from 'lucide-react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Download, Eye, Pencil, X } from 'lucide-react'
 import { previewKind } from './BrowseTools'
 import { FileIcon } from './FileIcon'
 import { TextEditor } from './TextEditor'
+import { formatCurrentLocalMinute } from './clock'
 import type { components } from './api/schema.gen'
 
 type Node = components['schemas']['TreeNode']
+export interface ViewerUser {
+  displayName: string
+  username: string
+  organizationName?: string
+}
+
 const officeFormats = new Set(['doc', 'docx', 'wps', 'xls', 'xlsx'])
 const officeLimit = 25 * 1024 * 1024
 
-function editableOfficeVersion(node: Node) {
+export function editableOfficeVersion(node: Node) {
   const version = node.latestVersion
   if (node.isFile && (node.rights & 8) && version &&
       officeFormats.has(version.format) && version.size <= officeLimit) return version
+}
+
+export function officeMissingPluginMessage() {
+  return `当前站点未检测到可用的 WPS 编辑插件。请确认已安装并启用 ftp-master WPS 编辑插件，且插件配置的站点为 ${window.location.origin}，然后刷新页面重试。`
 }
 
 export function canPreviewOffice(node: Node) {
@@ -21,15 +32,32 @@ export function canPreviewOffice(node: Node) {
     officeFormats.has(version.format) && version.size <= officeLimit
 }
 
-export function OfficeEditAction({ node, onOpen, icon = false }: {
+function escapeXml(value: string) {
+  return value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[char] ?? char))
+}
+
+function buildWatermarkDataUri(user: ViewerUser, timestamp: string) {
+  const line1 = escapeXml(`${user.displayName} (${user.username})`)
+  const line2 = escapeXml(user.organizationName ? `${user.organizationName} · ${timestamp}` : timestamp)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="190" viewBox="0 0 320 190">` +
+    `<g transform="rotate(-24 160 95)" fill="#5e6b70" fill-opacity="0.16" font-family="system-ui, PingFang SC, Microsoft YaHei, sans-serif" text-anchor="middle">` +
+    `<text x="160" y="88" font-size="14" font-weight="600">${line1}</text>` +
+    `<text x="160" y="109" font-size="12">${line2}</text>` +
+    `</g></svg>`
+  return `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`
+}
+
+export function OfficeEditAction({ node, onOpen, icon = false, className }: {
   node: Node
   onOpen: () => void
   icon?: boolean
+  className?: string
 }) {
   const version = editableOfficeVersion(node)
   if (!version) return null
 
-  return <a className={icon ? 'button icon office-edit-indicator' : 'button office-edit'} href={`/api/files/${node.id}/office-edits`}
+  const baseClass = icon ? 'button icon office-edit-indicator' : 'button office-edit'
+  return <a className={className ? `${baseClass} ${className}` : baseClass} href={`/api/files/${node.id}/office-edits`}
     data-ftp-office-edit="1" data-ftp-office-version={version.id} target="_blank" rel="noopener"
     title="在线编辑"
     onAuxClick={event => event.preventDefault()}
@@ -39,16 +67,17 @@ export function OfficeEditAction({ node, onOpen, icon = false }: {
       event.preventDefault()
       if (editorHandledClick) onOpen()
       else if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-        window.alert(`当前站点未检测到可用的 WPS 编辑插件。请确认已安装并启用 ftp-master WPS 编辑插件，且插件配置的站点为 ${window.location.origin}，然后刷新页面重试。`)
+        window.alert(officeMissingPluginMessage())
       }
     }} aria-label={`在线编辑 ${node.name}`}>
-    <Pencil size={15} aria-hidden="true" />{!icon && '在线编辑'}
+    <Pencil size={16} aria-hidden="true" />{!icon && '在线编辑'}
   </a>
 }
 
-export function FileViewer({ node, officePreview, close, saved }: {
+export function FileViewer({ node, officePreview, viewerUser, close, saved }: {
   node: Node
   officePreview: boolean
+  viewerUser?: ViewerUser
   close: () => void
   saved: () => void
 }) {
@@ -57,6 +86,11 @@ export function FileViewer({ node, officePreview, close, saved }: {
   const kind = previewKind(node)
   const office = version && officeFormats.has(version.format)
   const download = !!(node.rights & 2)
+  const [openedAt] = useState(() => formatCurrentLocalMinute())
+  const watermarkImage = useMemo(
+    () => viewerUser && kind && kind !== 'audio' ? buildWatermarkDataUri(viewerUser, openedAt) : undefined,
+    [viewerUser, kind, openedAt],
+  )
 
   useLayoutEffect(() => {
     const viewer = dialog.current
@@ -80,17 +114,21 @@ export function FileViewer({ node, officePreview, close, saved }: {
         <FileIcon node={node} tile />
         <h2 id="file-viewer-title" title={node.name}>{node.name}</h2>
         <div className="file-viewer-actions">
+          {!download && <span className="pill neutral viewer-readonly-pill" title="当前账户对该文件无下载权限">
+            <Eye size={13} aria-hidden="true" />仅在线预览
+          </span>}
           <TextEditor node={node} saved={saved} />
           {download && <a className="button" href={`/api/tree/${node.id}/download`} download>
             <Download size={16} aria-hidden="true" />下载
           </a>}
-          <button type="button" className="icon ghost" aria-label="关闭文件查看" autoFocus onClick={dismiss}>
+          <button type="button" className="icon ghost" aria-label="关闭文件查看" title="关闭文件查看" autoFocus onClick={dismiss}>
             <X size={18} aria-hidden="true" />
           </button>
         </div>
       </header>
       {kind ? <section aria-label="文件预览" className={`file-viewer-body ${kind}`}>
         <PreviewContent key={version?.id} node={node} kind={kind} />
+        {watermarkImage && <div className="preview-watermark" aria-hidden="true" style={{ backgroundImage: watermarkImage }} />}
       </section> : <div className="file-viewer-notice">
         {office && canPreviewOffice(node) && officePreview
           ? <p><a className="button" href={`/api/files/${node.id}/office-edits`} data-ftp-office-preview="1"

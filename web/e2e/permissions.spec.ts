@@ -36,7 +36,7 @@ async function upload(page: Page, parent: number, name: string) {
   await page.getByLabel('上传文件', { exact: true }).setInputFiles({
     name, mimeType: 'text/plain', buffer: Buffer.from('search permissions'),
   })
-  await expect(page.getByRole('button', { name: '详情与操作 ' + name, exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '更多操作 ' + name, exact: true })).toBeVisible()
 }
 
 test('non-admin search uses Delete on each result’s source directory', async ({ page, browser }) => {
@@ -72,15 +72,14 @@ test('non-admin search uses Delete on each result’s source directory', async (
     const table = reader.getByRole('table', { name: '文件列表' })
     await expect(table.getByRole('button', { name: fixedFile, exact: true })).toBeVisible()
     await expect(table.getByRole('button', { name: hiddenFile, exact: true })).toHaveCount(0)
-    const detail = reader.getByRole('complementary', { name: '项目详情' })
-    await table.getByRole('button', { name: '详情与操作 ' + fixedFile }).click()
-    await expect(detail.getByRole('heading', { name: fixedFile })).toBeVisible()
-    await detail.getByLabel('更多操作').click()
-    await expect(detail.getByRole('button', { name: '移动 ' + fixedFile })).toHaveCount(0)
-    await detail.getByRole('button', { name: '关闭详情' }).click()
-    await table.getByRole('button', { name: '详情与操作 ' + movableFile }).click()
-    await detail.getByLabel('更多操作').click()
-    await expect(detail.getByRole('button', { name: '移动 ' + movableFile })).toBeVisible()
+    await table.getByRole('button', { name: '更多操作 ' + fixedFile, exact: true }).click()
+    const fixedMenu = reader.getByRole('menu', { name: '操作 ' + fixedFile })
+    await expect(fixedMenu).toBeVisible()
+    await expect(fixedMenu.getByRole('menuitem', { name: '移动', exact: true })).toHaveCount(0)
+    await reader.keyboard.press('Escape')
+    await table.getByRole('button', { name: '更多操作 ' + movableFile, exact: true }).click()
+    const movableMenu = reader.getByRole('menu', { name: '操作 ' + movableFile })
+    await expect(movableMenu.getByRole('menuitem', { name: '移动', exact: true })).toBeVisible()
   } finally {
     await reader.close()
   }
@@ -160,9 +159,8 @@ test('creator handover distinguishes namesakes and applies only the saved draft'
   const parent = await folder(page.request, `Handover-${suffix}`)
   const file = '移交测试.txt'
   await upload(page, parent, file)
-  await page.getByRole('button', {name: '详情与操作 ' + file}).click()
-  await page.getByRole('button', {name:/我的权限/}).click()
-  await page.getByRole('button', {name:'管理权限', exact:true}).click()
+  await page.getByRole('button', {name: '更多操作 ' + file, exact: true}).click()
+  await page.getByRole('menu', {name: '操作 ' + file}).getByRole('menuitem', {name: '管理权限', exact: true}).click()
   await page.getByRole('button', {name:'转移创建者'}).click()
   const form = page.getByRole('group', {name:'转移创建者'})
   await form.getByRole('searchbox').fill('接任测试')

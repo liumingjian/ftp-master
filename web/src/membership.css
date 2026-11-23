@@ -1,0 +1,992 @@
+/* Desktop Organization, User Group, and User management workspace styles. */
+
+/* Top tabs with quiet counts */
+.membership-page>.membership-tabs {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  gap: 6px;
+}
+
+.membership-tabs .membership-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding-inline: 6px;
+  border-radius: 999px;
+  background: var(--control);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.membership-tabs [aria-pressed='true'] .membership-tab-count {
+  background: var(--panel);
+  color: var(--accent);
+}
+
+/* Main workspace card */
+.membership-card {
+  border: 1px solid var(--line);
+  border-radius: var(--surface-radius);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.membership-toolbar,
+.membership-retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.membership-toolbar {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.membership-toolbar>.directory-search {
+  flex: 1 1 220px;
+  max-width: 340px;
+}
+
+.membership-toolbar select {
+  min-height: 36px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.membership-toolbar-actions {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.membership-tree-toggle-all {
+  font-size: 13px;
+  color: var(--secondary);
+}
+
+/* Data tables */
+.membership-table {
+  overflow-x: auto;
+}
+
+.membership-table table {
+  min-width: 560px;
+}
+
+.membership-table th {
+  background: var(--rail);
+  padding-block: 10px;
+  white-space: nowrap;
+}
+
+.membership-table tbody tr {
+  transition: background-color 120ms var(--ease-ui);
+}
+
+.membership-table tbody tr:hover,
+.membership-table tbody tr:focus-within {
+  background: var(--hover);
+}
+
+.membership-table td {
+  padding-block: 10px;
+  vertical-align: middle;
+}
+
+.membership-table td:first-child,
+.membership-table th:first-child {
+  padding-inline-start: 16px;
+}
+
+.membership-table :is(th, td):last-child {
+  text-align: end;
+  padding-inline-end: 16px;
+  white-space: nowrap;
+}
+
+.membership-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.membership-empty {
+  padding: 40px 16px;
+  margin: 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* Entity identity cells */
+.membership-org-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.membership-disclosure {
+  flex: none;
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+  color: var(--muted);
+  border-radius: 6px;
+}
+
+.membership-disclosure svg {
+  transition: transform 160ms var(--ease-ui);
+}
+
+.membership-disclosure svg.expanded {
+  transform: rotate(90deg);
+}
+
+.membership-disclosure-spacer {
+  flex: none;
+  width: 24px;
+}
+
+.membership-disclosure-spacer.compact {
+  width: 20px;
+}
+
+.organization-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.organization-name>svg {
+  color: var(--muted);
+  flex: none;
+}
+
+.membership-entity-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.organization-name strong {
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.organization-name small {
+  display: block;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.membership-id-line {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.membership-copy-id {
+  min-height: 20px;
+  width: 20px;
+  padding: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 120ms var(--ease-ui), background-color 120ms var(--ease-ui), color 120ms var(--ease-ui);
+}
+
+.membership-table tbody tr:hover .membership-copy-id,
+.membership-table tbody tr:focus-within .membership-copy-id,
+.import-org-list li:hover .membership-copy-id,
+.import-org-list li:focus-within .membership-copy-id,
+.membership-copy-id:focus-visible {
+  opacity: 1;
+}
+
+.membership-copy-id:hover {
+  color: var(--text);
+}
+
+/* Interactive counts & row actions */
+.membership-count-link,
+.membership-org-link {
+  min-height: 28px;
+  padding: 2px 8px;
+  margin-inline-start: -8px;
+  font-weight: 400;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+}
+
+.membership-count-link:hover,
+.membership-org-link:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.membership-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.membership-row-secondary {
+  color: var(--secondary);
+  font-size: 13px;
+  min-height: 30px;
+  padding: 2px 8px;
+  opacity: 0;
+  transition: opacity 120ms var(--ease-ui), background-color 120ms var(--ease-ui), color 120ms var(--ease-ui);
+}
+
+.membership-table tbody tr:hover .membership-row-secondary,
+.membership-table tbody tr:focus-within .membership-row-secondary,
+.membership-row-secondary:focus-visible {
+  opacity: 1;
+}
+
+.membership-row-actions button:active:not(:disabled),
+.membership-tree-item:active:not(:disabled),
+.membership-group-chip:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Group previews & user group chips */
+.membership-group-preview-cell {
+  max-width: 280px;
+}
+
+.membership-group-preview,
+.membership-group-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.membership-mini-chip,
+.membership-group-chip {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 148px;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--control);
+  color: var(--secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.membership-group-chip {
+  min-height: 24px;
+  border: 1px solid transparent;
+  transition: background-color 120ms var(--ease-ui), color 120ms var(--ease-ui), transform 120ms var(--ease-ui);
+}
+
+.membership-group-chip:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.membership-mini-more {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding-inline: 2px;
+}
+
+/* Users view: desktop split layout (left org tree + right user workspace) */
+.membership-users-layout {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: 460px;
+}
+
+.membership-org-sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--rail);
+  border-inline-end: 1px solid var(--line);
+  min-width: 0;
+}
+
+.membership-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.membership-org-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 620px;
+}
+
+.membership-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.membership-tree-row .membership-disclosure {
+  width: 20px;
+  min-height: 28px;
+}
+
+.membership-tree-item {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 10px;
+  justify-content: space-between;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: start;
+  transition: background-color 120ms var(--ease-ui), color 120ms var(--ease-ui), transform 120ms var(--ease-ui);
+}
+
+.membership-tree-row .membership-tree-item {
+  flex: 1;
+  width: auto;
+}
+
+.membership-tree-item:hover {
+  background: var(--control);
+  color: var(--text);
+}
+
+.membership-tree-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.membership-tree-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.membership-tree-count {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.membership-tree-item.active .membership-tree-count {
+  color: var(--accent);
+}
+
+.membership-users-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.membership-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--rail);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.membership-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.membership-chip-clear {
+  width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border-radius: 999px;
+  color: inherit;
+}
+
+.membership-chip-clear:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme='dark'] .membership-chip-clear:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.membership-descendant-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--secondary);
+  white-space: nowrap;
+}
+
+.membership-descendant-toggle input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.membership-filter-summary {
+  margin-inline-start: auto;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Polished MembershipDialog matching ItemInspectorDialog craft */
+dialog.membership-dialog {
+  width: min(540px, calc(100vw - 32px));
+  max-height: min(86vh, 760px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--surface-radius);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--dialog-shadow);
+  overflow: hidden;
+}
+
+dialog.membership-dialog.wide {
+  width: min(820px, calc(100vw - 32px));
+}
+
+dialog.membership-dialog::backdrop {
+  background: var(--dialog-backdrop);
+  animation: dialog-backdrop-enter 160ms var(--ease-ui);
+}
+
+dialog.membership-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  animation: inspector-dialog-enter 180ms var(--ease-ui);
+}
+
+.membership-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 24px 16px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+
+.membership-dialog-header h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.membership-dialog-body {
+  padding: 20px 24px 24px;
+  overflow-y: auto;
+  display: grid;
+  gap: 16px;
+}
+
+.membership-dialog-body .banner {
+  margin: 0;
+}
+
+.membership-dialog-form {
+  display: grid;
+  align-items: stretch;
+  gap: 16px;
+  margin: 0;
+}
+
+.membership-dialog-form>label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--secondary);
+}
+
+.membership-dialog-form input:not([type='checkbox']),
+.membership-dialog-form select {
+  font-weight: 400;
+  color: var(--text);
+}
+
+.membership-dialog .panel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.membership-dialog .import-users-panel>.section-heading {
+  display: none;
+}
+
+.membership-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.membership-dialog-actions .danger {
+  margin-inline-end: auto;
+}
+
+/* Inline blocker & destructive confirmation box */
+.membership-blocker-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--rail);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.membership-confirm-box {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
+.membership-confirm-box p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.membership-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* User editor: identity card & multi-group checklist */
+.membership-person {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--rail);
+  border: 1px solid var(--line);
+}
+
+.membership-user-groups {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.membership-user-groups legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--secondary);
+}
+
+.membership-legend-count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-page .membership-dialog-form .directory-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.membership-group-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 196px;
+  overflow-y: auto;
+  display: grid;
+  gap: 2px;
+}
+
+.workspace-page .membership-dialog-form .membership-group-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text);
+  transition: background-color 120ms var(--ease-ui);
+}
+
+.workspace-page .membership-dialog-form .membership-group-checklist label:hover {
+  background: var(--hover);
+}
+
+.workspace-page .membership-dialog-form .membership-group-checklist label.checked {
+  background: var(--accent-soft);
+}
+
+.workspace-page .membership-dialog-form .membership-group-checklist input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+}
+
+.membership-checklist-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.membership-checklist-meta {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.membership-inline-empty {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.membership-reset-password {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--rail);
+  padding: 10px 14px;
+}
+
+.membership-reset-password summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--secondary);
+  list-style: none;
+}
+
+.membership-reset-password summary::-webkit-details-marker {
+  display: none;
+}
+
+.membership-reset-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.membership-reset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.membership-reset-row input {
+  flex: 1;
+}
+
+.membership-reset-row button {
+  flex: none;
+}
+
+/* Desktop two-column group member shuttle picker */
+.member-shuttle {
+  display: grid;
+  gap: 16px;
+}
+
+.member-shuttle-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.member-shuttle-pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.member-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--rail);
+  border-bottom: 1px solid var(--line);
+}
+
+.member-pane-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.membership-pane-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.membership-batch-add,
+.membership-reset-btn {
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.membership-reset-btn {
+  color: var(--secondary);
+}
+
+.member-pane-filters {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.member-pane-subfilters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.member-pane-subfilters select {
+  flex: 1;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.member-pane-list {
+  flex: 1;
+  height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.member-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.member-list>li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  transition: background-color 120ms var(--ease-ui);
+}
+
+.member-list>li:hover {
+  background: var(--hover);
+}
+
+.member-list>li.member-row-added {
+  background: var(--accent-soft);
+}
+
+.member-row-identity {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.member-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-inline-start: 40px;
+  font-size: 12.5px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.member-row-meta .pill {
+  padding: 0 6px;
+  font-size: 11px;
+  min-height: 18px;
+}
+
+.member-list>li>button {
+  flex: none;
+  min-height: 28px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.membership-pane-empty {
+  margin: 0;
+  padding: 40px 12px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.member-shuttle-footer {
+  padding-top: 14px;
+  margin-top: 0;
+}
+
+.member-diff-summary {
+  margin-inline-end: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ImportUsersPanel enhancements */
+.import-helper-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-template-btn {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.import-example {
+  margin-top: 4px;
+}
+
+.import-org-reference {
+  margin: 0;
+}
+
+.import-org-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 168px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--rail);
+}
+
+.import-org-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--line);
+}
+
+.import-org-list li:last-child {
+  border-bottom: 0;
+}
+
+.import-org-id-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.import-org-id-group code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--control);
+  font-size: 12px;
+}
+
+.import-org-list .membership-copy-id {
+  opacity: 0.72;
+}
+
+.import-org-list li:hover .membership-copy-id {
+  opacity: 1;
+}

@@ -24,13 +24,14 @@ type Props = {
   revision: number
   width: number
   resize: (width: number) => void
+  collapsed?: boolean
   drawerOpen: boolean
   closeDrawer: () => void
 }
 
 export function DirectorySidebar({
   visible, browsing, rootSelected, recycle, recycleHref, openRecycle, openFolder, path, branches,
-  revision, width, resize, drawerOpen, closeDrawer,
+  revision, width, resize, collapsed = false, drawerOpen, closeDrawer,
 }: Props) {
   const [narrow, setNarrow] = useState(() => window.matchMedia(narrowViewport).matches)
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set())
@@ -173,10 +174,10 @@ export function DirectorySidebar({
     </div>
   </dialog>
 
-  return <aside className="sidebar file-sidebar" hidden={!visible}>
+  return <aside className={collapsed ? 'sidebar file-sidebar collapsed' : 'sidebar file-sidebar'} hidden={!visible} aria-hidden={collapsed || undefined}>
     <span className="sidebar-heading">目录</span>
     {contents}
-    <SidebarResize width={width} resize={resize} />
+    {!collapsed && <SidebarResize width={width} resize={resize} />}
   </aside>
 }
 

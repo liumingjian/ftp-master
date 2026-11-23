@@ -16,7 +16,9 @@ export const actionNames: Record<string, string> = {
   sign_in: '登录', sign_out: '退出', upload: '上传', download: '下载', zip_download: '打包下载',
   directory_create: '创建目录', rename: '重命名', move: '移动', delete: '删除', restore: '恢复',
   purge: '永久删除', automatic_purge: '自动清理回收站', grant_change: '变更授权',
-  account_change: '变更账户', account_import: '导入账户', open_for_edit: '打开 Office 编辑',
+  account_change: '变更账户', account_import: '导入账户', account_lock: '锁定账户',
+  password_change: '修改密码', password_reset: '重置密码',
+  open_for_edit: '打开 Office 编辑',
   office_save: '保存 Office 文件', text_open: '打开文本编辑', text_save: '保存文本',
   restore_version: '恢复版本', upload_policy_change: '变更上传设置', office_edit_policy_change: '变更 Office 编辑设置',
 }

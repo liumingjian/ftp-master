@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowLeft, Building2, ChevronRight, Lock, TriangleAlert, UserRound, UserRoundPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, Building2, ChevronRight, Lock, SearchCheck, TriangleAlert, UserRound, UserRoundPlus, Users, X } from 'lucide-react'
 import { DirectorySearch, matchesSearch } from './DirectorySearch'
 import { PageHeading } from './PageHeading'
 import { api } from './api/client'
@@ -20,20 +20,67 @@ const principalIcons = { user: UserRound, organization: Building2, user_group: U
 const principalOrder = (grant: Grant) => grant.creator ? -1 : principalKinds.indexOf(grant.principalKind)
 const individualGrantWarningThreshold = 10
 
-function useUserOptions(administrator: boolean) {
-  const [users, setUsers] = useState<Principal[]>()
+type Organization = components['schemas']['Organization']
+type ManagedUser = components['schemas']['ManagedUser']
+
+function useManagedUsers(administrator: boolean) {
+  const [users, setUsers] = useState<ManagedUser[]>()
   useEffect(() => {
     if (!administrator) return
     const controller = new AbortController()
     void api.GET('/managed-users', { signal: controller.signal }).then(({ data }) => {
-      if (!controller.signal.aborted) setUsers(data?.map(user => ({
-        id: user.id, name: user.displayName + '（' + user.username + '）',
-        detail: user.status === 'deactivated' ? '已停用' : undefined,
-      })))
+      if (!controller.signal.aborted) setUsers(data)
     }).catch(() => {})
     return () => controller.abort()
   }, [administrator])
   return administrator ? users : undefined
+}
+
+function buildOrgCoverage(organizations: Organization[], managedUsers: ManagedUser[] | undefined) {
+  const byId = new Map(organizations.map(org => [org.id, org]))
+  const children = new Map<number | null, Organization[]>()
+  for (const org of organizations) {
+    const parent = org.parentId !== null && byId.has(org.parentId) ? org.parentId : null
+    const list = children.get(parent) ?? []
+    list.push(org)
+    children.set(parent, list)
+  }
+
+  const paths = new Map<number, string>()
+  const descendants = new Map<number, Set<number>>()
+
+  function visit(org: Organization, prefix: string[]): Set<number> {
+    const fullPath = [...prefix, org.name]
+    paths.set(org.id, fullPath.join(' / '))
+    const ids = new Set<number>([org.id])
+    for (const child of children.get(org.id) ?? []) {
+      for (const id of visit(child, fullPath)) ids.add(id)
+    }
+    descendants.set(org.id, ids)
+    return ids
+  }
+  for (const root of children.get(null) ?? []) visit(root, [])
+
+  const activeByOrg = new Map<number, number>()
+  for (const user of managedUsers ?? []) {
+    if (user.status === 'active') activeByOrg.set(user.organizationId, (activeByOrg.get(user.organizationId) ?? 0) + 1)
+  }
+
+  const options: Principal[] = organizations.map(org => {
+    const subtree = descendants.get(org.id) ?? new Set([org.id])
+    const subOrgCount = subtree.size - 1
+    let activeUsers = 0
+    for (const id of subtree) activeUsers += activeByOrg.get(id) ?? 0
+    const parts: string[] = []
+    if (subOrgCount > 0) parts.push(`含 ${subOrgCount} 个下级组织`)
+    if (managedUsers) parts.push(`覆盖 ${activeUsers} 位已激活用户`)
+    return {
+      id: org.id,
+      name: paths.get(org.id) ?? org.name,
+      detail: parts.length ? parts.join(' · ') : undefined,
+    }
+  })
+  return options
 }
 
 function toggleRight(value: number, bit: number, checked: boolean) {
@@ -68,7 +115,14 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
   const [saving, setSaving] = useState(false)
   const [parentCanGrant, setParentCanGrant] = useState(administrator)
   const grantTree = useRef<HTMLElement>(null)
-  const users = useUserOptions(administrator)
+  const managedUsers = useManagedUsers(administrator)
+  const users = managedUsers?.map<Principal>(user => ({
+    id: user.id,
+    name: user.displayName + '（' + user.username + '）',
+    detail: user.status === 'deactivated' ? '已停用' : undefined,
+  }))
+  const [rawOrgs, setRawOrgs] = useState<Organization[]>([])
+  const [rawGroups, setRawGroups] = useState<components['schemas']['UserGroup'][]>([])
   const [transferSource, setTransferSource] = useState<Source>()
   const [successor, setSuccessor] = useState<number>()
   const [handover, setHandover] = useState<{ source: Source; userId: number }>()
@@ -131,25 +185,49 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
     void Promise.all([api.GET('/organizations', options), api.GET('/user-groups', options)])
       .then(([organizations, groups]) => {
         if (controller.signal.aborted) return
-        setPrincipals({
-          organization: organizations.data,
-          user_group: groups.data?.map(group => ({ id: group.id, name: group.name, detail: group.userIds.length + ' 位成员' })),
-        })
+        setRawOrgs(organizations.data ?? [])
+        setRawGroups(groups.data ?? [])
       }).catch(() => {
-        if (!controller.signal.aborted) setPrincipals({})
+        if (!controller.signal.aborted) {
+          setRawOrgs([])
+          setRawGroups([])
+        }
       })
     return () => controller.abort()
   }, [administrator])
 
+  useEffect(() => {
+    if (!administrator) return
+    const activeUserIds = managedUsers ? new Set(managedUsers.filter(u => u.status === 'active').map(u => u.id)) : null
+    setPrincipals({
+      organization: buildOrgCoverage(rawOrgs, managedUsers),
+      user_group: rawGroups.map(group => {
+        const total = group.userIds.length
+        const active = activeUserIds ? group.userIds.filter(id => activeUserIds.has(id)).length : total
+        const detail = activeUserIds && active !== total
+          ? `${active} 位已激活 / 共 ${total} 位成员`
+          : `${total} 位有效成员`
+        return { id: group.id, name: group.name, detail }
+      }),
+    })
+  }, [administrator, rawOrgs, rawGroups, managedUsers])
+
+  function principalEntry(grant: Grant) {
+    return (grant.principalKind === 'user' ? users : principals[grant.principalKind])?.find(entry => entry.id === grant.principalId)
+  }
+
   function principalName(grant: Grant) {
-    return (grant.principalKind === 'user' ? users : principals[grant.principalKind])?.find(entry => entry.id === grant.principalId)?.name
+    return principalEntry(grant)?.name
       ?? principalLabels[grant.principalKind] + ' #' + grant.principalId
   }
 
   function principalCell(grant: Grant) {
     const Icon = principalIcons[grant.principalKind]
+    const entry = principalEntry(grant)
+    const roleLabel = grant.creator ? '创建者' : principalLabels[grant.principalKind]
+    const subline = !grant.creator && entry?.detail ? `${roleLabel} · ${entry.detail}` : roleLabel
     return <span className="grant-principal"><Icon size={16} aria-hidden="true" />
-      <span><strong>{principalName(grant)}</strong><small>{grant.creator ? '创建者' : principalLabels[grant.principalKind]}</small></span>
+      <span><strong>{principalName(grant)}</strong><small>{subline}</small></span>
     </span>
   }
 
@@ -265,7 +343,7 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
         <div className="grant-heading">
           <FileIcon node={selected} tile /><div><h2>{selected.name}</h2>
             <nav className="grant-path" aria-label="授权目录路径">
-              <span>共享目录</span><ChevronRight size={12} />
+              <span>全部文件</span><ChevronRight size={12} />
               {path.map(entry => <button key={entry.id} className="ghost" onClick={() => pick(entry)}>{entry.name}<ChevronRight size={12} /></button>)}
               <span aria-current="location">{selected.name}</span>
             </nav>
@@ -389,7 +467,12 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
           <button type="button" className="ghost" disabled={saving} onClick={discard}>放弃更改</button>
           <button type="button" className="primary" disabled={!impact || saving || !!transferSource} onClick={() => void save()}>保存全部授权</button>
         </div>}
-        <details className="permission-inspection"><summary>有效权限查询</summary>
+        <details className="permission-inspection">
+          <summary>
+            <SearchCheck size={16} aria-hidden="true" />
+            <span>有效权限查询</span>
+            <ChevronRight className="grant-disclosure" size={16} aria-hidden="true" />
+          </summary>
           <PermissionInspection key={`${selected.id}-${revision}`} node={selected} administrator={administrator} />
         </details>
         {message && <p className={'banner ' + (message === '授权已保存' ? 'success' : 'error')}
@@ -443,7 +526,12 @@ function Scope({ name, value, disabled, onChange }: {
 }
 
 export function PermissionInspection({ node, administrator }: { node: Node; administrator: boolean }) {
-  const users = useUserOptions(administrator)
+  const managedUsers = useManagedUsers(administrator)
+  const users = managedUsers?.map<Principal>(user => ({
+    id: user.id,
+    name: user.displayName + '（' + user.username + '）',
+    detail: user.status === 'deactivated' ? '已停用' : undefined,
+  }))
   const [person, setPerson] = useState<number>()
   const [inspection, setInspection] = useState<components['schemas']['PermissionInspection']>()
   const [message, setMessage] = useState('')

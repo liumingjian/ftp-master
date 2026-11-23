@@ -18,7 +18,7 @@ test('two independent sessions retain edits and refuse stale text saves',async({
  await other.keyboard.press('Escape')
  await expect(other.getByLabel('文本内容')).toHaveValue('second edit')
  other.once('dialog', dialog => dialog.accept())
- await other.getByRole('button',{name:'重新加载文本'}).click();await expect(other.getByLabel('文本内容')).toHaveValue('first save 中文')
+ await other.getByRole('button',{name:'重新加载',exact:true}).click();await expect(other.getByLabel('文本内容')).toHaveValue('first save 中文')
  await other.keyboard.press('Escape')
  await expect(other.getByLabel('文本内容')).toHaveCount(0)
  await expect(other.getByRole('region', { name: '文件预览' })).toBeVisible()
