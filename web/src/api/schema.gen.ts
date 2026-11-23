@@ -337,6 +337,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/office-edit-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getOfficeEditPolicy"];
+        put: operations["setOfficeEditPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/upload-policy": {
         parameters: {
             query?: never;
@@ -792,6 +808,8 @@ export interface components {
             traversable: boolean;
             /** @description Included in search results. The caller can move this item out of its source directory. */
             canMoveFromParent?: boolean;
+            /** @description Included in search results when every ancestor is visible to the caller. The parent directory's display path, or / for the root. */
+            parentPath?: string;
             /** @description Included in grant-count listings on items where the caller has Grant. */
             directGrantCount?: number;
             /** @description Counts direct User Grants excluding Creator Grants. Requires the same access as directGrantCount. */
@@ -978,6 +996,9 @@ export interface components {
             /** Format: int64 */
             versionId: number;
         };
+        OfficeEditPolicy: {
+            enabled: boolean;
+        };
         UploadPolicy: {
             blockedExtensions: string[];
         };
@@ -1024,6 +1045,8 @@ export interface operations {
             /** @description Preflight accepted; no download or audit event. */
             204: {
                 headers: {
+                    "X-File-Count": number;
+                    "X-Total-Bytes": number;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -1632,6 +1655,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadReceipt"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getOfficeEditPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Office editing policy for this installation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeEditPolicy"];
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    setOfficeEditPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfficeEditPolicy"];
+            };
+        };
+        responses: {
+            /** @description Office editing policy for this installation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeEditPolicy"];
                 };
             };
             default: components["responses"]["Unauthorized"];

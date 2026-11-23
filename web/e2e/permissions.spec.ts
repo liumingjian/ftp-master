@@ -6,9 +6,9 @@ const uploadRight = 4
 const deleteRight = 16
 const fullControl = 63
 
-async function createUser(request: APIRequestContext, username: string): Promise<number> {
+async function createUser(request: APIRequestContext, username: string, displayName = username): Promise<number> {
   const registration = await request.post('/api/registrations', {
-    data: { username, displayName: username, organizationHint: 'Default', password: ADMINISTRATOR_PASSWORD },
+    data: { username, displayName, organizationHint: 'Default', password: ADMINISTRATOR_PASSWORD },
   })
   expect(registration.status()).toBe(201)
   const users = await (await request.get('/api/registrations')).json()
@@ -36,7 +36,7 @@ async function upload(page: Page, parent: number, name: string) {
   await page.getByLabel('上传文件', { exact: true }).setInputFiles({
     name, mimeType: 'text/plain', buffer: Buffer.from('search permissions'),
   })
-  await expect(page.getByRole('button', { name: '更多操作 ' + name, exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '详情与操作 ' + name, exact: true })).toBeVisible()
 }
 
 test('non-admin search uses Delete on each result’s source directory', async ({ page, browser }) => {
@@ -44,6 +44,7 @@ test('non-admin search uses Delete on each result’s source directory', async (
   const suffix = Date.now()
   await page.goto('/sign-in')
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  await expect(page.getByTestId('current-user')).toBeVisible()
   const username = `search-${suffix}`
   const user = await createUser(page.request, username)
   const removable = await folder(page.request, `Removable-${suffix}`)
@@ -72,11 +73,13 @@ test('non-admin search uses Delete on each result’s source directory', async (
     await expect(table.getByRole('button', { name: fixedFile, exact: true })).toBeVisible()
     await expect(table.getByRole('button', { name: hiddenFile, exact: true })).toHaveCount(0)
     const detail = reader.getByRole('complementary', { name: '项目详情' })
-    await table.getByRole('button', { name: '更多操作 ' + fixedFile }).click()
+    await table.getByRole('button', { name: '详情与操作 ' + fixedFile }).click()
     await expect(detail.getByRole('heading', { name: fixedFile })).toBeVisible()
+    await detail.getByLabel('更多操作').click()
     await expect(detail.getByRole('button', { name: '移动 ' + fixedFile })).toHaveCount(0)
     await detail.getByRole('button', { name: '关闭详情' }).click()
-    await table.getByRole('button', { name: '更多操作 ' + movableFile }).click()
+    await table.getByRole('button', { name: '详情与操作 ' + movableFile }).click()
+    await detail.getByLabel('更多操作').click()
     await expect(detail.getByRole('button', { name: '移动 ' + movableFile })).toBeVisible()
   } finally {
     await reader.close()
@@ -144,4 +147,36 @@ test('delegated permissions show direct badges on visible, manageable branches',
   } finally {
     await delegate.close()
   }
+})
+
+test('creator handover distinguishes namesakes and applies only the saved draft', async ({page}) => {
+  const suffix = Date.now()
+  const username = `successor-${suffix}`
+  await page.goto('/sign-in')
+  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  await expect(page.getByTestId('current-user')).toBeVisible()
+  await createUser(page.request, `namesake-${suffix}`, '接任测试')
+  const successor = await createUser(page.request, username, '接任测试')
+  const parent = await folder(page.request, `Handover-${suffix}`)
+  const file = '移交测试.txt'
+  await upload(page, parent, file)
+  await page.getByRole('button', {name: '详情与操作 ' + file}).click()
+  await page.getByRole('button', {name:/我的权限/}).click()
+  await page.getByRole('button', {name:'管理权限', exact:true}).click()
+  await page.getByRole('button', {name:'转移创建者'}).click()
+  const form = page.getByRole('group', {name:'转移创建者'})
+  await form.getByRole('searchbox').fill('接任测试')
+  await form.getByRole('button', {name:`接任测试（${username}）`}).click()
+  await form.getByRole('button', {name:'加入移交草稿'}).click()
+  await expect(page.locator('.grant-save')).toContainText(file)
+  await expect(page.locator('.grant-save')).toContainText(username)
+  await page.getByRole('button', {name:'保存全部授权'}).click()
+  await expect(page.getByText('授权已保存', {exact:true})).toBeVisible()
+  await page.locator('.permission-inspection > summary').click()
+  const query = page.getByRole('region', {name:'有效权限查询'})
+  await query.getByRole('searchbox').fill(username)
+  await query.getByRole('button', {name:`接任测试（${username}）`}).click()
+  const result = page.waitForResponse(res => res.url().includes('/permission?userId=' + successor))
+  await query.getByRole('button', {name:'查询用户有效权限'}).click()
+  expect((await (await result).json()).rights).toBe(63)
 })

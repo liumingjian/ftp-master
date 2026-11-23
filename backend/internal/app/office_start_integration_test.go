@@ -119,6 +119,24 @@ func TestOfficeStartRequiresSessionAndFile(t *testing.T) {
 	if _, canSave := preview["saveUrl"]; canSave {
 		t.Fatal("preview returned a save URL")
 	}
+	if status, _ := reader.do("PUT", "/api/office-edit-policy", map[string]any{"enabled": false}); status != 403 {
+		t.Fatalf("non-admin policy change: %d", status)
+	}
+	if status, _ := b.do("PUT", "/api/office-edit-policy", map[string]any{}); status != 400 {
+		t.Fatalf("omitted enabled: %d", status)
+	}
+	if status, _ := b.do("PUT", "/api/office-edit-policy", map[string]any{"enabled": false}); status != 200 {
+		t.Fatalf("disable editing: %d", status)
+	}
+	if status, _ := b.do("POST", route, map[string]any{}); status != 403 {
+		t.Fatalf("disabled editing: %d", status)
+	}
+	if status, _ := reader.do("POST", route, map[string]any{"preview": true}); status != 201 {
+		t.Fatalf("preview with editing disabled: %d", status)
+	}
+	if status, _ := b.do("PUT", "/api/office-edit-policy", map[string]any{"enabled": true}); status != 200 {
+		t.Fatalf("enable editing: %d", status)
+	}
 	// Latest selection differs from explicit historical selection.
 	var latest int64
 	if err = conn.QueryRow(context.Background(), "INSERT INTO file_versions(file_id,object_key,size,format,created_by,created_at) VALUES($1,'new-version',1,'docx',$2,$3) RETURNING id", file, adminID, fake.Now()).Scan(&latest); err != nil {

@@ -9,10 +9,11 @@ export function copiedItemId(hash: string) {
 
 export function CopyItemLink({ node }: { node: Node }) {
   const [message, setMessage] = useState("");
-  return <><button onClick={async () => {
-    try { const url = new URL("/", location.origin); url.hash = `item=${node.id}`; await navigator.clipboard.writeText(url.href); setMessage("链接已复制；接收者需登录并拥有权限"); }
+  return <div className="detail-share"><button aria-describedby={`share-note-${node.id}`} onClick={async () => {
+    try { const url = new URL("/", location.origin); url.hash = `item=${node.id}`; await navigator.clipboard.writeText(url.href); setMessage("链接已复制"); }
     catch { setMessage("无法复制链接，请检查浏览器剪贴板权限"); }
-  }}>复制链接</button>{message && <span role="status">{message}</span>}</>;
+  }}>复制链接</button><small id={`share-note-${node.id}`}>仅已有访问权限的人可打开链接</small>
+    {message && <small role="status">{message}</small>}</div>;
 }
 export function previewKind(node: Node) {
   if (!node.isFile || !(node.rights & 1)) return undefined;

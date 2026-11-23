@@ -9,3 +9,12 @@ SELECT p.*,n.name FROM office_edit_permits p JOIN tree_nodes n ON n.id=p.file_id
 
 -- name: MarkOfficeDelivered :exec
 UPDATE office_edit_permits SET delivered_at=$2 WHERE id=$1;
+
+-- name: GetOfficeEditEnabled :one
+SELECT enabled FROM office_edit_policy WHERE id;
+
+-- name: LockOfficeEditEnabled :one
+SELECT enabled FROM office_edit_policy WHERE id FOR SHARE;
+
+-- name: SetOfficeEditEnabled :exec
+UPDATE office_edit_policy SET enabled = $1 WHERE id;

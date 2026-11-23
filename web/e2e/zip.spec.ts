@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD, signIn } from './signin'
 import { createAndOpenFolder } from './explorer'
 
-test('selected items start one native ZIP download without an in-app transfer message', async ({ page }) => {
+test('selected items hand one ZIP download off to the browser', async ({ page }) => {
   await page.goto('/sign-in')
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
   const panel = page.getByRole('region', { name: '共享目录' })
@@ -14,6 +14,8 @@ test('selected items start one native ZIP download without an in-app transfer me
   await panel.getByRole('checkbox', {name:'hello.txt'}).check()
   const pending = page.waitForEvent('download')
   await zipPanel.getByRole('button', {name:'打包下载所选项目'}).click()
+  await expect(zipPanel).toContainText('可下载 1 个文件')
+  await zipPanel.getByRole('link', {name:'下载 ZIP'}).click()
   const download = await pending
   expect(download.suggestedFilename()).toBe('download.zip')
   const stream = await download.createReadStream()
@@ -24,5 +26,5 @@ test('selected items start one native ZIP download without an in-app transfer me
   expect(bytes.includes(Buffer.from(`${dir}/hello.txt`))).toBe(true)
   expect(bytes.includes(Buffer.from('ZIP bytes'))).toBe(true)
   await expect(zipPanel.getByRole('alert')).toHaveCount(0)
-  await expect(zipPanel.getByRole('status')).toHaveCount(0)
+  await expect(zipPanel.getByRole('status')).toHaveText('已交给浏览器下载')
 })

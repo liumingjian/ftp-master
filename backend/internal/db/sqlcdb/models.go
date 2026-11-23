@@ -64,6 +64,11 @@ type OfficeEditPermit struct {
 	Preview     bool
 }
 
+type OfficeEditPolicy struct {
+	ID      bool
+	Enabled bool
+}
+
 type Organization struct {
 	ID       int64
 	Name     string

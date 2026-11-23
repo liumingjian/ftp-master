@@ -208,7 +208,7 @@ export function AuditPanel() {
             </tr></thead>
             <tbody>
               {result.events.map(event => <tr key={event.time + '-' + event.id} className={detail?.id === event.id ? 'selected' : undefined}>
-                <td className="audit-time-cell"><time dateTime={event.time} title={event.time}>{event.time.replace('T', ' ').slice(5, 19)}</time></td>
+                <td className="audit-time-cell"><time dateTime={event.time} title={formatAuditTime(event.time) + ' UTC'}>{formatAuditTime(event.time).slice(5)}</time></td>
                 <td>{event.username || '—'}</td>
                 <td className="audit-time-cell">{event.sourceIp || '—'}</td>
                 <td title={event.action}>{actionNames[event.action] ?? event.action}</td>
@@ -237,7 +237,7 @@ export function AuditPanel() {
           <button ref={detailClose} className="ghost icon" aria-label="关闭详情" onClick={() => closeDetail()}><X size={16} /></button>
         </div>
         <dl>
-          <dt>时间</dt><dd><time dateTime={detail.time}>{detail.time.replace('T', ' ').slice(0, 19)} UTC</time></dd>
+          <dt>时间</dt><dd><time dateTime={detail.time}>{formatAuditTime(detail.time)} UTC</time></dd>
           <dt>用户</dt><dd>{detail.username || '—'}</dd>
           <dt>来源 IP</dt><dd>{detail.sourceIp || '—'}</dd>
           <dt>操作</dt><dd>{actionNames[detail.action] ?? detail.action}</dd>
@@ -263,4 +263,8 @@ export function AuditPanel() {
       </aside>}
     </div>
   </section>
+}
+
+function formatAuditTime(value: string) {
+  return new Date(value).toISOString().slice(0, 19).replace('T', ' ')
 }

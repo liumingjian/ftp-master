@@ -63,6 +63,16 @@ func (r officeDocumentResponse) VisitGetOfficeDocumentResponse(w http.ResponseWr
 	if err != nil {
 		return err
 	}
+	if !p.Preview {
+		enabled, err := q.LockOfficeEditEnabled(ctx)
+		if err != nil {
+			return err
+		}
+		if !enabled {
+			writeError(w, 403, "forbidden", "Office editing disabled")
+			return nil
+		}
+	}
 	if p.DeliveredAt.Valid || !s.membership.Clock.Now().Before(p.ExpiresAt.Time) {
 		writeError(w, 410, "expired", "permit unavailable")
 		return nil

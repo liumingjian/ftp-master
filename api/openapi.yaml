@@ -24,7 +24,15 @@ paths:
           content:
             application/zip:
               schema: {type: string, format: binary}
-        '204': {description: Preflight accepted; no download or audit event.}
+        '204':
+          description: Preflight accepted; no download or audit event.
+          headers:
+            X-File-Count:
+              required: true
+              schema: {type: integer}
+            X-Total-Bytes:
+              required: true
+              schema: {type: integer, format: int64}
         default: {$ref: '#/components/responses/Unauthorized'}
   /recycle-bin:
     get:
@@ -416,6 +424,30 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/UploadReceipt'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /office-edit-policy:
+    get:
+      operationId: getOfficeEditPolicy
+      responses:
+        '200':
+          description: Office editing policy for this installation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OfficeEditPolicy'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+    put:
+      operationId: setOfficeEditPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OfficeEditPolicy'}
+      responses:
+        '200':
+          description: Office editing policy for this installation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OfficeEditPolicy'}
         default: {$ref: '#/components/responses/Unauthorized'}
   /upload-policy:
     get:
@@ -1293,6 +1325,9 @@ components:
         canMoveFromParent:
           type: boolean
           description: Included in search results. The caller can move this item out of its source directory.
+        parentPath:
+          type: string
+          description: Included in search results when every ancestor is visible to the caller. The parent directory's display path, or / for the root.
         directGrantCount:
           type: integer
           minimum: 0
@@ -1575,6 +1610,11 @@ components:
       properties:
         fileId: {type: integer, format: int64}
         versionId: {type: integer, format: int64}
+    OfficeEditPolicy:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: {type: boolean, x-go-type: '*bool'}
     UploadPolicy:
       type: object
       required: [blockedExtensions]

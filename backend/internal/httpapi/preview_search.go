@@ -12,6 +12,7 @@ import (
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
+	"github.com/liumingjian/ftp-master/backend/internal/tree"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -26,6 +27,7 @@ func (s *Server) SearchTree(ctx context.Context, r api.SearchTreeRequestObject) 
 	}
 	result := api.SearchTree200JSONResponse{}
 	moveByParent := make(map[int64]bool)
+	pathsByParent := make(map[int64]*string)
 	for _, n := range snap.Nodes {
 		if n.IsFile && snap.Permission(n.ID).Rights.Has(permission.Browse) && strings.Contains(strings.ToLower(n.Name), strings.ToLower(query)) {
 			entry := treeResponse(n, snap)
@@ -36,10 +38,31 @@ func (s *Server) SearchTree(ctx context.Context, r api.SearchTreeRequestObject) 
 				moveByParent[parentID] = canMove
 			}
 			entry.CanMoveFromParent = &canMove
+			parentPath, checked := pathsByParent[parentID]
+			if !checked {
+				parentPath = visibleDirectoryPath(snap, parentID)
+				pathsByParent[parentID] = parentPath
+			}
+			entry.ParentPath = parentPath
 			result = append(result, entry)
 		}
 	}
 	return result, s.attachLatestVersions(ctx, result)
+}
+
+func visibleDirectoryPath(snap *tree.Snapshot, parentID int64) *string {
+	for id := parentID; id != 0; {
+		node, ok := snap.Node(id)
+		if !ok || !snap.Visible(id) {
+			return nil
+		}
+		id = node.ParentID.Int64
+	}
+	path := snap.Path(parentID)
+	if path == "" {
+		path = "/"
+	}
+	return &path
 }
 func (e membershipFailure) VisitSearchTreeResponse(w http.ResponseWriter) error  { return e.write(w) }
 func (e membershipFailure) VisitPreviewFileResponse(w http.ResponseWriter) error { return e.write(w) }

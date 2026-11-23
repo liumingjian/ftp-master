@@ -2,6 +2,38 @@ import { expect, test } from '@playwright/test'
 import { openManagementPage } from './explorer'
 import { ADMINISTRATOR_PASSWORD, ADMINISTRATOR_USERNAME, signIn } from './signin'
 
+test('slow directory navigation keeps the previous list visible until the new list is ready', async ({ page }) => {
+  await page.goto('/sign-in')
+  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  await expect(page.getByTestId('current-user')).toBeVisible()
+  const name = `Directory-transition-${Date.now()}`
+  const destination = await page.request.post('/api/tree', { data: { name } })
+  expect(destination.ok()).toBeTruthy()
+  const { id } = await destination.json()
+  const child = await page.request.post('/api/tree', { data: { name: '目标目录中的项目', parentId: id } })
+  expect(child.ok()).toBeTruthy()
+  await page.reload()
+
+  let releaseListing!: () => void
+  const listing = new Promise<void>(resolve => { releaseListing = resolve })
+  await page.route(url => url.pathname === '/api/tree' && url.searchParams.get('parentId') === String(id),
+    async route => { await listing; await route.continue() })
+
+  const table = page.locator('.file-table table')
+  try {
+    await page.getByRole('navigation', { name: '目录树' }).getByRole('link', { name, exact: true }).click()
+    await expect(page.getByText('正在打开目录…')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '全部文件' })).toBeVisible()
+    await expect(table).toContainText(name)
+    await expect(table).toHaveAttribute('inert', '')
+  } finally {
+    releaseListing()
+  }
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
+  await expect(table).toContainText('目标目录中的项目')
+  await expect(table).not.toHaveAttribute('inert')
+})
+
 test('switching workspaces preserves the file location, expanded branches, and directory scroll', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 460 })
   await page.goto('/sign-in')

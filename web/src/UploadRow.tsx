@@ -5,6 +5,7 @@ import { systemClock, type Clock } from './clock'
 type Session = { id: string; partCount: number; partSize: number; name: string; size: number }
 type Row = { name: string; bytes: number; total: number; speed: number; status: string; complete?: true }
 export const UPLOAD_COMPLETE_MESSAGE_MS = 3000
+export type FileUploadState = 'idle' | 'uploading' | 'resume' | 'conflict'
 export function putPart(url: string, bytes: Blob, progress: (loaded: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -16,7 +17,7 @@ export function putPart(url: string, bytes: Blob, progress: (loaded: number) => 
     xhr.send(bytes)
   })
 }
-export function UploadRow({ parentId, visible, dropZone, completed, clock = systemClock, onActivityChange, onStatusChange }: { onActivityChange?: (active: boolean) => void; onStatusChange?: (visible: boolean) => void; parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; clock?: Clock }) {
+export function UploadRow({ parentId, visible, dropZone, completed, clock = systemClock, onTaskChange, onActivityChange, onStatusChange }: { onTaskChange?: (label: string) => void; onActivityChange?: (state: FileUploadState) => void; onStatusChange?: (visible: boolean) => void; parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; clock?: Clock }) {
   const key = `ftp-upload:${parentId}`
   const [savedSession, setSession] = useState<Session | undefined>(() => { try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
   const fileRef = useRef<File>(undefined)
@@ -43,9 +44,13 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
     window.addEventListener('beforeunload', leave)
     return () => window.removeEventListener('beforeunload', leave)
   }, [busy])
+  const taskCallback = useRef(onTaskChange)
+  taskCallback.current = onTaskChange
+  const taskLabel = row ? `${row.name} · ${row.status}` : savedSession?.name ?? ''
+  useEffect(() => { taskCallback.current?.(taskLabel) }, [taskLabel])
  const activityCallback = useRef(onActivityChange); activityCallback.current=onActivityChange
- const active= busy || !!savedSession || !!conflict
- useEffect(()=>{activityCallback.current?.(active)},[active])
+ const state = busy ? 'uploading' : conflict ? 'conflict' : savedSession ? 'resume' : 'idle'
+ useEffect(() => { activityCallback.current?.(state) }, [state])
   const statusCallback = useRef(onStatusChange)
   statusCallback.current = onStatusChange
   const hasStatus = offline || !!row || (!!savedSession && !busy && !conflict)
@@ -135,13 +140,22 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
   }
   return <>
     {offline && <p role="alert">网络已中断，已保存的分片会保留；网络恢复后自动继续上传。</p>}
-    {visible && savedSession && !busy && !conflict && <label>重新选择文件<input type="file" onChange={event => { const file = event.target.files?.[0]; if(file) void upload(file); event.target.value='' }} /></label>}
+    {visible && state === 'resume' && <div className="upload-resume">
+      <span>{savedSession?.name}<small>重新选择原文件以继续上传</small></span>
+      <label className="button">重新选择文件<input id={`resume-file-${parentId}`} className="visually-hidden" type="file" onChange={event => {
+        const file = event.target.files?.[0]
+        if (file) void upload(file)
+        event.target.value = ''
+      }} /></label>
+    </div>}
     {visible && <label className="visually-hidden">上传文件<input id={`upload-file-${parentId}`} type="file" disabled={busy || !!conflict || !!savedSession} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = '' }} /></label>}
     {row && <div role="status" aria-label="上传进度" className="upload-row">
-      {conflict && <><button disabled={busy} onClick={() => void resolve('new_version')}>存为新版本</button><button disabled={busy} onClick={() => void resolve('keep_both')}>保留两者</button></>}
+      {conflict && <><span>存为新版本会更新原文件；保留两者会另存为独立文件。</span><button disabled={busy} onClick={() => void resolve('new_version')}>存为新版本</button><button disabled={busy} onClick={() => void resolve('keep_both')}>保留两者</button></>}
+      {!busy && !row.complete && !conflict && fileRef.current && <button onClick={() => void upload(fileRef.current!)}>重试上传</button>}
       <span className="transfer-name">{row.name} · {row.status}</span>
+      {row.status === '上传中' && busy && <>
       <progress aria-label="文件上传进度" value={row.bytes} max={row.total || 1} />
-      <span>{Math.round(row.bytes / (row.total || 1) * 100)}% · {(row.speed / 1024 / 1024).toFixed(1)} MB/s · 剩余 {row.speed > 0 ? Math.ceil((row.total - row.bytes) / row.speed) : '—'} 秒</span>
+      <span>{Math.round(row.bytes / (row.total || 1) * 100)}% · {(row.speed / 1024 / 1024).toFixed(1)} MB/s · 剩余 {row.speed > 0 ? Math.ceil((row.total - row.bytes) / row.speed) : '—'} 秒</span></>}
     </div>}
   </>
 }
