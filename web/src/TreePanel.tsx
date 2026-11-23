@@ -63,7 +63,6 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     window.addEventListener('focus', refreshPolicy)
     return () => { controller.abort(); window.removeEventListener('focus', refreshPolicy) }
   }, [active])
-  const [officePlugin, setOfficePlugin] = useState(false)
   const [officePreview, setOfficePreview] = useState(false)
   const [path, setPath] = useState<Node[]>([])
   const [resolvedHash, setResolvedHash] = useState<string>()
@@ -166,11 +165,10 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   useEffect(() => {
     const root = document.documentElement
     const update = () => {
-      setOfficePlugin(!!root.getAttribute('data-ftp-office-plugin')?.trim())
       setOfficePreview(root.getAttribute('data-ftp-office-preview') === '1')
     }
     const observer = new MutationObserver(update)
-    observer.observe(root, { attributes: true, attributeFilter: ['data-ftp-office-plugin', 'data-ftp-office-preview'] })
+    observer.observe(root, { attributes: true, attributeFilter: ['data-ftp-office-preview'] })
     update()
     return () => observer.disconnect()
   }, [])
@@ -567,7 +565,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                   <td className="file-time muted">{node.latestVersion?.createdAt && <time dateTime={node.latestVersion.createdAt}>{formatFileTime(node.latestVersion.createdAt)}</time>}</td>
                   <td className="file-size">{node.latestVersion && formatSize(node.latestVersion.size)}</td>
                   <td><div className="row-actions">
-                    {officeEditing && <OfficeEditAction node={node} officePlugin={officePlugin} onOpen={trackOfficeEdit} icon />}
+                    {officeEditing && <OfficeEditAction node={node} onOpen={trackOfficeEdit} icon />}
                     {node.isFile && !!(node.rights & DOWNLOAD) && <a className="button icon" href={`/api/tree/${node.id}/download`}
                       download aria-label={`下载 ${node.name}`} title="下载"><Download size={15} /></a>}
                     <button id={`detail-trigger-${node.id}`} className="icon" data-panel-trigger aria-expanded={selectedNode?.id === node.id}
@@ -671,7 +669,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
             }}>
               <summary className="button" aria-label="更多操作"><MoreHorizontal size={16} />更多</summary>
               <div className="popup">
-                {officeEditing && <OfficeEditAction node={selectedNode} officePlugin={officePlugin} onOpen={trackOfficeEdit} />}
+                {officeEditing && <OfficeEditAction node={selectedNode} onOpen={trackOfficeEdit} />}
                 {selectedNode.isFile && <TextEditor node={selectedNode} saved={() => refresh(value => value + 1)} />}
                 <CopyItemLink node={selectedNode} />
                 {!!(selectedNode.rights & MODIFY) && <button onClick={() => { setFormError(''); setAction('rename') }}>重命名</button>}

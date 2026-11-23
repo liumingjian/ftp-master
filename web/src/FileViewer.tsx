@@ -21,31 +21,27 @@ export function canPreviewOffice(node: Node) {
     officeFormats.has(version.format) && version.size <= officeLimit
 }
 
-export function OfficeEditAction({ node, officePlugin, onOpen, icon = false }: {
+export function OfficeEditAction({ node, onOpen, icon = false }: {
   node: Node
-  officePlugin: boolean
   onOpen: () => void
   icon?: boolean
 }) {
   const version = editableOfficeVersion(node)
   if (!version) return null
 
-  if (!officePlugin && icon) return <span className="office-edit-indicator" title="在线编辑需要 WPS 插件">
-    <button type="button" className="icon" disabled aria-label={`在线编辑 ${node.name}`}>
-      <Pencil size={15} aria-hidden="true" />
-    </button>
-  </span>
-
-  if (!officePlugin) return <button type="button" className="office-edit" disabled
-    aria-label={`在线编辑 ${node.name}，需要 WPS 插件`}>
-    <span>在线编辑</span>
-    <small>需 WPS 插件</small>
-  </button>
-
   return <a className={icon ? 'button icon office-edit-indicator' : 'button office-edit'} href={`/api/files/${node.id}/office-edits`}
     data-ftp-office-edit="1" data-ftp-office-version={version.id} target="_blank" rel="noopener"
     title="在线编辑"
-    onClick={event => { event.preventDefault(); onOpen() }} aria-label={`在线编辑 ${node.name}`}>
+    onAuxClick={event => event.preventDefault()}
+    onClick={event => {
+      // The extension claims the trusted click in its document capture listener.
+      const editorHandledClick = event.defaultPrevented
+      event.preventDefault()
+      if (editorHandledClick) onOpen()
+      else if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        window.alert(`当前站点未检测到可用的 WPS 编辑插件。请确认已安装并启用 ftp-master WPS 编辑插件，且插件配置的站点为 ${window.location.origin}，然后刷新页面重试。`)
+      }
+    }} aria-label={`在线编辑 ${node.name}`}>
     <Pencil size={15} aria-hidden="true" />{!icon && '在线编辑'}
   </a>
 }

@@ -307,8 +307,6 @@ button.file-name:hover:not(:disabled) { background: transparent; }
 .row-actions > * { min-height: 32px; padding-inline: 8px; font-size: 12px; white-space: nowrap; }
 .row-actions .icon { width: 32px; color: var(--muted); background: transparent; border-color: transparent; }
 .row-actions .icon:not(:disabled):hover { background: var(--control); color: var(--text); }
-.row-actions > span.office-edit-indicator { padding: 0; cursor: not-allowed; }
-.office-edit-indicator .icon { min-height: 32px; pointer-events: none; }
 .office-edit { color: var(--accent); }
 .office-edit:disabled {
   display: inline-grid;

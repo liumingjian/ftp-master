@@ -80,18 +80,17 @@ not prevent later saves by its owner.
 The dedicated ftp-master extension sets `data-ftp-office-plugin` on
 `document.documentElement` to its nonempty extension version (for example
 `0.1.0`). It must set the marker only on its configured ftp-master origin.
-The application observes attribute changes, including late injection and removal.
-An absent, empty or whitespace-only value means the plugin is unavailable.
-The marker controls presentation only; server authorization remains mandatory.
+The app observes the separate preview capability marker for file-name previews.
+Edit entries are clickable when editing is enabled and the user and file are eligible.
 
 `GET /api/tree` includes `latestVersion: {id, size, format}` for browsable files
 with content. Metadata comes from the latest immutable File Version in one
 batched query per listing. It is never inferred from the current filename.
 The browser shows an entry only for a file with Modify, a supported actual
 format (`doc`, `docx`, `wps`, `xls`, `xlsx`), and size at most 26,214,400 bytes.
-The file list currently shows a disabled edit icon for eligible files. In the
-file viewer and item details, an otherwise eligible file shows a disabled edit
-control explaining that the WPS extension is required when the marker is unavailable.
+The file list and item details offer the same edit action. If the extension does
+not claim the click on the current origin, the app displays a prompt with the
+site address and instructions for enabling the extension.
 Missing metadata hides the entry. The explicit version is submitted to start,
 so a concurrent upload cannot silently change the document selected by a click.
 

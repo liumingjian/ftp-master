@@ -18,17 +18,26 @@ test('Office file names preview and row edit icons follow the plugin capabilitie
   await page.goto('/sign-in');
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD);
   await expect(page.getByTestId('current-user')).toBeVisible();
-  await expect(page.locator('a[data-ftp-office-edit]')).toHaveCount(0);
   const officeName = nodes[1].name;
   const fileList = page.getByRole('table', {name: '文件列表'});
-  const listedActions = fileList.getByRole('button', {name: /^在线编辑 /});
-  const listedAction = fileList.getByRole('button', {name: `在线编辑 ${officeName}`, exact: true});
-  await expect(listedAction).toBeVisible();
-  await expect(listedAction).toBeDisabled();
-  await expect(listedAction).toHaveText('');
-  await expect(listedAction.locator('svg')).toBeVisible();
-  await expect(fileList.getByTitle('在线编辑需要 WPS 插件')).toHaveCount(nodes.length);
-  await expect(listedActions).toHaveCount(nodes.length);
+  const editLink = fileList.getByRole('link', {name: `在线编辑 ${officeName}`});
+  async function expectPluginPrompt(click: () => Promise<void>) {
+    const prompt = page.waitForEvent('dialog').then(async dialog => {
+      const message = dialog.message();
+      await dialog.accept();
+      return message;
+    });
+    const [message] = await Promise.all([prompt, click()]);
+    expect(message).toContain('当前站点未检测到可用的 WPS 编辑插件');
+    expect(message).toContain(new URL(page.url()).origin);
+  }
+  await expect(editLink).toBeEnabled();
+  await expectPluginPrompt(() => editLink.click());
+  await fileList.getByRole('button', {name: '详情与操作 ' + officeName}).click();
+  const detail = page.getByRole('complementary', {name:'项目详情'});
+  await detail.getByLabel('更多操作').click();
+  await expectPluginPrompt(() => detail.getByRole('link', {name: `在线编辑 ${officeName}`}).press('Enter'));
+  await detail.getByRole('button', {name:'关闭详情'}).click();
   await page.getByRole('button', {name: officeName, exact: true}).click();
   const viewer = page.getByRole('dialog', {name: officeName});
   await expect(viewer.getByText('在线预览需要支持预览的 ftp-master WPS 插件')).toBeVisible();
@@ -39,7 +48,6 @@ test('Office file names preview and row edit icons follow the plugin capabilitie
     document.documentElement.setAttribute('data-ftp-office-plugin', '0.1.0');
     document.documentElement.setAttribute('data-ftp-office-preview', '1');
   });
-  const editLink = fileList.getByRole('link', {name: `在线编辑 ${officeName}`});
   await expect(editLink).toBeVisible();
   await expect(editLink).toHaveAttribute('href', `/api/files/${nodes[1].id}/office-edits`);
   await expect(editLink).toHaveAttribute('data-ftp-office-version', String(nodes[1].latestVersion.id));
@@ -57,12 +65,9 @@ test('Office file names preview and row edit icons follow the plugin capabilitie
     await expect(link).not.toHaveAttribute('data-ftp-office-edit');
   }
   await expect(editLink).toBeVisible();
-  await page.evaluate(() => document.documentElement.setAttribute('data-ftp-office-plugin', '  '));
-  await expect(editLink).toHaveCount(0);
-  await page.evaluate(() => document.documentElement.setAttribute('data-ftp-office-plugin', '0.1.0'));
-  await expect(editLink).toBeVisible();
+  await expectPluginPrompt(() => editLink.click()); // A stale marker alone cannot open an editor.
   await page.evaluate(() => document.documentElement.removeAttribute('data-ftp-office-plugin'));
-  await expect(editLink).toHaveCount(0);
+  await expect(editLink).toBeEnabled();
 });
 
 // This substitutes only the extension and native WPS process; every HTTP call
