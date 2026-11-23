@@ -14,7 +14,8 @@ import { UploadRow, type FileUploadState } from './UploadRow'
 import { GrantsPanel, PermissionInspection, rights } from './GrantsPanel'
 import { FileIcon, fileTypeLabel, formatSize } from './FileIcon'
 import { api } from './api/client'
-import { loadAncestors, loadBranches } from './treePath'
+import { loadAncestors, loadBranches, loadDirectory } from './treePath'
+import { systemClock } from './clock'
 import { usePanelDismissal } from './usePanelDismissal'
 import type { components } from './api/schema.gen'
 
@@ -55,6 +56,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const [message, setMessage] = useState('')
   const [revision, refresh] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [showDirectoryProgress, setShowDirectoryProgress] = useState(false)
   const [loadFailed, setLoadFailed] = useState(false)
   const [searching, setSearching] = useState(false)
   const [searchFailed, setSearchFailed] = useState(false)
@@ -85,6 +87,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const scrollPositions = useRef(new Map<string, number>())
   const restoredLocation = useRef<string>(undefined)
   const officeEditStarted = useRef(false)
+  const openedLinkedFile = useRef(false)
   const current = path.at(-1)
   const currentId = current?.id ?? ROOT
   const itemId = copiedItemId(hash)
@@ -116,6 +119,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const canMoveSelected = query ? selectedNode?.canMoveFromParent : current ? !!(current.rights & DELETE) : administrator
   const viewerNode = viewedFile && (nodes.find(node => node.id === viewedFile.id) ?? viewedFile)
   const pending = locationPending || (query ? searching : loading)
+  const retainDirectory = !query && locationPending && resolvedHash !== undefined && !loadFailed
   const failed = query ? searchFailed : loadFailed
   const EmptyIcon = query ? Search : FolderOpen
   const detailId = selectedNode?.id
@@ -170,45 +174,81 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   }, [])
 
   useEffect(() => {
+    openedLinkedFile.current = false
+    setSelected([])
+    setAction(undefined)
+    setDetail(undefined)
+    setViewedFile(undefined)
+    setMessage('')
+  }, [hash])
+
+  useEffect(() => {
+    setShowDirectoryProgress(false)
+    if (retainDirectory) return systemClock.after(180, () => setShowDirectoryProgress(true))
+  }, [retainDirectory, hash])
+
+  useEffect(() => {
     const controller = new AbortController()
+    const { signal } = controller
+    setLoading(true)
+    setLoadFailed(false)
+
     async function resolve() {
-      setSelected([])
-      setAction(undefined)
-      setDetail(undefined)
-      setViewedFile(undefined)
-      setMessage('')
-      if (itemId === undefined) {
-        setPath([])
-        setResolvedHash(hash)
-        return
-      }
-      const lookup = (id: number) => api.GET('/tree/{id}', {
-        params: { path: { id } }, signal: controller.signal,
-      })
+      let nextPath: Node[] = []
       try {
-        const { data: node, response } = await lookup(itemId)
-        if (controller.signal.aborted) return
-        if (!node) {
-          setPath([])
-          setMessage(response.status === 404 ? '项目不存在或无权访问' : `HTTP ${response.status}`)
+        let node: Node | undefined
+        if (itemId !== undefined) {
+          const { data, response } = await api.GET('/tree/{id}', { params: { path: { id: itemId } }, signal })
+          if (signal.aborted) return
+          node = data
+          if (!node) setMessage(response.status === 404 ? '项目不存在或无权访问' : '无法加载项目')
+        }
+
+        const directoryId = node?.isFile ? node.parentId ?? ROOT : node?.id ?? ROOT
+        const listing = loadDirectory(directoryId, signal).catch(() => undefined)
+        if (node) {
+          const ancestors = await loadAncestors(node, signal)
+          nextPath = node.isFile ? ancestors : [...ancestors, node]
+        }
+        const visibleId = nextPath.at(-1)?.id ?? ROOT
+        const nodes = visibleId === directoryId ? await listing : await loadDirectory(visibleId, signal)
+        if (signal.aborted) return
+        setPath(nextPath)
+        if (!nodes) {
+          setLoadFailed(true)
           return
         }
-        const ancestors = await loadAncestors(node, controller.signal)
-        if (controller.signal.aborted) return
-        setPath(node.isFile ? ancestors : [...ancestors, node])
-        if (node.isFile) setViewedFile(node)
+        setBranches(previous => {
+          const parents = [ROOT, ...nextPath.slice(0, -1).map(parent => parent.id)]
+          return {
+            ...Object.fromEntries(parents.filter(id => previous[id] !== undefined).map(id => [id, previous[id]])),
+            [visibleId]: nodes,
+          }
+        })
+        if (node?.isFile && !openedLinkedFile.current) {
+          openedLinkedFile.current = true
+          setViewedFile(node)
+        }
+
+        // Refresh the directory tree independently of the visible file list.
+        if (visibleId !== ROOT) void loadBranches(nextPath.slice(0, -1), signal).then(parents => {
+          if (!signal.aborted) setBranches(previous => ({ ...previous, ...parents }))
+        }).catch(() => {})
       } catch {
-        if (!controller.signal.aborted) {
-          setPath([])
-          setMessage('无法加载项目')
+        if (!signal.aborted) {
+          setPath(nextPath)
+          setLoadFailed(true)
         }
       } finally {
-        if (!controller.signal.aborted) setResolvedHash(hash)
+        if (!signal.aborted) {
+          setResolvedHash(hash)
+          setLoading(false)
+        }
       }
     }
     void resolve()
     return () => controller.abort()
-  }, [itemId, hash])
+  }, [itemId, hash, revision])
 
   useEffect(() => {
     if (!canUpload) return
@@ -216,21 +256,6 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       ? previous.map(target => target.at(-1)?.id === currentId ? path : target)
       : [...previous, path])
   }, [path, canUpload, currentId])
-
-  // The sidebar only expands the active branch, plus its siblings at each level.
-  useEffect(() => {
-    const controller = new AbortController()
-    setLoading(true)
-    setLoadFailed(false)
-    void loadBranches(path, controller.signal).then(next => {
-      if (!controller.signal.aborted) setBranches(next)
-    }).catch(() => {
-      if (!controller.signal.aborted) setLoadFailed(true)
-    }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false)
-    })
-    return () => controller.abort()
-  }, [path, revision])
 
   useEffect(() => {
     setSelected([])
@@ -407,7 +432,8 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
             <h1>{query ? '搜索结果' : current?.name ?? '全部文件'}</h1>
             <p className="explorer-meta">
               {query && <span className="search-term">“{query}”</span>}
-              {!pending && !failed && <span>{rows.length} 项</span>}
+              {(!pending || retainDirectory) && !failed && <span>{rows.length} 项</span>}
+              {retainDirectory && showDirectoryProgress && <span role="status">正在打开目录…</span>}
               {!query && current && <span className="pill">{rightsLabel(current)}</span>}
             </p>
           </div>
@@ -459,7 +485,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
             if (event.dataTransfer.items.length > 1) setMessage('一次拖入一个文件，或上传整个文件夹')
           }}>
           {dragTarget && <div className="drop-hint">上传到「{current?.name}」</div>}
-          <table aria-label="文件列表" aria-busy={pending}>
+          <table aria-label="文件列表" aria-busy={pending} inert={retainDirectory}>
             <thead><tr>
               <th><input type="checkbox" aria-label="选择全部" checked={!!rows.length && selectedIds.length === rows.length}
                 ref={input => { if (input) input.indeterminate = selectedIds.length > 0 && selectedIds.length < rows.length }}
@@ -492,7 +518,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                   </td>
                 </tr>
               })}
-              {pending ? <tr><td colSpan={6} className="table-loading" role="status">正在加载…</td></tr> :
+              {pending && !retainDirectory ? <tr><td colSpan={6} className="table-loading" role="status">正在加载…</td></tr> :
                 !failed && rows.map(node => <tr key={node.id} className={selectedIds.includes(node.id) ? 'selected' : undefined}
                   data-detail-open={selectedNode?.id === node.id || undefined}>
                   <td><input type="checkbox" aria-label={node.name} checked={selectedIds.includes(node.id)}
@@ -538,9 +564,9 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                 </tr>)}
             </tbody>
           </table>
-          {!pending && (failed || !rows.length) && (
+          {(!pending || retainDirectory) && (failed || !rows.length) && (
             !failed && !query && canUpload ? (
-              <button type="button" className="table-empty" disabled={fileUpload !== 'idle'}
+              <button type="button" className="table-empty" disabled={locationPending || fileUpload !== 'idle'}
                 onClick={() => chooseUploadFile(currentId)}>
                 <span className="empty-icon"><Upload size={24} aria-hidden="true" /></span>
                 <strong>点击选择文件，或拖到这里上传</strong>
@@ -594,7 +620,9 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
           </div>
         </form> : <header className="file-details-header">
           <DrawerHeading title={selectedNode.name} node={selectedNode} close={() => closeDrawer()} closeRef={detailCloseButton} />
-          <p>{fileTypeLabel(selectedNode)}{selectedNode.latestVersion && ` · ${formatSize(selectedNode.latestVersion.size)}`}</p>
+          {parentLabel && <p className="inspector-location" aria-label="所在位置">
+            <FolderOpen size={15} aria-hidden="true" /><span>{parentLabel === '/' ? '共享目录' : parentLabel}</span>
+          </p>}
         </header>}
         {action === 'move' ? <MovePicker node={selectedNode} administrator={administrator}
           close={() => setAction(undefined)} moved={parentId => {
@@ -636,14 +664,15 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
             </details>
           </div>
           <dl className="file-metadata">
-            {parentLabel && <><dt>所在位置</dt><dd>{parentLabel === '/' ? '共享目录' : parentLabel}</dd></>}
+            <dt>类型</dt><dd>{fileTypeLabel(selectedNode)}{selectedNode.latestVersion && ` · ${formatSize(selectedNode.latestVersion.size)}`}</dd>
             {selectedNode.latestVersion?.createdAt && <><dt>修改时间</dt><dd><time dateTime={selectedNode.latestVersion.createdAt}>
               {formatFileTime(selectedNode.latestVersion.createdAt, true)}</time></dd></>}
             {selectedNode.latestVersion?.username && <><dt>修改人</dt><dd>{selectedNode.latestVersion.username}</dd></>}
           </dl>
           <nav className="inspector-links" aria-label="项目详情视图">
-            {selectedNode.isFile && !!(selectedNode.rights & BROWSE) && <button className="ghost"
-              onClick={() => setDetail({ node: selectedNode, mode: 'versions' })}><History size={16} />版本历史<ChevronRight size={16} /></button>}
+            {selectedNode.isFile && !!(selectedNode.rights & BROWSE) && <button className="ghost" aria-label="版本历史"
+              onClick={() => setDetail({ node: selectedNode, mode: 'versions' })}><History size={16} />版本历史
+              {selectedNode.latestVersion && <small>当前版本 {selectedNode.latestVersion.id}</small>}<ChevronRight size={16} /></button>}
             <button className="ghost" onClick={() => setDetail({ node: selectedNode, mode: 'permission' })}>
               <ShieldCheck size={16} />我的权限<small>{grantedRights.length > 2
                 ? `${grantedRights.length} 项权限`

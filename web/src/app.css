@@ -366,14 +366,16 @@ button.table-empty:focus-visible { outline-offset: -3px; }
   border-radius: var(--surface-radius);
   box-shadow: none;
 }
-.explorer-workspace.has-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(304px, 336px); align-items: start; gap: 20px; }
+.explorer-workspace.has-details { display: grid; grid-template-columns: minmax(0, 1fr) clamp(304px, 24vw, 384px); align-items: start; gap: 20px; }
 @media (max-width: 1040px) {
   .explorer-workspace.has-details { display: block; }
 }
 .file-details-header { margin-bottom: 18px; }
 .file-details-header .drawer-heading { align-items: flex-start; gap: 8px; margin: 0; }
 .file-details-header .drawer-heading h2 { padding-top: 3px; font-size: 18px; line-height: 1.4; }
-.file-details-header p { margin: 3px 0 0 36px; color: var(--secondary); font-size: 13px; }
+.inspector-location { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 0 40px; color: var(--secondary); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.inspector-location svg { flex: none; align-self: flex-start; margin-top: 2px; }
+.inspector-location span { min-width: 0; }
 .file-details-header .drawer-heading .icon { color: var(--secondary); }
 .inspector-tools { align-items: center; }
 .inspector-more { position: relative; }
@@ -442,12 +444,12 @@ dd { margin: 0; }
 .sign-in {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 100vh;
   min-height: 100dvh;
-  padding: 16px;
   color: var(--text);
   background: var(--panel);
 }
-.auth-visual { position: relative; min-height: 100%; overflow: hidden; border-radius: 16px; background: #102724; }
+.auth-visual { position: relative; min-height: 100%; overflow: hidden; background: #102724; }
 .auth-visual img { position: absolute; width: 100%; height: 100%; object-fit: cover; object-position: center 55%; }
 .auth-content { width: min(100%, 488px); margin: auto; padding: 40px 48px; }
 .auth-content .brand { margin-bottom: 40px; }
@@ -462,7 +464,7 @@ dd { margin: 0; }
 .password-control { position: relative; }
 .password-control input { padding-inline-end: 48px; }
 .password-control button { position: absolute; inset: 4px 4px 4px auto; color: var(--muted); }
-.auth-footer { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 20px; }
+.auth-footer { margin-top: 24px; }
 .auth-footer a { font-weight: 500; text-decoration: none; }
 .auth-footer a:hover { text-decoration: underline; }
 .session-feedback { display: grid; align-content: center; justify-items: center; min-height: 100dvh; gap: 12px; padding: 24px; color: var(--muted); }
@@ -984,7 +986,7 @@ dd { margin: 0; }
 .directory-trigger { display: none; }
 
 @media (max-width: 720px) {
-  .sign-in { grid-template-columns: minmax(0, 1fr); padding: 0; }
+  .sign-in { grid-template-columns: minmax(0, 1fr); }
   .auth-content { padding: 32px 24px; }
   .auth-content .brand { margin-bottom: 32px; }
   .auth-visual { display: none; }
