@@ -44,7 +44,7 @@ export function RegistrationPage() {
           <>
             <label>
               姓名
-              <input name="displayName" required maxLength={150} autoComplete="name" />
+              <input name="displayName" required maxLength={150} autoComplete="name" placeholder="请填写真实姓名" />
             </label>
             <label>
               用户名
@@ -55,11 +55,12 @@ export function RegistrationPage() {
                 autoComplete="username"
                 autoCapitalize="none"
                 spellCheck={false}
+                placeholder="英文账号或员工号"
               />
             </label>
             <label>
               所属组织说明
-              <input name="organizationHint" required maxLength={150} />
+              <input name="organizationHint" required maxLength={150} placeholder="例如：总行科技部 / 风险合规部" />
             </label>
             <PasswordInput name="password" required maxLength={1024} autoComplete="new-password" />
             {error && <p className="banner error" role="alert">{error}</p>}

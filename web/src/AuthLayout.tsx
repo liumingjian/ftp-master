@@ -1,4 +1,5 @@
 import type { FormEventHandler, ReactNode } from 'react'
+import { ShieldCheck } from 'lucide-react'
 import { PlatformBrand } from './PlatformBrand'
 import archiveImage from './assets/archive.webp'
 
@@ -23,6 +24,10 @@ export function AuthLayout({ title, description, onSubmit, children, footer }: {
         {children}
       </form>
       {footer && <div className="auth-footer">{footer}</div>}
+      <p className="auth-compliance">
+        <ShieldCheck size={14} aria-hidden="true" />
+        <span>内部授权访问 · 全部文件操作均纳入安全审计</span>
+      </p>
     </div>
   </main>
 }

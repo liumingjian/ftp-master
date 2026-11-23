@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD, signIn } from './signin'
-import { createAndOpenFolder, openAccountPage, openManagementPage } from './explorer'
+import { createAndOpenFolder, openManagementPage } from './explorer'
 
 test('upload settings separate the active rules from the editor', async ({ page }) => {
   await page.route('**/api/upload-policy', async route => {
@@ -246,7 +246,7 @@ test('an active multipart upload survives switching to service status and back',
     })
     await secondPart
     await expect(progress).toHaveAttribute('value', String(8 * 1024 * 1024))
-    await openAccountPage(page, '服务状态')
+    await openManagementPage(page, '服务状态')
     await expect(page.getByTestId('health-status')).toHaveText('正常')
     await expect(progress).toBeHidden()
     await expect(indicator).toHaveText('其他目录上传 1')
@@ -258,7 +258,7 @@ test('an active multipart upload survives switching to service status and back',
     await indicator.click()
     await page.getByRole('heading', { name: '服务状态' }).click()
     await expect(page.locator('.upload-indicator')).not.toHaveAttribute('open')
-    await page.goBack()
+    await page.getByRole('navigation', { name: '工作区' }).getByRole('link', { name: '文件', exact: true }).click()
     await expect(progress).toBeVisible()
     await expect(progress).toHaveAttribute('value', String(8 * 1024 * 1024))
     await expect(indicator).toHaveCount(0)

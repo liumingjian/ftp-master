@@ -1,11 +1,11 @@
-import { openAccountPage } from './explorer'
+import { openManagementPage } from './explorer'
 import { expect, test } from '@playwright/test'
 import { ADMINISTRATOR_PASSWORD, ADMINISTRATOR_USERNAME, signIn } from './signin'
 
 test('web shell shows the health status the service read from PostgreSQL', async ({ page }) => {
   await page.goto('/sign-in')
   await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
-  await openAccountPage(page, '服务状态')
+  await openManagementPage(page, '服务状态')
 
   await expect(page.getByRole('heading', { name: '服务状态' })).toBeVisible()
   await expect(page.getByTestId('health-status')).toHaveText('正常')

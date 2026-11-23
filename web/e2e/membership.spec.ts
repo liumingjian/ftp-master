@@ -33,8 +33,8 @@ test('Administrator browses and reshapes the organization hierarchy and selects 
   await organization.getByRole('button', { name: '保存组织' }).click()
   await expect(panel.getByRole('row').filter({ hasText: renamed }).getByRole('cell', { name: '—' })).toBeVisible()
   await panel.getByRole('button', { name: '编辑组织 ' + parent, exact: true }).click()
-  page.once('dialog', dialog => void dialog.accept())
   await organization.getByRole('button', { name: '删除组织' }).click()
+  await organization.getByRole('button', { name: '确认删除', exact: true }).click()
   await expect(panel.getByRole('row').filter({ hasText: parent })).toHaveCount(0)
 
   const project = `Project-${suffix}`
@@ -74,7 +74,7 @@ test('Administrator moves a User and sees the current Organization immediately',
   await manage.click()
   await edit.getByLabel('用户所属组织').selectOption({ label: target })
   const changed = page.waitForResponse(r => r.url().endsWith(`/users/${session.id}/organization`) && r.request().method() === 'PUT')
-  await edit.getByRole('button', { name: '移动用户', exact: true }).click()
+  await edit.getByRole('button', { name: '保存变更', exact: true }).click()
   expect((await changed).status()).toBe(204)
   await expect(panel.getByRole('row').filter({
     has: page.getByRole('button', { name: '管理用户 ' + ADMINISTRATOR_USERNAME, exact: true }),

@@ -54,7 +54,7 @@ test("Administrator grants a directory and another User can browse it", async ({
   const permissions = page.getByRole("region", {name: "权限管理"});
   await permissions.getByText("添加人员、组织或用户组", { exact: true }).click();
   await permissions.getByRole("searchbox", { name: "搜索用户组" }).fill(groupName);
-  await permissions.getByRole("button", { name: groupName + " 1 位成员", exact: true }).click();
+  await permissions.getByRole("button", { name: groupName + " 1 位有效成员", exact: true }).click();
   await permissions.getByLabel("修改", {exact:true}).check();
   await permissions.getByRole("button", {name:"添加到草稿"}).click();
   await expect(permissions.getByRole("cell", {name:"自定义 · 待保存"})).toBeVisible();
@@ -90,24 +90,23 @@ test('file details dismiss from the surrounding workspace and keep active rename
     name: 'details.txt', mimeType: 'text/plain', buffer: Buffer.from('File details'),
   })
 
-  const open = page.getByRole('button', { name: '详情与操作 details.txt', exact: true })
-  const detail = page.getByRole('complementary', { name: '项目详情' })
+  const open = page.getByRole('button', { name: '更多操作 details.txt', exact: true })
+  const menu = page.getByRole('menu', { name: '操作 details.txt' })
   await open.click()
-  await detail.getByRole('heading', { name: 'details.txt' }).click()
+  await expect(menu).toBeVisible()
+  await menu.getByRole('menuitem', { name: '详细信息', exact: true }).click()
+  const detail = page.getByRole('dialog', { name: 'details.txt' })
   await expect(detail).toBeVisible()
-  await page.mouse.click(400, 650)
+  await page.mouse.click(20, 20)
   await expect(detail).toHaveCount(0)
 
   await open.click()
-  await detail.getByLabel('更多操作').click()
-  await detail.getByRole('button', { name: '重命名' }).click()
-  await detail.getByLabel('新名称').fill('draft.txt')
-  await page.mouse.click(400, 650)
-  await expect(detail.getByLabel('新名称')).toHaveValue('draft.txt')
-  await detail.getByRole('button', { name: '取消' }).click()
-  await expect(detail.getByLabel('新名称')).toHaveCount(0)
-  await page.keyboard.press('Escape')
-  await expect(detail).toHaveCount(0)
+  await menu.getByRole('menuitem', { name: '重命名', exact: true }).click()
+  const rename = page.getByRole('dialog', { name: '重命名' })
+  await rename.getByLabel('新名称').fill('draft.txt')
+  await expect(rename.getByLabel('新名称')).toHaveValue('draft.txt')
+  await rename.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(rename).toHaveCount(0)
   await expect(open).toBeFocused()
 })
 
@@ -119,12 +118,12 @@ test('clicking an image opens only the preview and uses the saved format after r
     name: 'image.png', mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf2sAAAAASUVORK5CYII=', 'base64'),
   })
-  await page.getByRole('button', { name: '详情与操作 image.png' }).click()
-  await page.getByLabel('更多操作').click()
-  await page.getByRole('button', { name: '重命名', exact: true }).click()
-  await page.getByLabel('新名称').fill('image-renamed')
-  await page.getByRole('button', { name: '保存名称', exact: true }).click()
-  await page.getByRole('button', { name: '关闭详情' }).click()
+  await page.getByRole('button', { name: '更多操作 image.png', exact: true }).click()
+  await page.getByRole('menu', { name: '操作 image.png' }).getByRole('menuitem', { name: '重命名', exact: true }).click()
+  const rename = page.getByRole('dialog', { name: '重命名' })
+  await rename.getByLabel('新名称').fill('image-renamed')
+  await rename.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(rename).toHaveCount(0)
 
   const filename = page.getByRole('button', { name: 'image-renamed', exact: true })
   await filename.click()
@@ -136,7 +135,6 @@ test('clicking an image opens only the preview and uses the saved format after r
   await page.keyboard.press('Escape')
   await expect(viewer).toHaveCount(0)
   await expect(filename).toBeFocused()
-  await expect(page.getByRole('complementary', { name: '项目详情' })).toHaveCount(0)
 })
 
 test("Administrator renames and moves a directory using the destination picker", async ({page})=>{
@@ -146,17 +144,16 @@ test("Administrator renames and moves a directory using the destination picker",
  const create=async(name:string,parentId?:number)=>{const response=await page.request.post("/api/tree",{data:{name,parentId}});expect(response.status()).toBe(201);return await response.json() as {id:number}};
  const source=await create(`Move-source-${suffix}`);const target=await create(`Move-target-${suffix}`);await create(`Original-${suffix}`,source.id);
  await page.reload();await page.getByRole("button",{name:`Move-source-${suffix}`,exact:true}).click();
- await page.getByRole('button', {name: `详情与操作 Original-${suffix}`, exact: true}).click()
- await page.getByLabel('更多操作').click()
- await page.getByRole('button', {name: '重命名', exact: true}).click()
- await page.getByLabel('新名称').fill(`Renamed-${suffix}`)
- await page.getByRole('button', {name: '保存名称', exact: true}).click()
+ await page.getByRole('button', {name: `更多操作 Original-${suffix}`, exact: true}).click()
+ await page.getByRole('menu', {name: `操作 Original-${suffix}`}).getByRole('menuitem', {name: '重命名', exact: true}).click()
+ const rename = page.getByRole('dialog', {name: '重命名'})
+ await rename.getByLabel('新名称').fill(`Renamed-${suffix}`)
+ await rename.getByRole('button', {name: '保存', exact: true}).click()
  await expect(page.getByRole("button",{name:`Renamed-${suffix}`,exact:true})).toBeVisible();
- await page.getByLabel('更多操作').click()
- await page.getByRole("button",{name:`移动 Renamed-${suffix}`,exact:true}).click();
+ await page.getByRole('button', {name: `更多操作 Renamed-${suffix}`, exact: true}).click()
+ await page.getByRole('menu', {name: `操作 Renamed-${suffix}`}).getByRole('menuitem', {name: '移动', exact: true}).click()
  const picker=page.getByRole("region",{name:"移动目标"});await picker.getByRole("button",{name:`Move-target-${suffix}`,exact:true}).click();await picker.getByRole("button",{name:"移动到此目录",exact:true}).click();
- await expect(page.getByText("项目已移动",{exact:true})).toBeVisible();await expect(page.getByRole('heading', { name: `Renamed-${suffix}`, exact: true })).toBeVisible();
- await expect(page.getByLabel('所在位置', { exact: true })).toContainText(`Move-target-${suffix}`);
+ await expect(page.getByText("项目已移动",{exact:true})).toBeVisible();
  const response=await page.request.get(`/api/tree?parentId=${target.id}`);expect((await response.json()).map((n:{name:string})=>n.name)).toContain(`Renamed-${suffix}`);
 });
 
@@ -201,15 +198,15 @@ test('a copied file link survives sign-in and header search returns from the rec
   await expect(query).toHaveValue(filename)
   await expect(openParent).toBeVisible()
 
-  await page.setViewportSize({ width: 390, height: 844 })
-  const more = table.getByRole('button', { name: `详情与操作 ${filename}` })
+  const more = table.getByRole('button', { name: `更多操作 ${filename}`, exact: true })
   await more.click()
-  const details = page.getByRole('dialog', { name: '项目详情' })
+  await page.getByRole('menu', { name: `操作 ${filename}` }).getByRole('menuitem', { name: '详细信息', exact: true }).click()
+  const details = page.getByRole('dialog', { name: filename })
   await expect(details).toContainText(`/${folder}`)
-  await details.getByRole('button', { name: '版本历史', exact: true }).click()
+  await details.getByRole('tab', { name: '版本历史', exact: true }).click()
   await expect(details.getByRole('region', { name: '文件版本' })).toContainText('当前版本')
-  await details.getByRole('button', { name: '返回文件详情' }).click()
-  await expect(details.getByRole('button', { name: '版本历史' })).toBeVisible()
+  await details.getByRole('tab', { name: '概览', exact: true }).click()
+  await expect(details.getByRole('tab', { name: '版本历史' })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(details).toHaveCount(0)
   await expect(more).toBeFocused()
@@ -227,15 +224,14 @@ test('Administrator restores a deleted item into a directory selected in the rec
   await createAndOpenFolder(page, original)
   await page.getByRole('button', { name: '根目录', exact: true }).click()
   await table.getByRole('checkbox', { name: original, exact: true }).check()
-  page.once('dialog', dialog => dialog.dismiss())
-  const trash = page.getByRole('button', { name: '移入回收站', exact: true })
+  const trash = page.getByRole('region', { name: '共享目录' }).getByRole('button', { name: '移入回收站', exact: true })
   await trash.click()
+  const confirmDialog = page.getByRole('dialog', { name: '移入回收站' })
+  await expect(confirmDialog).toContainText(`「${original}」及其全部内容`)
+  await confirmDialog.getByRole('button', { name: '取消', exact: true }).click()
   await expect(table.getByRole('checkbox', { name: original, exact: true })).toBeChecked()
-  page.once('dialog', async dialog => {
-    expect(dialog.message()).toContain(`「${original}」及其内容`)
-    await dialog.accept()
-  })
   await trash.click()
+  await confirmDialog.getByRole('button', { name: '移入回收站', exact: true }).click()
   await expect(table.getByRole('button', { name: original, exact: true })).toHaveCount(0)
   await expect(page.getByRole('status').filter({ hasText: original })).toContainText('已移入回收站')
   await page.getByRole('link', { name: '前往回收站', exact: true }).click()
@@ -262,18 +258,16 @@ test('monthly versions remain distinguishable across list widths', async ({ page
     await page.getByLabel('上传文件', {exact: true}).setInputFiles({name, mimeType: 'application/octet-stream', buffer: Buffer.from('review')})
     await expect(table.getByRole('button', {name, exact: true})).toBeVisible()
   }
-  for (const width of [320, 390, 768, 1024, 1440]) {
+  for (const width of [768, 1024, 1280, 1440]) {
     await page.setViewportSize({width, height: 900})
     for (const tail of await table.locator('.list-name > span:last-child').all()) {
       await expect.poll(() => tail.evaluate(el => el.scrollWidth <= el.clientWidth), {message: width + ' px 版本后缀'}).toBe(true)
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   }
-  await page.setViewportSize({width: 390, height: 844})
-  await page.getByRole('combobox', {name: '排序'}).selectOption('size:true')
-  await page.locator('summary').filter({hasText: '更多'}).click()
+  await table.getByRole('button', {name: '大小'}).click()
   await expect(page.getByRole('button', {name: '新建文件夹'})).toBeInViewport()
   await page.getByRole('link', {name:'管理',exact:true}).click()
-  await page.getByRole('combobox', {name:'管理页面'}).selectOption('settings')
+  await page.getByRole('navigation', {name:'管理导航'}).getByRole('link', {name:'系统设置', exact:true}).click()
   await expect(page.getByRole('heading', {name:'系统设置',exact:true})).toBeVisible()
 })

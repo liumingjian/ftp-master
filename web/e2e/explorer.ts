@@ -2,9 +2,9 @@ import { type Page } from '@playwright/test'
 
 export async function createAndOpenFolder(page: Page, name: string) {
   await page.getByRole('button', { name: '新建文件夹', exact: true }).click()
-  const dialog = page.getByRole('region', { name: '新建文件夹', exact: true })
+  const dialog = page.getByRole('dialog', { name: '新建文件夹', exact: true })
   await dialog.getByLabel('目录名称').fill(name)
-  await dialog.getByRole('button', { name: '创建目录' }).click()
+  await dialog.getByRole('button', { name: '创建', exact: true }).click()
   await page.getByRole('table', { name: '文件列表' }).getByRole('button', { name, exact: true }).click()
 }
 

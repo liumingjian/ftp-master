@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Inbox } from 'lucide-react'
+import { Inbox, RefreshCw } from 'lucide-react'
 import { api } from './api/client'
+import { avatarInitial } from './avatar'
 import type { components } from './api/schema.gen'
 import { PageHeading } from './PageHeading'
 
@@ -64,17 +65,19 @@ export function RegistrationsPanel() {
 
   return <section className="workspace-page" aria-label="注册审批">
     <PageHeading title="注册审批"
-      actions={<button disabled={loading || pending !== undefined} type="button" onClick={() => void load()}>刷新列表</button>} />
+      actions={<button disabled={loading || pending !== undefined} type="button" onClick={() => void load()}>
+        <RefreshCw size={15} className={loading ? 'spin' : undefined} aria-hidden="true" />刷新列表
+      </button>} />
     {error && <p className="banner error" role="alert">{error}</p>}
     {message && <p className="banner success" role="status">{message}</p>}
     <section className="panel" aria-labelledby="pending-heading">
-      <div className="section-heading"><h3 id="pending-heading">待审批注册</h3>{!loading && <span className="pill">{rows.length} 条</span>}</div>
+      <div className="section-heading"><h2 id="pending-heading">待审批注册</h2>{!loading && <span className="pill">{rows.length} 条</span>}</div>
       {loading && <p className="panel-empty" role="status">正在加载申请…</p>}
       {!loading && !error && !rows.length && <div className="panel-empty"><Inbox size={26} />暂无待审批的申请</div>}
       <ul className="record-list approval-list">
         {rows.map(row => <li key={row.id}>
           <div className="identity-row">
-            <span className="avatar">{row.displayName.slice(-1)}</span>
+            <span className="avatar" aria-hidden="true">{avatarInitial(row.displayName)}</span>
             <span><strong>{row.displayName}</strong><small>{row.username}</small></span>
           </div>
           <div className="approval-organization"><small>申请人填写的组织</small><strong>{row.organizationHint || '—'}</strong></div>

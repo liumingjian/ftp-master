@@ -1,0 +1,830 @@
+/* Desktop item action menu, hover-revealed row actions, and focused inspection/action dialogs. */
+/* Shared color, easing, elevation, and radius tokens live in app.css. */
+
+@keyframes item-menu-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes inspector-dialog-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+}
+
+@keyframes dialog-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+}
+
+/* File table row affordances and menu-open anchor */
+.file-table th:last-child,
+.file-table:has(.office-edit-indicator, .text-edit-indicator) th:last-child {
+  width: 124px;
+}
+
+.file-table tbody tr[data-menu-open='true']:not(.selected) {
+  background: var(--hover);
+}
+
+.file-table tbody tr[data-menu-open='true'] > td:first-child {
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.row-actions .row-hover-action {
+  opacity: 0;
+  transition: opacity 140ms var(--ease-ui), background-color 140ms var(--ease-ui), color 140ms var(--ease-ui), transform 140ms var(--ease-ui);
+}
+
+.row-actions .row-menu-trigger {
+  opacity: 0.56;
+  transition: opacity 140ms var(--ease-ui), background-color 140ms var(--ease-ui), color 140ms var(--ease-ui), transform 140ms var(--ease-ui);
+}
+
+.row-actions .icon:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.file-table tbody tr:hover .row-hover-action,
+.file-table tbody tr:focus-within .row-hover-action,
+.file-table tbody tr[data-menu-open='true'] .row-hover-action,
+.file-table tbody tr:hover .row-menu-trigger,
+.file-table tbody tr:focus-within .row-menu-trigger,
+.file-table tbody tr[data-menu-open='true'] .row-menu-trigger {
+  opacity: 1;
+}
+
+.file-table tbody tr[data-menu-open='true'] .row-menu-trigger {
+  background: var(--control);
+  color: var(--text);
+}
+
+/* Anchored desktop context/action popover menu (10px outer - 4px padding = 6px inner radius) */
+.item-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 184px;
+  max-width: 240px;
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--menu-shadow);
+  animation: item-menu-enter 150ms var(--ease-ui);
+}
+
+.item-menu > button,
+.item-menu > a.item-menu-link {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: none;
+}
+
+.item-menu > button svg,
+.item-menu > a.item-menu-link svg {
+  color: var(--muted);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .item-menu > button:hover,
+  .item-menu > a.item-menu-link:hover {
+    background: var(--hover);
+  }
+}
+
+.item-menu > button:focus-visible,
+.item-menu > a.item-menu-link:focus-visible {
+  background: var(--hover);
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.item-menu > button:active,
+.item-menu > a.item-menu-link:active {
+  background: var(--control);
+}
+
+.item-menu > button.item-menu-danger {
+  color: var(--danger);
+}
+
+.item-menu > button.item-menu-danger svg {
+  color: var(--danger);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .item-menu > button.item-menu-danger:hover {
+    background: var(--danger-soft);
+  }
+}
+
+.item-menu > button.item-menu-danger:focus-visible {
+  background: var(--danger-soft);
+  box-shadow: inset 0 0 0 1.5px var(--danger);
+}
+
+.item-menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--line);
+}
+
+/* Shared close button & tactile press feedback inside file-details dialogs */
+.dialog-close {
+  width: 32px;
+  min-height: 32px;
+  flex: none;
+  color: var(--muted);
+  transition: background-color 140ms var(--ease-ui), color 140ms var(--ease-ui), transform 140ms var(--ease-ui);
+}
+
+.dialog-close:hover:not(:disabled) {
+  color: var(--text);
+}
+
+dialog.item-inspector button:active:not(:disabled),
+dialog.item-inspector a.button:active,
+dialog.action-dialog button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Unified desktop inspection dialog (Overview / Versions / My Permissions) */
+dialog.item-inspector {
+  width: min(580px, calc(100vw - 48px));
+  max-height: calc(100dvh - 64px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--surface-radius);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--dialog-shadow);
+  overflow: hidden;
+  transform-origin: center;
+}
+
+dialog.item-inspector[open] {
+  display: flex;
+  flex-direction: column;
+  animation: inspector-dialog-enter 180ms var(--ease-ui);
+}
+
+dialog.item-inspector::backdrop,
+dialog.action-dialog::backdrop {
+  background: var(--dialog-backdrop);
+  animation: dialog-backdrop-enter 160ms ease-out;
+}
+
+/* Strict 24px left/right optical axis across header, tabs, body, and footer */
+.inspector-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 24px 12px;
+}
+
+.inspector-header .icon-tile {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.inspector-header h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 6px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.inspector-tabs {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.inspector-tabs button[role='tab'] {
+  position: relative;
+  min-height: 36px;
+  padding: 8px 0 10px;
+  border: 0;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  transition: color 140ms var(--ease-ui);
+}
+
+.inspector-tabs button[role='tab']:hover {
+  color: var(--text);
+  background: transparent;
+}
+
+.inspector-tabs button[role='tab']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.inspector-tabs button[role='tab'][aria-selected='true'] {
+  color: var(--accent);
+}
+
+.inspector-tabs button[role='tab'][aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -1px 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+}
+
+.inspector-body {
+  flex: 1;
+  min-height: 260px;
+  max-height: min(440px, calc(100dvh - 220px));
+  overflow: auto;
+  padding: 20px 24px 24px;
+}
+
+dialog.item-inspector[data-kind='folder'] .inspector-body {
+  min-height: 176px;
+}
+
+.inspector-status {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Overview tab: Archival summary strip + hairline-divided metadata rows */
+.inspector-overview {
+  display: grid;
+  gap: 16px;
+}
+
+.inspector-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--hover);
+  overflow: hidden;
+}
+
+.inspector-metric {
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px;
+  min-width: 0;
+}
+
+.inspector-metric + .inspector-metric {
+  border-inline-start: 1px solid var(--line);
+}
+
+.inspector-metric-label {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+}
+
+.inspector-metric-value {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-format-mismatch {
+  color: var(--danger);
+}
+
+.inspector-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  font-size: 13px;
+}
+
+.inspector-meta-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.inspector-meta-row:first-child {
+  padding-top: 4px;
+}
+
+.inspector-meta-row:last-child {
+  padding-bottom: 0;
+}
+
+.inspector-meta-row + .inspector-meta-row {
+  border-top: 1px solid var(--line);
+}
+
+.inspector-meta dt {
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.inspector-meta dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.inspector-meta-rights {
+  align-items: start;
+}
+
+.inspector-type-value {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inspector-location-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.inspector-location-link:hover {
+  text-decoration: underline;
+}
+
+.inspector-right-chip {
+  background: var(--hover);
+  border: 1px solid var(--line);
+  color: var(--secondary);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* Embedded VersionsPanel inside inspector dialog: continuous timeline */
+.versions-embedded {
+  display: grid;
+  gap: 12px;
+}
+
+.versions-embedded .banner {
+  margin: 0;
+  font-size: 13px;
+}
+
+.versions-embedded .versions-list {
+  display: grid;
+  gap: 4px;
+}
+
+.versions-embedded .versions-list > li {
+  position: relative;
+  display: block;
+  padding: 0 0 0 24px;
+  border-top: 0;
+}
+
+.versions-embedded .versions-list > li + li {
+  border-top: 0;
+}
+
+/* Continuous vertical rail connecting node centers */
+.versions-embedded .versions-list > li:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 23px;
+  bottom: -18px;
+  width: 1px;
+  background: var(--line);
+}
+
+/* Timeline node dot aligned to version title baseline */
+.versions-embedded .versions-list > li::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 14px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1.5px solid var(--border);
+  transition: border-color 140ms var(--ease-ui);
+}
+
+.versions-embedded .versions-list > li[data-current='true']::after {
+  background: var(--accent);
+  border: 2px solid var(--panel);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .versions-embedded .versions-list > li:not([data-current='true']):hover::after {
+    border-color: var(--muted);
+  }
+}
+
+.versions-embedded .version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background-color 140ms var(--ease-ui);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .versions-embedded .versions-list > li:hover .version-row {
+    background: var(--hover);
+  }
+}
+
+.versions-embedded .version-info {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.versions-embedded .version-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  line-height: 20px;
+}
+
+.versions-embedded .version-title strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.versions-embedded .versions-list > li[data-current='true'] .version-title strong {
+  font-weight: 600;
+}
+
+.versions-embedded .version-meta {
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.versions-embedded .version-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.versions-embedded .version-actions > :is(a, button) {
+  min-height: 32px;
+  padding: 4px 8px;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--secondary);
+}
+
+.versions-embedded .version-actions > :is(a, button):hover {
+  color: var(--text);
+}
+
+.versions-embedded .version-restore {
+  margin: 4px 0 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--hover);
+}
+
+.versions-embedded .version-restore p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--secondary);
+}
+
+.versions-embedded .version-restore-actions {
+  justify-content: flex-end;
+}
+
+.versions-embedded .version-restore-actions button {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+/* My Permissions tab */
+.my-permission {
+  display: grid;
+  gap: 20px;
+}
+
+.permission-section {
+  display: grid;
+  gap: 10px;
+}
+
+.permission-section h3 {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.my-permission .permission-sources {
+  display: grid;
+  gap: 8px;
+}
+
+.my-permission .permission-sources > li + li {
+  border-top: 0;
+}
+
+.permission-source-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--hover);
+}
+
+.permission-source-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.permission-source-title strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--text);
+}
+
+.permission-source-path {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.my-permission .permission-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.permission-empty {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--hover);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* Anchored dialog footer for My Permissions -> Manage Grants */
+.inspector-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 12px 24px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.inspector-dialog-footer button {
+  min-height: 36px;
+}
+
+/* Compact dedicated action dialogs (Rename / Move / Create Folder / Folder Delete) */
+dialog.action-dialog {
+  width: min(440px, calc(100vw - 48px));
+  max-height: calc(100dvh - 64px);
+  padding: 20px 24px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--surface-radius);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--dialog-shadow);
+  overflow: auto;
+  transform-origin: center;
+}
+
+dialog.action-dialog.move-dialog {
+  width: min(500px, calc(100vw - 48px));
+}
+
+dialog.action-dialog[open] {
+  animation: inspector-dialog-enter 180ms var(--ease-ui);
+}
+
+.action-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.action-dialog-header h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-dialog-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.action-dialog-icon.danger {
+  color: var(--danger);
+}
+
+.action-dialog-form {
+  margin: 0;
+  gap: 16px;
+}
+
+.action-dialog-form label {
+  gap: 6px;
+  font-size: 13px;
+}
+
+.action-dialog-form input {
+  width: 100%;
+  min-height: 36px;
+}
+
+.action-dialog-warning-group {
+  display: grid;
+  gap: 8px;
+  padding: 16px 24px 20px;
+}
+
+.action-dialog-warning-group .action-dialog-warning {
+  padding: 0;
+}
+
+.action-dialog-path {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--rail);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+
+.action-dialog-warning {
+  margin: 0 0 20px;
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.action-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.danger-button {
+  background: var(--danger-fill);
+  border-color: var(--danger-fill);
+  color: var(--on-danger);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: var(--danger-fill-hover);
+  border-color: var(--danger-fill-hover);
+}
+
+/* MoveDialog embedded DirectoryPicker integration */
+.move-dialog-body .directory-picker {
+  padding: 0;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+}
+
+.move-dialog-body .directory-picker .section-heading {
+  display: none;
+}
+
+.move-dialog-body .directory-picker .picker-path {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--hover);
+  font-size: 13px;
+}
+
+.move-dialog-body .directory-picker .scroll-list {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px;
+  background: var(--panel);
+}
+
+.move-dialog-body .directory-picker .scroll-list > li + li {
+  border-top: 0;
+}
+
+.move-dialog-body .directory-picker .record-link {
+  min-height: 36px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.move-dialog-body .directory-picker .record-link:hover {
+  background: var(--hover);
+}
+
+.move-dialog-body .directory-picker .form-actions {
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.move-dialog-body .banner {
+  margin: 12px 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item-menu,
+  dialog.item-inspector[open],
+  dialog.action-dialog[open] {
+    animation-name: dialog-backdrop-enter;
+  }
+
+  .row-actions .icon:active:not(:disabled),
+  dialog.item-inspector button:active:not(:disabled),
+  dialog.item-inspector a.button:active,
+  dialog.action-dialog button:active:not(:disabled) {
+    transform: none;
+  }
+}

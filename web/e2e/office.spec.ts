@@ -33,11 +33,9 @@ test('Office file names preview and row edit icons follow the plugin capabilitie
   }
   await expect(editLink).toBeEnabled();
   await expectPluginPrompt(() => editLink.click());
-  await fileList.getByRole('button', {name: '详情与操作 ' + officeName}).click();
-  const detail = page.getByRole('complementary', {name:'项目详情'});
-  await detail.getByLabel('更多操作').click();
-  await expectPluginPrompt(() => detail.getByRole('link', {name: `在线编辑 ${officeName}`}).press('Enter'));
-  await detail.getByRole('button', {name:'关闭详情'}).click();
+  await fileList.getByRole('button', {name: '更多操作 ' + officeName, exact: true}).click();
+  const officeMenu = page.getByRole('menu', {name: '操作 ' + officeName});
+  await expectPluginPrompt(() => officeMenu.getByRole('menuitem', {name: '在线编辑', exact: true}).press('Enter'));
   await page.getByRole('button', {name: officeName, exact: true}).click();
   const viewer = page.getByRole('dialog', {name: officeName});
   await expect(viewer.getByText('在线预览需要支持预览的 ftp-master WPS 插件')).toBeVisible();
@@ -147,8 +145,8 @@ for (const format of ['docx', 'xlsx']) {
     for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
     expect(Buffer.concat(chunks)).toEqual(editedBytes);
 
-    await page.getByRole('button', {name: `详情与操作 ${name}`, exact:true}).click();
-    await page.getByRole('button', {name:'版本历史', exact:true}).click();
-    await expect(page.getByRole('region', {name:'文件版本'})).toContainText(`版本 ${result.receipt.Data.versionId} ·`);
+    await page.getByRole('button', {name: `更多操作 ${name}`, exact: true}).click();
+    await page.getByRole('menu', {name: `操作 ${name}`}).getByRole('menuitem', {name: '版本历史', exact: true}).click();
+    await expect(page.getByRole('region', {name:'文件版本'})).toContainText(`版本 #${result.receipt.Data.versionId}`);
   });
 }

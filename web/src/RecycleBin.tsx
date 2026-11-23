@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArchiveRestore, FileX, Trash2 } from 'lucide-react'
+import { ArchiveRestore, FileX, RefreshCw, Trash2 } from 'lucide-react'
 import { api } from './api/client'
 import type { operations } from './api/schema.gen'
 import { DirectoryPicker } from './DirectoryPicker'
@@ -63,11 +63,13 @@ export function RecycleBin({ administrator, changed }: { administrator: boolean;
 
   return <section className="workspace-page" aria-label="回收站">
     <PageHeading title="回收站"
-      actions={<button disabled={loading || busy !== undefined} onClick={() => void load()}>刷新列表</button>} />
+      actions={<button disabled={loading || busy !== undefined} onClick={() => void load()}>
+        <RefreshCw size={15} className={loading ? 'spin' : undefined} aria-hidden="true" />刷新列表
+      </button>} />
     {error && <p className="banner error" role="alert">{error}</p>}
     {message && <p className="banner success" role="status">{message}</p>}
     <section className="panel" aria-labelledby="deleted-heading">
-      <div className="section-heading"><h3 id="deleted-heading">已删除项目</h3>{!loading && <span className="pill">{entries.length} 项</span>}</div>
+      <div className="section-heading"><h2 id="deleted-heading">已删除项目</h2>{!loading && <span className="pill">{entries.length} 项</span>}</div>
       {loading && <p className="panel-empty" role="status">正在加载回收站…</p>}
       {!loading && !error && !entries.length && <div className="panel-empty"><Trash2 size={25} />回收站为空</div>}
       <ul className="record-list recycle-list">{entries.map(entry => <li key={entry.id}>
