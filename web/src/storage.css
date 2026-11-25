@@ -1,0 +1,478 @@
+/* Self-service storage sidebar indicator and Account Settings storage panel. */
+
+.sidebar-footer {
+  display: grid;
+  gap: 8px;
+}
+
+.sidebar-storage {
+  display: grid;
+  gap: 6px;
+  padding: 10px 11px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 140ms var(--ease-ui), background-color 140ms var(--ease-ui);
+}
+
+.sidebar-storage:hover {
+  border-color: var(--border);
+  background: var(--hover);
+  text-decoration: none;
+}
+
+.sidebar-storage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sidebar-storage.is-warning {
+  border-color: var(--warning);
+  background: var(--warning-band);
+}
+
+.sidebar-storage.is-warning:hover {
+  background: var(--warning-soft);
+}
+
+.sidebar-storage.is-exceeded {
+  border-color: var(--danger);
+  background: var(--danger-band);
+}
+
+.sidebar-storage.is-exceeded:hover {
+  background: var(--danger-soft);
+}
+
+.sidebar-storage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sidebar-storage-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--secondary);
+  min-width: 0;
+}
+
+.sidebar-storage-label svg {
+  color: var(--muted);
+}
+
+.sidebar-storage.is-warning .sidebar-storage-label,
+.sidebar-storage.is-warning .sidebar-storage-label svg {
+  color: var(--warning);
+}
+
+.sidebar-storage.is-exceeded .sidebar-storage-label,
+.sidebar-storage.is-exceeded .sidebar-storage-label svg {
+  color: var(--danger);
+}
+
+.sidebar-storage-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  flex: none;
+}
+
+.sidebar-storage-tag.warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.sidebar-storage-tag.exceeded {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.sidebar-storage-track {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--control);
+  overflow: hidden;
+}
+
+.sidebar-storage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 180ms var(--ease-ui), background-color 180ms var(--ease-ui);
+}
+
+.sidebar-storage-fill.warning {
+  background: var(--warning);
+}
+
+.sidebar-storage-fill.exceeded {
+  background: var(--danger-fill);
+}
+
+.sidebar-storage-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.sidebar-storage-pending {
+  color: var(--secondary);
+  font-weight: 500;
+}
+
+/* Account Settings stacked sections */
+.personal-workspace .shell-main > section.account-page {
+  max-width: 680px;
+}
+
+.account-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.account-storage-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.account-storage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--rail);
+}
+
+.account-storage-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.account-storage-title svg {
+  color: var(--muted);
+}
+
+.account-storage-title h2 {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.storage-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.storage-status-pill.is-unlimited {
+  background: var(--control);
+  color: var(--secondary);
+}
+
+.storage-status-pill.is-normal {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.storage-status-pill.is-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.storage-status-pill.is-exceeded {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.storage-spin {
+  animation: storage-rotate 0.8s linear infinite;
+}
+
+@keyframes storage-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.account-storage-body {
+  display: grid;
+  gap: 18px;
+  padding: 20px 24px 24px;
+}
+
+.account-storage-meter {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--rail);
+}
+
+.account-storage-meter.is-warning {
+  border-color: var(--warning);
+  background: var(--warning-band);
+}
+
+.account-storage-meter.is-exceeded {
+  border-color: var(--danger);
+  background: var(--danger-band);
+}
+
+.account-storage-meter-row,
+.account-storage-meter-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-storage-meter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--secondary);
+}
+
+.account-storage-meter-row strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.account-storage-track {
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--control);
+  overflow: hidden;
+}
+
+.account-storage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 180ms var(--ease-ui), background-color 180ms var(--ease-ui);
+}
+
+.account-storage-fill.warning {
+  background: var(--warning);
+}
+
+.account-storage-fill.exceeded {
+  background: var(--danger-fill);
+}
+
+.account-storage-meter-foot {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.account-storage-unlimited {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--rail);
+}
+
+.account-storage-unlimited-used {
+  font-size: 14px;
+  color: var(--secondary);
+}
+
+.account-storage-unlimited-used strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.account-storage-unlimited-cap {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.account-storage-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.account-storage-metric {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.account-storage-metric dt {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.account-storage-metric dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.account-storage-org {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--rail);
+}
+
+.account-storage-org-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.account-storage-org-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.account-storage-org-name svg {
+  color: var(--muted);
+}
+
+.account-storage-org-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12.5px;
+  color: var(--secondary);
+}
+
+.account-pending-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.account-pending-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-pending-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.storage-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.account-pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.account-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--rail);
+  min-width: 0;
+}
+
+.account-pending-icon {
+  color: var(--muted);
+  flex: none;
+}
+
+.account-pending-info {
+  display: grid;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.account-pending-info strong {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.account-pending-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.account-pending-cancel {
+  flex: none;
+  color: var(--danger);
+  font-size: 13px;
+  min-height: 32px;
+  padding: 4px 10px;
+}
+
+.account-pending-cancel:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}

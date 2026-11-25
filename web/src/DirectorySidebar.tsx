@@ -3,6 +3,7 @@ import { ChevronRight, Home, Trash2, X } from 'lucide-react'
 import { api } from './api/client'
 import type { components } from './api/schema.gen'
 import { FileIcon } from './FileIcon'
+import { SidebarStorageBar, type SelfStorageSummary } from './SidebarStorageBar'
 
 type Node = components['schemas']['TreeNode']
 type Branches = Record<number, Node[]>
@@ -27,11 +28,15 @@ type Props = {
   collapsed?: boolean
   drawerOpen: boolean
   closeDrawer: () => void
+  storageSummary?: SelfStorageSummary
+  accountHref?: string
+  openAccount?: () => void
 }
 
 export function DirectorySidebar({
   visible, browsing, rootSelected, recycle, recycleHref, openRecycle, openFolder, path, branches,
   revision, width, resize, collapsed = false, drawerOpen, closeDrawer,
+  storageSummary, accountHref, openAccount,
 }: Props) {
   const [narrow, setNarrow] = useState(() => window.matchMedia(narrowViewport).matches)
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set())
@@ -155,13 +160,26 @@ export function DirectorySidebar({
         }}><Home size={16} />全部文件</a>
       {renderBranch(0, 0)}
     </nav>
-    <div className="sidebar-footer"><a className="sidebar-link" href={recycleHref} aria-current={recycle ? 'page' : undefined}
-      onClick={event => {
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-        event.preventDefault()
-        closeDrawer()
-        openRecycle()
-      }}><Trash2 size={16} />回收站</a></div>
+    <div className="sidebar-footer">
+      <a className="sidebar-link" href={recycleHref} aria-current={recycle ? 'page' : undefined}
+        onClick={event => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+          event.preventDefault()
+          closeDrawer()
+          openRecycle()
+        }}><Trash2 size={16} />回收站</a>
+      {accountHref && openAccount && (
+        <SidebarStorageBar
+          summary={storageSummary}
+          collapsed={!narrow && collapsed}
+          accountHref={accountHref}
+          openAccount={() => {
+            closeDrawer()
+            openAccount()
+          }}
+        />
+      )}
+    </div>
   </>
 
   if (narrow) return <dialog id="file-directories" ref={dialog} className="directory-drawer" aria-labelledby="directory-title"

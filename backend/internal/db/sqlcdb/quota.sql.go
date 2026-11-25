@@ -80,6 +80,110 @@ func (q *Queries) ListReservedBytesByUser(ctx context.Context) ([]ListReservedBy
 	return items, nil
 }
 
+const listUserPendingUploadBatches = `-- name: ListUserPendingUploadBatches :many
+SELECT
+    b.id,
+    root.name,
+    b.expected AS file_count,
+    b.parent_id,
+    COALESCE(b.created_at, MIN(s.created_at))::timestamptz AS created_at,
+    COALESCE(SUM(s.size) FILTER (WHERE s.state <> 'complete'), 0)::bigint AS reserved_bytes,
+    COALESCE(SUM(s.size) FILTER (WHERE s.state = 'complete'), 0)::bigint AS committed_bytes,
+    COALESCE(SUM(s.size), 0)::bigint AS total_bytes
+FROM upload_batches b
+JOIN tree_nodes root ON root.id = b.root_id
+LEFT JOIN upload_sessions s ON s.batch_id = b.id
+WHERE b.owner_id = $1
+  AND EXISTS (SELECT 1 FROM upload_batch_nodes n WHERE n.batch_id = b.id)
+GROUP BY b.id, root.name, b.expected, b.parent_id, b.created_at
+ORDER BY COALESCE(b.created_at, MIN(s.created_at)) DESC, b.id ASC
+`
+
+type ListUserPendingUploadBatchesRow struct {
+	ID             string
+	Name           string
+	FileCount      int32
+	ParentID       int64
+	CreatedAt      pgtype.Timestamptz
+	ReservedBytes  int64
+	CommittedBytes int64
+	TotalBytes     int64
+}
+
+func (q *Queries) ListUserPendingUploadBatches(ctx context.Context, ownerID int64) ([]ListUserPendingUploadBatchesRow, error) {
+	rows, err := q.db.Query(ctx, listUserPendingUploadBatches, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserPendingUploadBatchesRow
+	for rows.Next() {
+		var i ListUserPendingUploadBatchesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.FileCount,
+			&i.ParentID,
+			&i.CreatedAt,
+			&i.ReservedBytes,
+			&i.CommittedBytes,
+			&i.TotalBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserPendingUploads = `-- name: ListUserPendingUploads :many
+SELECT id, name, size, parent_id, created_at, state
+FROM upload_sessions
+WHERE owner_id = $1
+  AND state <> 'complete'
+  AND (batch_id IS NULL OR batch_id = '')
+ORDER BY created_at DESC, id ASC
+`
+
+type ListUserPendingUploadsRow struct {
+	ID        string
+	Name      string
+	Size      int64
+	ParentID  int64
+	CreatedAt pgtype.Timestamptz
+	State     string
+}
+
+func (q *Queries) ListUserPendingUploads(ctx context.Context, ownerID int64) ([]ListUserPendingUploadsRow, error) {
+	rows, err := q.db.Query(ctx, listUserPendingUploads, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserPendingUploadsRow
+	for rows.Next() {
+		var i ListUserPendingUploadsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Size,
+			&i.ParentID,
+			&i.CreatedAt,
+			&i.State,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsersForQuota = `-- name: ListUsersForQuota :many
 SELECT id, organization_id, quota_bytes FROM users ORDER BY id
 `

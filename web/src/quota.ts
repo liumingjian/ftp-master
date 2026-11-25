@@ -230,3 +230,66 @@ export function formatQuotaExceededError(error: QuotaExceededPayload | undefined
   }
   return fallback
 }
+
+export type EffectiveQuotaScope = 'user' | 'organization_pool' | 'organization_total'
+
+export interface SelfStorageSummaryLike {
+  committedBytes: number
+  reservedBytes: number
+  usedBytes: number
+  quotaBytes: number | null
+  availableBytes: number | null
+  effectiveLimitBytes: number | null
+  effectiveUsedBytes: number
+  effectiveScope: EffectiveQuotaScope | null
+  constrainingOrganization: {
+    name: string
+    quotaBytes: number
+    usedBytes: number
+    allocatedBytes: number
+    unallocatedPoolBytes: number
+    unallocatedPoolUsedBytes: number
+    remainingBytes: number
+    constraintKind: 'organization_pool' | 'organization_total'
+  } | null
+  pendingUploads: readonly unknown[]
+  pendingBatches: readonly unknown[]
+}
+
+export interface SidebarStorageView {
+  label: string
+  tone: Exclude<QuotaUsageTone, 'unlimited'>
+  percent: number
+  barPercent: number
+  usageText: string
+  availableText: string
+  statusTag?: string
+  pendingCount: number
+}
+
+export function sidebarStorageView(summary: SelfStorageSummaryLike): SidebarStorageView | null {
+  if (summary.effectiveLimitBytes === null) return null
+  const { tone, percent } = quotaUsageState(summary.effectiveUsedBytes, summary.effectiveLimitBytes)
+  if (tone === 'unlimited') return null
+  const label = summary.effectiveScope === 'organization_pool'
+    ? '组织共享池'
+    : summary.effectiveScope === 'organization_total'
+      ? '组织配额'
+      : '存储空间'
+  let statusTag: string | undefined
+  if (tone === 'exceeded') {
+    statusTag = summary.effectiveUsedBytes > summary.effectiveLimitBytes ? '已超额' : '已满'
+  } else if (tone === 'warning') {
+    statusTag = '将满'
+  }
+  return {
+    label,
+    tone,
+    percent,
+    barPercent: Math.min(100, Math.max(0, percent)),
+    usageText: `${formatBinaryBytes(summary.effectiveUsedBytes)} / ${formatBinaryBytes(summary.effectiveLimitBytes)}`,
+    availableText: formatBinaryBytes(Math.max(0, summary.availableBytes ?? 0)),
+    statusTag,
+    pendingCount: summary.pendingUploads.length + summary.pendingBatches.length,
+  }
+}

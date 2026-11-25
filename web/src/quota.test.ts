@@ -12,7 +12,9 @@ import {
   isQuotaExceededError,
   parseQuotaInput,
   quotaUsageState,
+  sidebarStorageView,
   type QuotaOrganization,
+  type SelfStorageSummaryLike,
 } from './quota.ts'
 
 const MB = 1024 ** 2
@@ -178,4 +180,107 @@ test('isQuotaExceededError and formatQuotaExceededError handle 507 payloads and 
     '超出个人存储配额（当前可用 512 B，本次需要 1 KB）',
   )
   assert.equal(formatQuotaExceededError(undefined, '上传被拒绝'), '上传被拒绝')
+})
+
+test('sidebarStorageView hides when unlimited and classifies normal, >=85% warning, >=100% over-quota, zero cap, and org scopes', () => {
+  const base: SelfStorageSummaryLike = {
+    committedBytes: 0,
+    reservedBytes: 0,
+    usedBytes: 0,
+    quotaBytes: null,
+    availableBytes: null,
+    effectiveLimitBytes: null,
+    effectiveUsedBytes: 0,
+    effectiveScope: null,
+    constrainingOrganization: null,
+    pendingUploads: [],
+    pendingBatches: [],
+  }
+
+  // Unlimited user -> hidden
+  assert.equal(sidebarStorageView({ ...base, committedBytes: 5 * MB, usedBytes: 5 * MB, effectiveUsedBytes: 5 * MB }), null)
+
+  // Normal (< 85%) user quota
+  const normal = sidebarStorageView({
+    ...base,
+    committedBytes: 4 * MB,
+    usedBytes: 4 * MB,
+    quotaBytes: 10 * MB,
+    availableBytes: 6 * MB,
+    effectiveLimitBytes: 10 * MB,
+    effectiveUsedBytes: 4 * MB,
+    effectiveScope: 'user',
+  })
+  assert.deepEqual(normal, {
+    label: '存储空间',
+    tone: 'normal',
+    percent: 40,
+    barPercent: 40,
+    usageText: '4 MB / 10 MB',
+    availableText: '6 MB',
+    statusTag: undefined,
+    pendingCount: 0,
+  })
+
+  // Warning (>= 85%) org pool
+  const warning = sidebarStorageView({
+    ...base,
+    committedBytes: 1 * MB,
+    usedBytes: 1 * MB,
+    availableBytes: 3 * MB,
+    effectiveLimitBytes: 20 * MB,
+    effectiveUsedBytes: 17 * MB,
+    effectiveScope: 'organization_pool',
+    pendingUploads: [{ id: 'u1' }],
+    pendingBatches: [{ id: 'b1' }],
+  })
+  assert.deepEqual(warning, {
+    label: '组织共享池',
+    tone: 'warning',
+    percent: 85,
+    barPercent: 85,
+    usageText: '17 MB / 20 MB',
+    availableText: '3 MB',
+    statusTag: '将满',
+    pendingCount: 2,
+  })
+
+  // Over-quota (> 100%) org total
+  const exceeded = sidebarStorageView({
+    ...base,
+    availableBytes: 0,
+    effectiveLimitBytes: 10 * MB,
+    effectiveUsedBytes: 12 * MB,
+    effectiveScope: 'organization_total',
+  })
+  assert.deepEqual(exceeded, {
+    label: '组织配额',
+    tone: 'exceeded',
+    percent: 120,
+    barPercent: 100,
+    usageText: '12 MB / 10 MB',
+    availableText: '0 B',
+    statusTag: '已超额',
+    pendingCount: 0,
+  })
+
+  // Zero-byte quota cap -> exceeded with 100% bar fill
+  const zeroCap = sidebarStorageView({
+    ...base,
+    quotaBytes: 0,
+    availableBytes: 0,
+    effectiveLimitBytes: 0,
+    effectiveUsedBytes: 0,
+    effectiveScope: 'user',
+  })
+  assert.deepEqual(zeroCap, {
+    label: '存储空间',
+    tone: 'exceeded',
+    percent: 100,
+    barPercent: 100,
+    usageText: '0 B / 0 B',
+    availableText: '0 B',
+    statusTag: '已满',
+    pendingCount: 0,
+  })
 })

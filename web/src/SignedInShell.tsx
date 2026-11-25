@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import {
   Activity,
   ChevronDown,
@@ -22,6 +22,7 @@ import { RegistrationsPanel } from './RegistrationsPanel'
 import { MembershipPanel } from './MembershipPanel'
 import { PasswordPanel } from './PasswordPanel'
 import { PlatformBrand } from './PlatformBrand'
+import type { SelfStorageSummary } from './SidebarStorageBar'
 import { UploadSettings } from './UploadSettings'
 import { api, type CurrentUser } from './api/client'
 import { avatarInitial } from './avatar'
@@ -75,6 +76,14 @@ function Workspace({ user }: { user: CurrentUser }) {
   const [organizationName, setOrganizationName] = useState<string>()
   const [organizationPath, setOrganizationPath] = useState<string>()
   const [pendingRegistrations, setPendingRegistrations] = useState<number>(0)
+  const [storageSummary, setStorageSummary] = useState<SelfStorageSummary>()
+  const [storageLoading, setStorageLoading] = useState(true)
+  const [storageError, setStorageError] = useState<string>()
+  const [storageRevision, setStorageRevision] = useState(0)
+
+  const refreshStorage = useCallback(() => {
+    setStorageRevision(value => value + 1)
+  }, [])
 
   const view = location.searchParams.get('view')
   const adminPage = user.isAdministrator ? management.find(item => item.id === view) : undefined
@@ -99,6 +108,7 @@ function Workspace({ user }: { user: CurrentUser }) {
   }, [])
 
   useEffect(() => {
+    if (!user.isAdministrator) return
     const controller = new AbortController()
     void api.GET('/organizations', { signal: controller.signal }).then(({ data }) => {
       if (controller.signal.aborted || !data) return
@@ -117,7 +127,26 @@ function Workspace({ user }: { user: CurrentUser }) {
       setOrganizationPath(names.join(' / '))
     }).catch(() => {})
     return () => controller.abort()
-  }, [user.organizationId])
+  }, [user.isAdministrator, user.organizationId])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setStorageLoading(true)
+    void api.GET('/me/storage', { signal: controller.signal }).then(({ data, response }) => {
+      if (controller.signal.aborted) return
+      if (data) {
+        setStorageSummary(data)
+        setStorageError(undefined)
+      } else {
+        setStorageError(`无法读取存储信息（HTTP ${response.status}）`)
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) setStorageError('无法连接服务，读取存储信息失败')
+    }).finally(() => {
+      if (!controller.signal.aborted) setStorageLoading(false)
+    })
+    return () => controller.abort()
+  }, [storageRevision, view])
 
   useEffect(() => {
     if (!user.isAdministrator) return
@@ -314,6 +343,10 @@ function Workspace({ user }: { user: CurrentUser }) {
         recycle={view === 'recycle'} openRecycle={() => navigate('recycle')} recycleHref={href('recycle')}
         sidebarWidth={sidebarWidth} resizeSidebar={resizeSidebar}
         sidebarCollapsed={sidebarCollapsed}
+        storageSummary={storageSummary}
+        onStorageChanged={refreshStorage}
+        accountHref={href('account')}
+        openAccount={() => navigate('account')}
         viewerUser={{ displayName: user.displayName, username: user.username, organizationName }} />
       {adminPage && <aside className={sidebarCollapsed ? 'sidebar management-sidebar collapsed' : 'sidebar management-sidebar'}>
         <nav aria-label="管理导航">
@@ -336,7 +369,15 @@ function Workspace({ user }: { user: CurrentUser }) {
       </aside>}
       {destination && <main id="main-content" tabIndex={-1} className="shell-main destination" key={destination.id}>
         {personalPage
-          ? <PasswordPanel user={user} organizationPath={organizationPath} onBackToFiles={() => navigate()} />
+          ? <PasswordPanel
+            user={user}
+            organizationPath={organizationPath}
+            onBackToFiles={() => navigate()}
+            storageSummary={storageSummary}
+            storageLoading={storageLoading}
+            storageError={storageError}
+            onRefreshStorage={refreshStorage}
+          />
           : AdminPanel && <AdminPanel />}
       </main>}
     </div>
