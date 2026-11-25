@@ -303,6 +303,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/upload-batches/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["cancelUploadBatch"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/uploads": {
         parameters: {
             query?: never;
@@ -314,6 +332,24 @@ export interface paths {
         put?: never;
         post: operations["initiateUpload"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/uploads/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["cancelUpload"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1042,6 +1078,7 @@ export interface components {
             /** Format: int64 */
             partSize: number;
             partCount: number;
+            batchId?: string;
         };
         PartInput: {
             numbers: number[];
@@ -1689,6 +1726,27 @@ export interface operations {
             default: components["responses"]["Unauthorized"];
         };
     };
+    cancelUploadBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unrevealed folder upload batch cancelled and rolled back. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     initiateUpload: {
         parameters: {
             query?: never;
@@ -1710,6 +1768,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UploadSession"];
                 };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    cancelUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Incomplete upload session cancelled and queued for storage garbage collection. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Unauthorized"];
         };

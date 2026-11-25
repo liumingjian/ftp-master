@@ -120,6 +120,61 @@ func (q *Queries) CreateUploadSession(ctx context.Context, arg CreateUploadSessi
 	return err
 }
 
+const deleteTreeNodesByIDs = `-- name: DeleteTreeNodesByIDs :exec
+DELETE FROM tree_nodes WHERE id=ANY($1::bigint[])
+`
+
+func (q *Queries) DeleteTreeNodesByIDs(ctx context.Context, dollar_1 []int64) error {
+	_, err := q.db.Exec(ctx, deleteTreeNodesByIDs, dollar_1)
+	return err
+}
+
+const deleteUploadBatch = `-- name: DeleteUploadBatch :exec
+DELETE FROM upload_batches WHERE id=$1
+`
+
+func (q *Queries) DeleteUploadBatch(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deleteUploadBatch, id)
+	return err
+}
+
+const deleteUploadBatchNodes = `-- name: DeleteUploadBatchNodes :exec
+DELETE FROM upload_batch_nodes WHERE batch_id=$1
+`
+
+func (q *Queries) DeleteUploadBatchNodes(ctx context.Context, batchID string) error {
+	_, err := q.db.Exec(ctx, deleteUploadBatchNodes, batchID)
+	return err
+}
+
+const deleteUploadBatchSessions = `-- name: DeleteUploadBatchSessions :exec
+DELETE FROM upload_sessions WHERE batch_id=$1
+`
+
+func (q *Queries) DeleteUploadBatchSessions(ctx context.Context, batchID pgtype.Text) error {
+	_, err := q.db.Exec(ctx, deleteUploadBatchSessions, batchID)
+	return err
+}
+
+const deleteUploadBatchVersions = `-- name: DeleteUploadBatchVersions :exec
+DELETE FROM file_versions
+WHERE file_id IN (SELECT node_id FROM upload_batch_nodes WHERE batch_id=$1)
+`
+
+func (q *Queries) DeleteUploadBatchVersions(ctx context.Context, batchID string) error {
+	_, err := q.db.Exec(ctx, deleteUploadBatchVersions, batchID)
+	return err
+}
+
+const deleteUploadSession = `-- name: DeleteUploadSession :exec
+DELETE FROM upload_sessions WHERE id=$1
+`
+
+func (q *Queries) DeleteUploadSession(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deleteUploadSession, id)
+	return err
+}
+
 const findUploadDirectory = `-- name: FindUploadDirectory :one
 SELECT id FROM tree_nodes WHERE parent_id=$1 AND name=$2 AND NOT is_file AND deleted_at IS NULL
 `
@@ -134,6 +189,24 @@ func (q *Queries) FindUploadDirectory(ctx context.Context, arg FindUploadDirecto
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const getUploadBatchForUpdate = `-- name: GetUploadBatchForUpdate :one
+SELECT id, owner_id, parent_id, root_id, expected, created_at FROM upload_batches WHERE id=$1 FOR UPDATE
+`
+
+func (q *Queries) GetUploadBatchForUpdate(ctx context.Context, id string) (UploadBatch, error) {
+	row := q.db.QueryRow(ctx, getUploadBatchForUpdate, id)
+	var i UploadBatch
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.ParentID,
+		&i.RootID,
+		&i.Expected,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getUploadBatchRoot = `-- name: GetUploadBatchRoot :one
@@ -257,6 +330,30 @@ func (q *Queries) InsertUploadTransferSample(ctx context.Context, arg InsertUplo
 	return err
 }
 
+const listUploadBatchNodeIDs = `-- name: ListUploadBatchNodeIDs :many
+SELECT node_id FROM upload_batch_nodes WHERE batch_id=$1
+`
+
+func (q *Queries) ListUploadBatchNodeIDs(ctx context.Context, batchID string) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listUploadBatchNodeIDs, batchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var node_id int64
+		if err := rows.Scan(&node_id); err != nil {
+			return nil, err
+		}
+		items = append(items, node_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUploadTransferSamples = `-- name: ListUploadTransferSamples :many
 SELECT id, session_id, part_number, started_at, ended_at, bytes_transferred, samples
 FROM upload_transfer_samples
@@ -313,6 +410,47 @@ type PublishUploadReceiptParams struct {
 
 func (q *Queries) PublishUploadReceipt(ctx context.Context, arg PublishUploadReceiptParams) error {
 	_, err := q.db.Exec(ctx, publishUploadReceipt, arg.ID, arg.FileID, arg.VersionID)
+	return err
+}
+
+const queueCancelledUpload = `-- name: QueueCancelledUpload :exec
+INSERT INTO storage_gc(object_key, upload_id) VALUES($1, $2) ON CONFLICT DO NOTHING
+`
+
+type QueueCancelledUploadParams struct {
+	ObjectKey string
+	UploadID  pgtype.Text
+}
+
+func (q *Queries) QueueCancelledUpload(ctx context.Context, arg QueueCancelledUploadParams) error {
+	_, err := q.db.Exec(ctx, queueCancelledUpload, arg.ObjectKey, arg.UploadID)
+	return err
+}
+
+const queueUploadBatchSessions = `-- name: QueueUploadBatchSessions :exec
+INSERT INTO storage_gc(object_key, upload_id)
+SELECT object_key, storage_upload_id
+FROM upload_sessions
+WHERE batch_id=$1
+ON CONFLICT DO NOTHING
+`
+
+func (q *Queries) QueueUploadBatchSessions(ctx context.Context, batchID pgtype.Text) error {
+	_, err := q.db.Exec(ctx, queueUploadBatchSessions, batchID)
+	return err
+}
+
+const queueUploadBatchVersions = `-- name: QueueUploadBatchVersions :exec
+INSERT INTO storage_gc(object_key)
+SELECT v.object_key
+FROM file_versions v
+JOIN upload_batch_nodes n ON n.node_id=v.file_id
+WHERE n.batch_id=$1
+ON CONFLICT DO NOTHING
+`
+
+func (q *Queries) QueueUploadBatchVersions(ctx context.Context, batchID string) error {
+	_, err := q.db.Exec(ctx, queueUploadBatchVersions, batchID)
 	return err
 }
 
