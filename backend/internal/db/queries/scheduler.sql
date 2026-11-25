@@ -7,6 +7,17 @@ WITH ranked AS (SELECT id,object_key,row_number() OVER(PARTITION BY file_id ORDE
 -- name: DateLegacyUploadBatches :exec
 UPDATE upload_batches SET created_at=$1 WHERE created_at IS NULL;
 
+-- name: ListExpiredUploadsForAudit :many
+SELECT u.id, u.owner_id, usr.username, u.parent_id, u.name, u.size, coalesce(u.batch_id, '')::text AS batch_id, u.relative_path
+FROM upload_sessions u
+JOIN users usr ON usr.id = u.owner_id
+LEFT JOIN upload_batches b ON b.id = u.batch_id
+WHERE ((u.state<>'complete' AND u.created_at <= $1::timestamptz-interval '24 hours') OR b.created_at <= $1::timestamptz-interval '24 hours')
+  AND EXISTS (
+    SELECT 1 FROM upload_transfer_samples s
+    WHERE s.session_id = u.id AND s.bytes_transferred > 0
+  );
+
 -- name: QueueExpiredUploads :exec
 INSERT INTO storage_gc(object_key,upload_id) SELECT u.object_key,u.storage_upload_id FROM upload_sessions u LEFT JOIN upload_batches b ON b.id=u.batch_id WHERE (u.state<>'complete' AND u.created_at <= $1::timestamptz-interval '24 hours') OR b.created_at <= $1::timestamptz-interval '24 hours' ON CONFLICT DO NOTHING;
 

@@ -2,7 +2,7 @@
 
 Version 1 deploys directly on at least three hosts (no Kubernetes); each host runs the same set: Nginx + keepalived (floating virtual IP), a stateless application instance, a MinIO node in one distributed erasure-coded cluster, PostgreSQL managed by Patroni with etcd, and Redis with Sentinel. The goal is that losing any one host does not interrupt service; cross-datacenter recovery is out of scope.
 
-Large-file speed comes from browsers uploading and downloading directly to MinIO via presigned URLs, using multipart, resumable uploads; the application only authorizes, records metadata and writes Audit Events, so file bytes never pass through it. Two bounded exceptions stream through the application: zip downloads of multiple items (capped at 10 GB) and Office editing (files up to 25 MiB, see ADR 0005).
+Large-file speed originally came from browsers uploading and downloading directly to MinIO via presigned URLs, using multipart, resumable uploads; the application only authorized, recorded metadata and wrote Audit Events, so file bytes never passed through it. **This direct-to-MinIO bypass is superseded by [ADR 0008](./0008-proxy-transfers-for-throughput-audit.md)**, which streams upload parts and single-file downloads through the Go application so the server can authoritatively audit per-second transfer throughput and mid-transfer failures. Two bounded exceptions already streamed through the application: zip downloads of multiple items (capped at 10 GB) and Office editing (files up to 25 MiB, see ADR 0005).
 
 ## Consequences
 

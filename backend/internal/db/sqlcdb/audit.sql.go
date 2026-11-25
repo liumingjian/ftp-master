@@ -77,20 +77,25 @@ WHERE occurred_at >= $1::timestamptz AND occurred_at < $2::timestamptz
 AND (cardinality($3::bigint[])=0 OR user_id=ANY($3::bigint[]))
 AND ($4::bigint=0 OR user_id IN (SELECT id FROM users WHERE organization_id IN (SELECT id FROM orgs)))
 AND ($5::text='' OR a.action=$5)
-AND ($6::text='' OR CASE
+AND ($6::text='' OR (
+ ($6::text='transfer' AND a.action IN ('upload','download','zip_download')) OR
+ ($6::text<>'transfer' AND CASE
  WHEN a.action IN ('sign_in','sign_out') THEN 'session'
  WHEN a.action IN ('download','zip_download') THEN 'read'
  WHEN a.action IN ('delete','restore','purge') THEN 'delete'
  WHEN starts_with(a.action,'grant') THEN 'grant'
  WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') THEN 'account'
  ELSE 'write' END=$6)
+))
 AND (NOT $7::boolean OR outcome='failure')
-AND ($8::bigint=0 OR item_id=$8 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(detail->'files','[]'::jsonb)) f WHERE f->>'id'=$8::text))
-AND ($9::text='' OR EXISTS (
+AND (NOT $8::boolean OR (a.detail->'transferProfile'->>'anomaly') IN ('stall','failed'))
+AND ($9::bigint<=0 OR ((a.detail->'transferProfile'->>'avgBps') IS NOT NULL AND (a.detail->'transferProfile'->>'avgBps')::bigint < $9::bigint))
+AND ($10::bigint=0 OR item_id=$10 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(detail->'files','[]'::jsonb)) f WHERE f->>'id'=$10::text))
+AND ($11::text='' OR EXISTS (
  SELECT 1 FROM (SELECT unnest(array_append(ARRAY(SELECT f->>'path' FROM jsonb_array_elements(COALESCE(a.detail->'files','[]'::jsonb)) f), a.item_path)) AS path) paths
- WHERE path=$9 OR
- (starts_with(path, CASE WHEN $9='/' THEN '/' ELSE rtrim($9,'/') || '/' END)
- AND ($10::boolean OR strpos(substring(path FROM length(CASE WHEN $9='/' THEN '/' ELSE rtrim($9,'/') || '/' END)+1),'/')=0))
+ WHERE path=$11 OR
+ (starts_with(path, CASE WHEN $11='/' THEN '/' ELSE rtrim($11,'/') || '/' END)
+ AND ($12::boolean OR strpos(substring(path FROM length(CASE WHEN $11='/' THEN '/' ELSE rtrim($11,'/') || '/' END)+1),'/')=0))
 ))
 `
 
@@ -102,6 +107,8 @@ type CountAuditEventsParams struct {
 	Action         string
 	Category       string
 	FailuresOnly   bool
+	AnomaliesOnly  bool
+	MaxAvgBps      int64
 	ItemID         int64
 	Directory      string
 	Recursive      bool
@@ -116,6 +123,8 @@ func (q *Queries) CountAuditEvents(ctx context.Context, arg CountAuditEventsPara
 		arg.Action,
 		arg.Category,
 		arg.FailuresOnly,
+		arg.AnomaliesOnly,
+		arg.MaxAvgBps,
 		arg.ItemID,
 		arg.Directory,
 		arg.Recursive,
@@ -134,9 +143,36 @@ func (q *Queries) EnsureAuditPartition(ctx context.Context, at pgtype.Timestampt
 	return err
 }
 
-const insertAuditEvent = `-- name: InsertAuditEvent :exec
+const getAuditTransferSeries = `-- name: GetAuditTransferSeries :one
+SELECT event_id, occurred_at, bucket_seconds, points, gaps
+FROM audit_transfer_series
+WHERE event_id = $1::bigint
+  AND ($2::timestamptz IS NULL OR occurred_at = $2::timestamptz)
+LIMIT 1
+`
+
+type GetAuditTransferSeriesParams struct {
+	EventID    int64
+	OccurredAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetAuditTransferSeries(ctx context.Context, arg GetAuditTransferSeriesParams) (AuditTransferSeries, error) {
+	row := q.db.QueryRow(ctx, getAuditTransferSeries, arg.EventID, arg.OccurredAt)
+	var i AuditTransferSeries
+	err := row.Scan(
+		&i.EventID,
+		&i.OccurredAt,
+		&i.BucketSeconds,
+		&i.Points,
+		&i.Gaps,
+	)
+	return i, err
+}
+
+const insertAuditEvent = `-- name: InsertAuditEvent :one
 INSERT INTO audit_events (occurred_at, user_id, username, source_ip, action, outcome, item_id, item_path, detail)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, occurred_at
 `
 
 type InsertAuditEventParams struct {
@@ -151,8 +187,13 @@ type InsertAuditEventParams struct {
 	Detail     []byte
 }
 
-func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventParams) error {
-	_, err := q.db.Exec(ctx, insertAuditEvent,
+type InsertAuditEventRow struct {
+	ID         pgtype.Int8
+	OccurredAt pgtype.Timestamptz
+}
+
+func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventParams) (InsertAuditEventRow, error) {
+	row := q.db.QueryRow(ctx, insertAuditEvent,
 		arg.OccurredAt,
 		arg.UserID,
 		arg.Username,
@@ -162,6 +203,32 @@ func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventPara
 		arg.ItemID,
 		arg.ItemPath,
 		arg.Detail,
+	)
+	var i InsertAuditEventRow
+	err := row.Scan(&i.ID, &i.OccurredAt)
+	return i, err
+}
+
+const insertAuditTransferSeries = `-- name: InsertAuditTransferSeries :exec
+INSERT INTO audit_transfer_series (event_id, occurred_at, bucket_seconds, points, gaps)
+VALUES ($1, $2, $3, $4, $5)
+`
+
+type InsertAuditTransferSeriesParams struct {
+	EventID       int64
+	OccurredAt    pgtype.Timestamptz
+	BucketSeconds int32
+	Points        []byte
+	Gaps          []byte
+}
+
+func (q *Queries) InsertAuditTransferSeries(ctx context.Context, arg InsertAuditTransferSeriesParams) error {
+	_, err := q.db.Exec(ctx, insertAuditTransferSeries,
+		arg.EventID,
+		arg.OccurredAt,
+		arg.BucketSeconds,
+		arg.Points,
+		arg.Gaps,
 	)
 	return err
 }
@@ -176,23 +243,28 @@ WHERE occurred_at >= $1::timestamptz AND occurred_at < $2::timestamptz
 AND (cardinality($3::bigint[])=0 OR user_id=ANY($3::bigint[]))
 AND ($4::bigint=0 OR user_id IN (SELECT id FROM users WHERE organization_id IN (SELECT id FROM orgs)))
 AND ($5::text='' OR a.action=$5)
-AND ($6::text='' OR CASE
+AND ($6::text='' OR (
+ ($6::text='transfer' AND a.action IN ('upload','download','zip_download')) OR
+ ($6::text<>'transfer' AND CASE
  WHEN a.action IN ('sign_in','sign_out') THEN 'session'
  WHEN a.action IN ('download','zip_download') THEN 'read'
  WHEN a.action IN ('delete','restore','purge') THEN 'delete'
  WHEN starts_with(a.action,'grant') THEN 'grant'
  WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') THEN 'account'
  ELSE 'write' END=$6)
+))
 AND (NOT $7::boolean OR outcome='failure')
-AND ($8::bigint=0 OR item_id=$8 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(detail->'files','[]'::jsonb)) f WHERE f->>'id'=$8::text))
-AND ($9::text='' OR EXISTS (
+AND (NOT $8::boolean OR (a.detail->'transferProfile'->>'anomaly') IN ('stall','failed'))
+AND ($9::bigint<=0 OR ((a.detail->'transferProfile'->>'avgBps') IS NOT NULL AND (a.detail->'transferProfile'->>'avgBps')::bigint < $9::bigint))
+AND ($10::bigint=0 OR item_id=$10 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(detail->'files','[]'::jsonb)) f WHERE f->>'id'=$10::text))
+AND ($11::text='' OR EXISTS (
  SELECT 1 FROM (SELECT unnest(array_append(ARRAY(SELECT f->>'path' FROM jsonb_array_elements(COALESCE(a.detail->'files','[]'::jsonb)) f), a.item_path)) AS path) paths
- WHERE path=$9 OR
- (starts_with(path, CASE WHEN $9='/' THEN '/' ELSE rtrim($9,'/') || '/' END)
- AND ($10::boolean OR strpos(substring(path FROM length(CASE WHEN $9='/' THEN '/' ELSE rtrim($9,'/') || '/' END)+1),'/')=0))
+ WHERE path=$11 OR
+ (starts_with(path, CASE WHEN $11='/' THEN '/' ELSE rtrim($11,'/') || '/' END)
+ AND ($12::boolean OR strpos(substring(path FROM length(CASE WHEN $11='/' THEN '/' ELSE rtrim($11,'/') || '/' END)+1),'/')=0))
 ))
 ORDER BY occurred_at DESC,id DESC
-LIMIT NULLIF($12::integer,0) OFFSET $11::bigint
+LIMIT NULLIF($14::integer,0) OFFSET $13::bigint
 `
 
 type QueryAuditEventsParams struct {
@@ -203,6 +275,8 @@ type QueryAuditEventsParams struct {
 	Action         string
 	Category       string
 	FailuresOnly   bool
+	AnomaliesOnly  bool
+	MaxAvgBps      int64
 	ItemID         int64
 	Directory      string
 	Recursive      bool
@@ -219,6 +293,8 @@ func (q *Queries) QueryAuditEvents(ctx context.Context, arg QueryAuditEventsPara
 		arg.Action,
 		arg.Category,
 		arg.FailuresOnly,
+		arg.AnomaliesOnly,
+		arg.MaxAvgBps,
 		arg.ItemID,
 		arg.Directory,
 		arg.Recursive,

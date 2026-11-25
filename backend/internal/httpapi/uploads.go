@@ -1,19 +1,18 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -162,6 +161,8 @@ func (s *Server) loadUpload(ctx context.Context, tx pgx.Tx, id string) (uploadIn
 	}
 	return u, snap, treeAccess(snap, u.Parent, permission.Upload)
 }
+
+// IssueUploadParts returns application-proxied part endpoints (ADR 0008).
 func (s *Server) IssueUploadParts(ctx context.Context, r api.IssueUploadPartsRequestObject) (api.IssueUploadPartsResponseObject, error) {
 	tx, err := s.membership.Pool.Begin(ctx)
 	if err != nil {
@@ -184,17 +185,142 @@ func (s *Server) IssueUploadParts(ctx context.Context, r api.IssueUploadPartsReq
 		if n < 1 || n > u.Count {
 			return membershipFailure{400, "invalid part number"}, nil
 		}
-		signed, e := s.transfer.Signer.Presign(ctx, "PUT", s.transfer.Bucket, u.Key, 15*time.Minute, url.Values{"uploadId": {u.StorageID}, "partNumber": {fmtInt(n)}})
-		if e != nil {
-			return nil, e
-		}
 		out = append(out, struct {
 			Number int    `json:"number"`
 			Url    string `json:"url"`
-		}{n, signed.String()})
+		}{n, fmt.Sprintf("%s/uploads/%s/parts/%d", BasePath, u.ID, n)})
 	}
 	return out, nil
 }
+
+type uploadPartResponse struct {
+	etag string
+}
+
+func (r uploadPartResponse) VisitUploadPartResponse(w http.ResponseWriter) error {
+	if r.etag != "" {
+		w.Header().Set("ETag", r.etag)
+	}
+	w.WriteHeader(http.StatusOK)
+	return nil
+}
+
+// UploadPart streams one multipart upload part through Go to MinIO while
+// recording authoritative per-second Transfer Profile samples (ADR 0008).
+func (s *Server) UploadPart(ctx context.Context, r api.UploadPartRequestObject) (api.UploadPartResponseObject, error) {
+	tx, err := s.membership.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	u, snap, err := s.loadUpload(ctx, tx, r.Id)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		f, e := membershipError(err)
+		return f, e
+	}
+	var pub sqlcdb.GetUploadPublicationRow
+	if err == nil {
+		pub, err = sqlcdb.New(tx).GetUploadPublication(ctx, u.ID)
+	}
+	var batchRootName string
+	if err == nil && pub.BatchID != "" {
+		root, rootErr := sqlcdb.New(tx).GetUploadBatchRoot(ctx, pub.BatchID)
+		if rootErr == nil {
+			batchRootName = root.Name
+		}
+	}
+	_ = tx.Rollback(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if u.State == "complete" {
+		return membershipFailure{409, "upload already completing"}, nil
+	}
+	if r.PartNumber < 1 || r.PartNumber > u.Count {
+		return membershipFailure{400, "invalid part number"}, nil
+	}
+	expected := u.PartSize
+	if r.PartNumber == u.Count {
+		expected = u.Size - int64(r.PartNumber-1)*u.PartSize
+	}
+	uploadPath := snap.Path(u.Parent) + "/" + u.Name
+	if pub.BatchID != "" && batchRootName != "" && pub.RelativePath != "" {
+		uploadPath = snap.Path(u.Parent) + "/" + batchRootName + "/" + pub.RelativePath
+	}
+
+	var body io.Reader = bytes.NewReader(nil)
+	if r.Body != nil {
+		body = r.Body
+	}
+	sampler := audit.NewTransferSampler(s.membership.Clock)
+	counted := sampler.CountingReader(io.LimitReader(body, expected))
+	core := minio.Core{Client: s.transfer.Client}
+	part, putErr := core.PutObjectPart(ctx, s.transfer.Bucket, u.Key, u.StorageID, r.PartNumber, counted, expected, minio.PutObjectPartOptions{})
+	seg := sampler.Finish()
+
+	if putErr != nil {
+		shortRead := seg.BytesTransferred < expected
+		reason := uploadPartFailureReason(r.PartNumber, ctx, putErr, shortRead)
+		summary, series := audit.BuildTransferProfile([]audit.TransferSegment{seg}, u.Size, true, reason, nil)
+		infoReq := requestFrom(ctx)
+		bgCtx := context.WithoutCancel(ctx)
+		_ = audit.NewRecorder(sqlcdb.New(s.membership.Pool), s.membership.Clock).Record(bgCtx, audit.Event{
+			UserID:   u.Owner,
+			Username: infoReq.session.User.Username,
+			SourceIP: infoReq.sourceIP,
+			Action:   "upload",
+			Outcome:  audit.OutcomeFailure,
+			ItemPath: uploadPath,
+			Detail: map[string]any{
+				"reason":          reason,
+				"size":            u.Size,
+				"partNumber":      r.PartNumber,
+				"transferProfile": summary,
+			},
+			TransferSeries: series,
+		})
+		if ctx.Err() != nil || shortRead || errors.Is(putErr, io.EOF) || errors.Is(putErr, io.ErrUnexpectedEOF) {
+			return membershipFailure{400, "part upload interrupted"}, nil
+		}
+		return nil, putErr
+	}
+
+	// Reject oversized trailing data beyond expected part size if any remains.
+	var extra [1]byte
+	if n, _ := body.Read(extra[:]); n > 0 {
+		return membershipFailure{400, "part exceeds expected size"}, nil
+	}
+
+	encodedSamples, err := audit.EncodeRawSamples(seg.Samples)
+	if err != nil {
+		return nil, err
+	}
+	if err := sqlcdb.New(s.membership.Pool).InsertUploadTransferSample(ctx, sqlcdb.InsertUploadTransferSampleParams{
+		SessionID:        u.ID,
+		PartNumber:       int32(r.PartNumber),
+		StartedAt:        pgtype.Timestamptz{Time: seg.StartedAt, Valid: true},
+		EndedAt:          pgtype.Timestamptz{Time: seg.EndedAt, Valid: true},
+		BytesTransferred: seg.BytesTransferred,
+		Samples:          encodedSamples,
+	}); err != nil {
+		return nil, err
+	}
+	return uploadPartResponse{etag: part.ETag}, nil
+}
+
+func uploadPartFailureReason(partNumber int, ctx context.Context, err error, shortRead bool) string {
+	switch {
+	case errors.Is(ctx.Err(), context.Canceled):
+		return fmt.Sprintf("分片 #%d 传输中断（客户端断开连接）", partNumber)
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return fmt.Sprintf("分片 #%d 传输中断（网络超时）", partNumber)
+	case shortRead, errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return fmt.Sprintf("分片 #%d 传输中断（数据不完整）", partNumber)
+	default:
+		return fmt.Sprintf("分片 #%d 传输中断（连接异常）", partNumber)
+	}
+}
+
 func fmtInt(n int) string { return strconv.Itoa(n) }
 func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequestObject) (api.CompleteUploadResponseObject, error) {
 	// The session lock serializes retries. Persist completing before touching S3,
@@ -399,8 +525,45 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 			return nil, err
 		}
 	}
+
+	// Aggregate cross-host multipart Transfer Profile samples collected during part PUTs.
+	sampleRows, err := q.ListUploadTransferSamples(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	segments := make([]audit.TransferSegment, 0, len(sampleRows))
+	for _, row := range sampleRows {
+		decoded, decErr := audit.DecodeRawSamples(row.Samples)
+		if decErr != nil {
+			return nil, decErr
+		}
+		segments = append(segments, audit.TransferSegment{
+			StartedAt:        row.StartedAt.Time,
+			EndedAt:          row.EndedAt.Time,
+			BytesTransferred: row.BytesTransferred,
+			Samples:          decoded,
+		})
+	}
+	detail := map[string]any{"versionId": version, "size": u.Size, "newVersion": overwrite}
+	var series *audit.TransferSeries
+	if len(segments) > 0 {
+		var summary audit.TransferProfileSummary
+		summary, series = audit.BuildTransferProfile(segments, u.Size, false, "", nil)
+		detail["transferProfile"] = summary
+	}
+
 	infoReq := requestFrom(ctx)
-	err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: u.Owner, Username: infoReq.session.User.Username, SourceIP: infoReq.sourceIP, Action: "upload", Outcome: audit.OutcomeSuccess, ItemID: node.ID, ItemPath: uploadPath, Detail: map[string]any{"versionId": version, "size": u.Size, "newVersion": overwrite}})
+	err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{
+		UserID:         u.Owner,
+		Username:       infoReq.session.User.Username,
+		SourceIP:       infoReq.sourceIP,
+		Action:         "upload",
+		Outcome:        audit.OutcomeSuccess,
+		ItemID:         node.ID,
+		ItemPath:       uploadPath,
+		Detail:         detail,
+		TransferSeries: series,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +594,9 @@ func (e membershipFailure) VisitInitiateUploadResponse(w http.ResponseWriter) er
 	return e.write(w)
 }
 func (e membershipFailure) VisitIssueUploadPartsResponse(w http.ResponseWriter) error {
+	return e.write(w)
+}
+func (e membershipFailure) VisitUploadPartResponse(w http.ResponseWriter) error {
 	return e.write(w)
 }
 func (e membershipFailure) VisitCompleteUploadResponse(w http.ResponseWriter) error {

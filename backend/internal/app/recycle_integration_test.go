@@ -87,7 +87,8 @@ func TestRecycleCreatorOrParentDeleteAndOrphanRestore(t *testing.T) {
 		URL string `json:"url"`
 	}
 	decode(t, call(creator, "POST", "/api/uploads/"+upload.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
-	req, _ := http.NewRequest("PUT", urls[0].URL, strings.NewReader("hello"))
+	req, _ := http.NewRequest("PUT", server.URL+urls[0].URL, strings.NewReader("hello"))
+	req.AddCookie(creator.cookie)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

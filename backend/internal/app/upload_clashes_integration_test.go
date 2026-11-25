@@ -48,7 +48,8 @@ func TestUploadClashesPreserveVersionsAndKeepBoth(t *testing.T) {
 			URL string `json:"url"`
 		}
 		decode(t, call("POST", "/api/uploads/"+session.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
-		req, _ := http.NewRequest("PUT", urls[0].URL, bytes.NewBufferString(content))
+		req, _ := http.NewRequest("PUT", server.URL+urls[0].URL, bytes.NewBufferString(content))
+		req.AddCookie(b.cookie)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)

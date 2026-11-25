@@ -93,3 +93,7 @@ _Avoid_: Conflict, overwrite conflict
 **Audit Event**:
 An immutable record of who did what to which item, when, from where, and whether it succeeded.
 _Avoid_: Log, operation log, activity
+
+**Transfer Profile**:
+The server-measured throughput summary and time-series speed samples attached to a file upload, download, or archive download Audit Event, recording how fast bytes moved and whether the transfer stalled or failed.
+_Avoid_: Speed log, bandwidth metrics, traffic stats

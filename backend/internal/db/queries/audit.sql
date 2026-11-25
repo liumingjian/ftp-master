@@ -1,6 +1,18 @@
--- name: InsertAuditEvent :exec
+-- name: InsertAuditEvent :one
 INSERT INTO audit_events (occurred_at, user_id, username, source_ip, action, outcome, item_id, item_path, detail)
-VALUES (@occurred_at, @user_id, @username, @source_ip, @action, @outcome, @item_id, @item_path, @detail);
+VALUES (@occurred_at, @user_id, @username, @source_ip, @action, @outcome, @item_id, @item_path, @detail)
+RETURNING id, occurred_at;
+
+-- name: InsertAuditTransferSeries :exec
+INSERT INTO audit_transfer_series (event_id, occurred_at, bucket_seconds, points, gaps)
+VALUES (@event_id, @occurred_at, @bucket_seconds, @points, @gaps);
+
+-- name: GetAuditTransferSeries :one
+SELECT event_id, occurred_at, bucket_seconds, points, gaps
+FROM audit_transfer_series
+WHERE event_id = sqlc.arg(event_id)::bigint
+  AND (sqlc.narg(occurred_at)::timestamptz IS NULL OR occurred_at = sqlc.narg(occurred_at)::timestamptz)
+LIMIT 1;
 
 -- name: EnsureAuditPartition :exec
 SELECT audit_ensure_partition(@at::timestamptz);
@@ -15,14 +27,19 @@ WHERE occurred_at >= sqlc.arg(from_time)::timestamptz AND occurred_at < sqlc.arg
 AND (cardinality(sqlc.arg(user_ids)::bigint[])=0 OR user_id=ANY(sqlc.arg(user_ids)::bigint[]))
 AND (sqlc.arg(organization_id)::bigint=0 OR user_id IN (SELECT id FROM users WHERE organization_id IN (SELECT id FROM orgs)))
 AND (sqlc.arg(action)::text='' OR a.action=sqlc.arg(action))
-AND (sqlc.arg(category)::text='' OR CASE
+AND (sqlc.arg(category)::text='' OR (
+ (sqlc.arg(category)::text='transfer' AND a.action IN ('upload','download','zip_download')) OR
+ (sqlc.arg(category)::text<>'transfer' AND CASE
  WHEN a.action IN ('sign_in','sign_out') THEN 'session'
  WHEN a.action IN ('download','zip_download') THEN 'read'
  WHEN a.action IN ('delete','restore','purge') THEN 'delete'
  WHEN starts_with(a.action,'grant') THEN 'grant'
  WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') THEN 'account'
  ELSE 'write' END=sqlc.arg(category))
+))
 AND (NOT sqlc.arg(failures_only)::boolean OR outcome='failure')
+AND (NOT sqlc.arg(anomalies_only)::boolean OR (a.detail->'transferProfile'->>'anomaly') IN ('stall','failed'))
+AND (sqlc.arg(max_avg_bps)::bigint<=0 OR ((a.detail->'transferProfile'->>'avgBps') IS NOT NULL AND (a.detail->'transferProfile'->>'avgBps')::bigint < sqlc.arg(max_avg_bps)::bigint))
 AND (sqlc.arg(item_id)::bigint=0 OR item_id=sqlc.arg(item_id) OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(detail->'files','[]'::jsonb)) f WHERE f->>'id'=sqlc.arg(item_id)::text))
 AND (sqlc.arg(directory)::text='' OR EXISTS (
  SELECT 1 FROM (SELECT unnest(array_append(ARRAY(SELECT f->>'path' FROM jsonb_array_elements(COALESCE(a.detail->'files','[]'::jsonb)) f), a.item_path)) AS path) paths
@@ -43,14 +60,19 @@ WHERE occurred_at >= sqlc.arg(from_time)::timestamptz AND occurred_at < sqlc.arg
 AND (cardinality(sqlc.arg(user_ids)::bigint[])=0 OR user_id=ANY(sqlc.arg(user_ids)::bigint[]))
 AND (sqlc.arg(organization_id)::bigint=0 OR user_id IN (SELECT id FROM users WHERE organization_id IN (SELECT id FROM orgs)))
 AND (sqlc.arg(action)::text='' OR a.action=sqlc.arg(action))
-AND (sqlc.arg(category)::text='' OR CASE
+AND (sqlc.arg(category)::text='' OR (
+ (sqlc.arg(category)::text='transfer' AND a.action IN ('upload','download','zip_download')) OR
+ (sqlc.arg(category)::text<>'transfer' AND CASE
  WHEN a.action IN ('sign_in','sign_out') THEN 'session'
  WHEN a.action IN ('download','zip_download') THEN 'read'
  WHEN a.action IN ('delete','restore','purge') THEN 'delete'
  WHEN starts_with(a.action,'grant') THEN 'grant'
  WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') THEN 'account'
  ELSE 'write' END=sqlc.arg(category))
+))
 AND (NOT sqlc.arg(failures_only)::boolean OR outcome='failure')
+AND (NOT sqlc.arg(anomalies_only)::boolean OR (a.detail->'transferProfile'->>'anomaly') IN ('stall','failed'))
+AND (sqlc.arg(max_avg_bps)::bigint<=0 OR ((a.detail->'transferProfile'->>'avgBps') IS NOT NULL AND (a.detail->'transferProfile'->>'avgBps')::bigint < sqlc.arg(max_avg_bps)::bigint))
 AND (sqlc.arg(item_id)::bigint=0 OR item_id=sqlc.arg(item_id) OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(detail->'files','[]'::jsonb)) f WHERE f->>'id'=sqlc.arg(item_id)::text))
 AND (sqlc.arg(directory)::text='' OR EXISTS (
  SELECT 1 FROM (SELECT unnest(array_append(ARRAY(SELECT f->>'path' FROM jsonb_array_elements(COALESCE(a.detail->'files','[]'::jsonb)) f), a.item_path)) AS path) paths

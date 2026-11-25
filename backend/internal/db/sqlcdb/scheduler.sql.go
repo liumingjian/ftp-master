@@ -98,6 +98,58 @@ func (q *Queries) ListExpiredBatchNodes(ctx context.Context, dollar_1 pgtype.Tim
 	return items, nil
 }
 
+const listExpiredUploadsForAudit = `-- name: ListExpiredUploadsForAudit :many
+SELECT u.id, u.owner_id, usr.username, u.parent_id, u.name, u.size, coalesce(u.batch_id, '')::text AS batch_id, u.relative_path
+FROM upload_sessions u
+JOIN users usr ON usr.id = u.owner_id
+LEFT JOIN upload_batches b ON b.id = u.batch_id
+WHERE ((u.state<>'complete' AND u.created_at <= $1::timestamptz-interval '24 hours') OR b.created_at <= $1::timestamptz-interval '24 hours')
+  AND EXISTS (
+    SELECT 1 FROM upload_transfer_samples s
+    WHERE s.session_id = u.id AND s.bytes_transferred > 0
+  )
+`
+
+type ListExpiredUploadsForAuditRow struct {
+	ID           string
+	OwnerID      int64
+	Username     string
+	ParentID     int64
+	Name         string
+	Size         int64
+	BatchID      string
+	RelativePath string
+}
+
+func (q *Queries) ListExpiredUploadsForAudit(ctx context.Context, dollar_1 pgtype.Timestamptz) ([]ListExpiredUploadsForAuditRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredUploadsForAudit, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListExpiredUploadsForAuditRow
+	for rows.Next() {
+		var i ListExpiredUploadsForAuditRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Username,
+			&i.ParentID,
+			&i.Name,
+			&i.Size,
+			&i.BatchID,
+			&i.RelativePath,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pruneFileVersions = `-- name: PruneFileVersions :exec
 WITH ranked AS (SELECT id,object_key,row_number() OVER(PARTITION BY file_id ORDER BY id DESC) n FROM file_versions), removed AS (DELETE FROM file_versions f USING ranked r WHERE f.id=r.id AND r.n>20 RETURNING f.object_key) INSERT INTO storage_gc(object_key) SELECT object_key FROM removed ON CONFLICT DO NOTHING
 `
