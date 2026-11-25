@@ -6,6 +6,7 @@ import {
   bytesToQuotaDraft,
   computeOrgAncestorBudget,
   computePlatformStorageSummary,
+  computeUserOrgBudget,
   formatBinaryBytes,
   parseQuotaInput,
   quotaUsageState,
@@ -97,6 +98,51 @@ test('computeOrgAncestorBudget finds constraining ancestor across uncapped inter
   const underFree = computeOrgAncestorBudget(orgs, 3, 6)
   assert.equal(underFree.ancestor, null)
   assert.equal(underFree.minRequiredQuotaBytes, 10 * GB)
+})
+
+test('computeUserOrgBudget tracks constraining organization across uncapped intermediates and cross-org moves', () => {
+  const orgs: QuotaOrganization[] = [
+    { id: 1, name: 'RootA', parentId: null, quotaBytes: 100 * GB, committedBytes: 0, reservedBytes: 0, usedBytes: 0, allocatedBytes: 70 * GB, unallocatedBytes: 30 * GB },
+    { id: 2, name: 'MidA1', parentId: 1, quotaBytes: null, committedBytes: 0, reservedBytes: 0, usedBytes: 0, allocatedBytes: 40 * GB, unallocatedBytes: null },
+    { id: 3, name: 'MidA2', parentId: 1, quotaBytes: null, committedBytes: 0, reservedBytes: 0, usedBytes: 0, allocatedBytes: 0, unallocatedBytes: null },
+    { id: 4, name: 'SubCapped', parentId: 1, quotaBytes: 30 * GB, committedBytes: 0, reservedBytes: 0, usedBytes: 0, allocatedBytes: 10 * GB, unallocatedBytes: 20 * GB },
+    { id: 5, name: 'RootB', parentId: null, quotaBytes: 50 * GB, committedBytes: 0, reservedBytes: 0, usedBytes: 0, allocatedBytes: 35 * GB, unallocatedBytes: 15 * GB },
+    { id: 6, name: 'RootUnlimited', parentId: null, quotaBytes: null, committedBytes: 0, reservedBytes: 0, usedBytes: 0, allocatedBytes: 0, unallocatedBytes: null },
+  ]
+
+  // Capped user (40 GB) in uncapped MidA1 staying in MidA1 -> bounded by RootA (remaining 30 GB, max 70 GB).
+  const staySame = computeUserOrgBudget(orgs, 2, 40 * GB, 2)
+  assert.equal(staySame.ancestor?.id, 1)
+  assert.equal(staySame.ancestorUnallocatedBytes, 30 * GB)
+  assert.equal(staySame.maxAllowedQuotaBytes, 70 * GB)
+
+  // Moving to sibling uncapped MidA2 under same RootA -> still shares RootA, max 70 GB.
+  const siblingMove = computeUserOrgBudget(orgs, 2, 40 * GB, 3)
+  assert.equal(siblingMove.ancestor?.id, 1)
+  assert.equal(siblingMove.ancestorUnallocatedBytes, 30 * GB)
+  assert.equal(siblingMove.maxAllowedQuotaBytes, 70 * GB)
+
+  // Moving into capped SubCapped (remaining 20 GB) -> new constraining org, max 20 GB.
+  const intoSubCapped = computeUserOrgBudget(orgs, 2, 40 * GB, 4)
+  assert.equal(intoSubCapped.ancestor?.id, 4)
+  assert.equal(intoSubCapped.ancestorUnallocatedBytes, 20 * GB)
+  assert.equal(intoSubCapped.maxAllowedQuotaBytes, 20 * GB)
+
+  // Moving into RootB (remaining 15 GB) -> max 15 GB.
+  const intoRootB = computeUserOrgBudget(orgs, 2, 40 * GB, 5)
+  assert.equal(intoRootB.ancestor?.id, 5)
+  assert.equal(intoRootB.ancestorUnallocatedBytes, 15 * GB)
+  assert.equal(intoRootB.maxAllowedQuotaBytes, 15 * GB)
+
+  // Moving into RootUnlimited -> no organization cap.
+  const intoUnlimited = computeUserOrgBudget(orgs, 2, 40 * GB, 6)
+  assert.equal(intoUnlimited.ancestor, null)
+  assert.equal(intoUnlimited.maxAllowedQuotaBytes, 0)
+
+  // Uncapped user in MidA1 -> remaining 30 GB, max 30 GB.
+  const uncappedUser = computeUserOrgBudget(orgs, 2, null, 2)
+  assert.equal(uncappedUser.ancestor?.id, 1)
+  assert.equal(uncappedUser.maxAllowedQuotaBytes, 30 * GB)
 })
 
 test('quotaUsageState classifies unlimited, normal, >=85% warning, >=100% exceeded, and zero cap', () => {

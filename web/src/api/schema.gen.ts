@@ -819,6 +819,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{userId}/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setUserQuota"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/managed-users": {
         parameters: {
             query?: never;
@@ -943,6 +959,26 @@ export interface components {
             status: string;
             /** Format: int64 */
             organizationId: number;
+            /**
+             * Format: int64
+             * @description Configured User Quota in bytes; null means unlimited, 0 blocks new storage.
+             */
+            quotaBytes: number | null;
+            /**
+             * Format: int64
+             * @description Deduplicated retained File Version bytes attributed to this User.
+             */
+            committedBytes: number;
+            /**
+             * Format: int64
+             * @description Active incomplete upload reservation bytes for this User.
+             */
+            reservedBytes: number;
+            /**
+             * Format: int64
+             * @description Total live Storage Usage (committedBytes + reservedBytes) for this User.
+             */
+            usedBytes: number;
         };
         Error: {
             /** @description Stable machine-readable reason, e.g. unauthenticated, invalid_credentials. */
@@ -3116,6 +3152,13 @@ export interface operations {
                 "application/json": {
                     /** Format: int64 */
                     organizationId: number;
+                    /** @description When true, atomically update the User Quota to quotaBytes alongside the Organization move; when false or omitted with quotaBytes omitted, preserve the existing User Quota. */
+                    updateQuota?: boolean;
+                    /**
+                     * Format: int64
+                     * @description Target User Quota in bytes when updating quota atomically; null clears to unlimited, 0 blocks new storage.
+                     */
+                    quotaBytes?: number | null;
                 };
             };
         };
@@ -3127,7 +3170,112 @@ export interface operations {
                 };
                 content?: never;
             };
-            default: components["responses"]["Unauthorized"];
+            /** @description Request refused. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Request refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request refused. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request refused. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setUserQuota: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: int64
+                     * @description Target User Quota in bytes; null clears to unlimited, 0 blocks new storage.
+                     */
+                    quotaBytes?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated User quota and live Storage Usage. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedUser"];
+                };
+            };
+            /** @description Request refused. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Request refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request refused. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request refused. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listManagedUsers: {

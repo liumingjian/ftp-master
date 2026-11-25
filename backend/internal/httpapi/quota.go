@@ -29,6 +29,8 @@ func (e apiFailure) write(w http.ResponseWriter) error {
 
 func (e apiFailure) VisitCreateOrganizationResponse(w http.ResponseWriter) error { return e.write(w) }
 func (e apiFailure) VisitUpdateOrganizationResponse(w http.ResponseWriter) error { return e.write(w) }
+func (e apiFailure) VisitMoveUserResponse(w http.ResponseWriter) error           { return e.write(w) }
+func (e apiFailure) VisitSetUserQuotaResponse(w http.ResponseWriter) error       { return e.write(w) }
 
 func int8Ptr(v pgtype.Int8) *int64 {
 	if !v.Valid {
@@ -120,6 +122,20 @@ func orgSummaryResponse(s quota.OrganizationSummary) api.Organization {
 	}
 }
 
+func managedUserResponse(r sqlcdb.User, u quota.User) api.ManagedUser {
+	return api.ManagedUser{
+		Id:             r.ID,
+		Username:       r.Username,
+		DisplayName:    r.DisplayName,
+		Status:         r.Status,
+		OrganizationId: r.OrganizationID,
+		QuotaBytes:     u.QuotaBytes,
+		CommittedBytes: u.CommittedBytes,
+		ReservedBytes:  u.ReservedBytes,
+		UsedBytes:      u.UsedBytes(),
+	}
+}
+
 func quotaViolationError(v *quota.Violation) error {
 	if v == nil {
 		return nil
@@ -143,7 +159,7 @@ func quotaViolationError(v *quota.Violation) error {
 		return apiFailure{
 			status:  409,
 			code:    "quota_conflict",
-			message: fmt.Sprintf("超出上级组织“%s”剩余可分配配额（可用 %s，需要 %s）", v.OrganizationName, quota.FormatBytes(v.AvailableBytes), quota.FormatBytes(v.RequiredBytes)),
+			message: fmt.Sprintf("超出组织“%s”剩余可分配配额（可用 %s，需要 %s）", v.OrganizationName, quota.FormatBytes(v.AvailableBytes), quota.FormatBytes(v.RequiredBytes)),
 		}
 	default:
 		return apiFailure{409, "quota_conflict", "存储配额冲突"}

@@ -28,6 +28,7 @@ import {
   bytesToQuotaDraft,
   computeOrgAncestorBudget,
   computePlatformStorageSummary,
+  computeUserOrgBudget,
   formatBinaryBytes,
   parseQuotaInput,
   quotaUsageState,
@@ -52,7 +53,17 @@ type Editor =
   }
   | { kind: 'group'; name: string }
   | { kind: 'members'; id: number; ids: number[] }
-  | { kind: 'user'; id: number; organizationId: string; groupIds: number[]; confirmDeactivate?: boolean }
+  | {
+    kind: 'user'
+    id: number
+    organizationId: string
+    groupIds: number[]
+    quotaValue: string
+    quotaUnit: QuotaUnit
+    initialQuotaBytes: number | null
+    quotaTouched: boolean
+    confirmDeactivate?: boolean
+  }
   | { kind: 'import' }
 
 interface OrganizationRow {
@@ -307,46 +318,78 @@ export function MembershipPanel() {
     if (busy) return
     const nextOrgId = Number(draft.organizationId)
     const orgChanged = nextOrgId !== user.organizationId
+    let nextQuotaBytes = draft.initialQuotaBytes
+    if (draft.quotaTouched) {
+      const parsed = parseQuotaInput(draft.quotaValue, draft.quotaUnit)
+      if (!parsed.ok) return setError(parsed.error)
+      nextQuotaBytes = parsed.bytes
+    }
+    const quotaChanged = nextQuotaBytes !== user.quotaBytes
     const nextGroupSet = new Set(draft.groupIds)
     const changedGroups = groups.filter(group => {
       const had = group.userIds.includes(user.id)
       const wants = nextGroupSet.has(group.id)
       return had !== wants
     })
-    if (!orgChanged && !changedGroups.length) return
+    if (!orgChanged && !quotaChanged && !changedGroups.length) return
 
     setBusy(true)
     setError('')
     try {
-      const requests: Promise<{ response: Response }>[] = []
       if (orgChanged) {
-        requests.push(api.PUT('/users/{userId}/organization', {
+        const res = await api.PUT('/users/{userId}/organization', {
           params: { path: { userId: user.id } },
-          body: { organizationId: nextOrgId },
+          body: quotaChanged
+            ? { organizationId: nextOrgId, updateQuota: true, quotaBytes: nextQuotaBytes }
+            : { organizationId: nextOrgId },
+        })
+        if (!res.response.ok) {
+          if ((res.error?.code === 'quota_conflict' || res.error?.code === 'invalid_quota') && res.error.message) {
+            setError(res.error.message)
+          } else {
+            setError('无法更新用户所属组织或配额，请检查组织配额预算后重试')
+          }
+          return
+        }
+      } else if (quotaChanged) {
+        const res = await api.PUT('/users/{userId}/quota', {
+          params: { path: { userId: user.id } },
+          body: { quotaBytes: nextQuotaBytes },
+        })
+        if (!res.response.ok) {
+          if ((res.error?.code === 'quota_conflict' || res.error?.code === 'invalid_quota') && res.error.message) {
+            setError(res.error.message)
+          } else {
+            setError('无法保存用户存储配额，请检查组织配额预算后重试')
+          }
+          return
+        }
+      }
+
+      if (changedGroups.length) {
+        const groupResults = await Promise.all(changedGroups.map(group => {
+          const wants = nextGroupSet.has(group.id)
+          const nextIds = wants
+            ? [...group.userIds, user.id]
+            : group.userIds.filter(id => id !== user.id)
+          return api.PUT('/user-groups/{id}/members', {
+            params: { path: { id: group.id } },
+            body: { userIds: nextIds },
+          })
         }))
+        if (groupResults.some(result => !result.response.ok)) {
+          try { await reload() } catch { /* keep error visible */ }
+          setError('部分变更未能保存，请检查用户组状态后重试')
+          return
+        }
       }
-      for (const group of changedGroups) {
-        const wants = nextGroupSet.has(group.id)
-        const nextIds = wants
-          ? [...group.userIds, user.id]
-          : group.userIds.filter(id => id !== user.id)
-        requests.push(api.PUT('/user-groups/{id}/members', {
-          params: { path: { id: group.id } },
-          body: { userIds: nextIds },
-        }))
-      }
-      const results = await Promise.all(requests)
-      if (results.some(result => !result.response.ok)) {
-        try { await reload() } catch { /* keep error visible */ }
-        setError('部分变更未能保存，请检查组织或用户组状态后重试')
-        return
-      }
+
       setEditor(undefined)
-      const summary = orgChanged && changedGroups.length
-        ? '用户所属组织与用户组已更新'
-        : orgChanged
-          ? '用户所属组织已更新'
-          : '用户所属用户组已更新'
+      const changedLabels: string[] = []
+      if (orgChanged) changedLabels.push('所属组织')
+      if (quotaChanged) changedLabels.push('存储配额')
+      if (changedGroups.length) changedLabels.push('用户组')
+      const summary = `用户${changedLabels.join('与')}已更新`
       setFeedback(summary)
       try {
         await reload()
@@ -429,6 +472,20 @@ export function MembershipPanel() {
       quotaValue: quotaDraft.value,
       quotaUnit: quotaDraft.unit,
       initialQuotaBytes: organization.quotaBytes,
+      quotaTouched: false,
+    })
+  }
+
+  function openManageUser(user: User) {
+    const quotaDraft = bytesToQuotaDraft(user.quotaBytes)
+    open({
+      kind: 'user',
+      id: user.id,
+      organizationId: String(user.organizationId),
+      groupIds: (groupsByUserId.get(user.id) ?? []).map(group => group.id),
+      quotaValue: quotaDraft.value,
+      quotaUnit: quotaDraft.unit,
+      initialQuotaBytes: user.quotaBytes,
       quotaTouched: false,
     })
   }
@@ -773,6 +830,7 @@ export function MembershipPanel() {
                 <th scope="col">用户</th>
                 <th scope="col">所属组织</th>
                 <th scope="col">用户组</th>
+                <th scope="col">存储用量与配额</th>
                 <th scope="col">状态</th>
                 <th scope="col">操作</th>
               </tr>
@@ -782,6 +840,10 @@ export function MembershipPanel() {
               const visibleGroups = userGroups.slice(0, 2)
               const hiddenCount = userGroups.length - visibleGroups.length
               const orgPath = organizationNames.get(user.organizationId) ?? '—'
+              const usage = quotaUsageState(user.usedBytes, user.quotaBytes)
+              const barWidth = user.quotaBytes === 0
+                ? 100
+                : Math.min(100, Math.max(user.usedBytes > 0 ? 4 : 0, usage.percent))
               return <tr key={user.id}>
                 <td><UserName user={user} /></td>
                 <td data-label="所属组织">
@@ -805,6 +867,40 @@ export function MembershipPanel() {
                       {hiddenCount > 0 && <span className="membership-mini-more">+{hiddenCount}</span>}
                     </span>}
                 </td>
+                <td data-label="存储用量与配额" className="membership-quota-cell compact">
+                  <div className="membership-quota-stack">
+                    <div className="membership-quota-line">
+                      <strong>{formatBinaryBytes(user.usedBytes)}</strong>
+                      <span className="muted"> / {user.quotaBytes !== null ? formatBinaryBytes(user.quotaBytes) : '不限'}</span>
+                      {user.quotaBytes === 0 && (
+                        <span className="membership-quota-tag exceeded">已禁写</span>
+                      )}
+                      {user.quotaBytes !== null && user.quotaBytes > 0 && usage.tone === 'exceeded' && (
+                        <span className="membership-quota-tag exceeded">已超额</span>
+                      )}
+                      {user.quotaBytes !== null && user.quotaBytes > 0 && usage.tone === 'warning' && (
+                        <span className="membership-quota-tag warning">接近上限</span>
+                      )}
+                    </div>
+                    {user.quotaBytes !== null && (
+                      <div
+                        className="membership-quota-bar"
+                        role="progressbar"
+                        aria-label={user.username + ' 存储用量'}
+                        aria-valuenow={Math.min(100, Math.round(usage.percent))}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                      >
+                        <span className={'membership-quota-fill ' + usage.tone} style={{ width: `${barWidth}%` }} />
+                      </div>
+                    )}
+                    {user.reservedBytes > 0 && (
+                      <div className="membership-quota-meta">
+                        <span>上传预留 {formatBinaryBytes(user.reservedBytes)}</span>
+                      </div>
+                    )}
+                  </div>
+                </td>
                 <td>
                   <span className={'pill ' + (user.status === 'active' ? 'positive' : 'neutral')}>
                     {user.status === 'active' ? '已激活' : '已停用'}
@@ -812,12 +908,7 @@ export function MembershipPanel() {
                 </td>
                 <td>
                   <button type="button" className="ghost" aria-label={'管理用户 ' + user.username}
-                    onClick={() => open({
-                      kind: 'user',
-                      id: user.id,
-                      organizationId: String(user.organizationId),
-                      groupIds: (groupsByUserId.get(user.id) ?? []).map(group => group.id),
-                    })}>
+                    onClick={() => openManageUser(user)}>
                     管理
                   </button>
                 </td>
@@ -978,6 +1069,7 @@ export function MembershipPanel() {
       {editor.kind === 'user' && editedUser && <UserEditor
         user={editedUser}
         draft={editor}
+        organizations={organizations}
         tree={tree}
         groups={groups}
         organizationNames={organizationNames}
@@ -1038,9 +1130,10 @@ function UserName({ user }: { user: User }) {
   </span>
 }
 
-function UserEditor({ user, draft, tree, groups, organizationNames, busy, onUpdate, onCancel, onSave, onToggleStatus }: {
+function UserEditor({ user, draft, organizations, tree, groups, organizationNames, busy, onUpdate, onCancel, onSave, onToggleStatus }: {
   user: User
   draft: Extract<Editor, { kind: 'user' }>
+  organizations: Organization[]
   tree: OrganizationRow[]
   groups: UserGroup[]
   organizationNames: Map<number, string>
@@ -1055,10 +1148,17 @@ function UserEditor({ user, draft, tree, groups, organizationNames, busy, onUpda
   const [resetBusy, setResetBusy] = useState(false)
   const [resetFeedback, setResetFeedback] = useState<{ text: string; ok: boolean }>()
   const selectedGroupSet = new Set(draft.groupIds)
-  const orgChanged = Number(draft.organizationId) !== user.organizationId
+  const selectedOrgId = Number(draft.organizationId)
+  const orgChanged = selectedOrgId !== user.organizationId
+  let quotaChanged = false
+  if (draft.quotaTouched) {
+    const parsed = parseQuotaInput(draft.quotaValue, draft.quotaUnit)
+    quotaChanged = !parsed.ok || parsed.bytes !== user.quotaBytes
+  }
   const groupsChanged = groups.some(group => group.userIds.includes(user.id) !== selectedGroupSet.has(group.id))
-  const hasChanges = orgChanged || groupsChanged
+  const hasChanges = orgChanged || quotaChanged || groupsChanged
   const matchingGroups = groups.filter(group => matchesSearch(groupQuery, group.name))
+  const orgBudget = computeUserOrgBudget(organizations, user.organizationId, user.quotaBytes, selectedOrgId)
 
   function toggleGroup(groupId: number) {
     const next = selectedGroupSet.has(groupId)
@@ -1105,6 +1205,60 @@ function UserEditor({ user, draft, tree, groups, organizationNames, busy, onUpda
           </option>)}
         </select>
       </label>
+
+      <div className="membership-quota-field">
+        <span className="membership-field-label">存储配额</span>
+        <div className="membership-quota-input-row">
+          <input
+            type="number"
+            min="0"
+            step="any"
+            aria-label="存储配额"
+            placeholder="留空为不限"
+            value={draft.quotaValue}
+            disabled={busy}
+            onChange={event => onUpdate({ ...draft, quotaValue: event.target.value, quotaTouched: true })}
+          />
+          <select
+            aria-label="配额单位"
+            value={draft.quotaUnit}
+            disabled={busy}
+            onChange={event => onUpdate({ ...draft, quotaUnit: event.target.value as QuotaUnit, quotaTouched: true })}
+          >
+            <option value="MB">MB</option>
+            <option value="GB">GB</option>
+            <option value="TB">TB</option>
+          </select>
+          {draft.quotaValue !== '' && (
+            <button
+              type="button"
+              className="ghost membership-quota-clear"
+              disabled={busy}
+              onClick={() => onUpdate({ ...draft, quotaValue: '', quotaTouched: true })}
+            >
+              清除配额
+            </button>
+          )}
+        </div>
+        <div className="membership-quota-budget" role="note" aria-label="组织配额预算" aria-live="polite">
+          {orgBudget.ancestor ? (
+            <span>
+              {orgBudget.ancestor.id === selectedOrgId ? '所属组织' : '约束上级'}「{orgBudget.ancestor.name}」剩余可分配 {formatBinaryBytes(orgBudget.ancestorUnallocatedBytes)}
+              {orgBudget.maxAllowedQuotaBytes !== orgBudget.ancestorUnallocatedBytes && (
+                <> · 本用户可设上限 {formatBinaryBytes(orgBudget.maxAllowedQuotaBytes)}</>
+              )}
+            </span>
+          ) : (
+            <span>所属组织无配额限制</span>
+          )}
+          {user.usedBytes > 0 && (
+            <span>
+              已用 {formatBinaryBytes(user.usedBytes)}
+              {user.reservedBytes > 0 ? `（含预留 ${formatBinaryBytes(user.reservedBytes)}）` : ''}
+            </span>
+          )}
+        </div>
+      </div>
 
       <fieldset className="membership-user-groups">
         <legend>
