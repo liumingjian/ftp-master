@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
 import { openManagementPage } from './explorer'
 import { ADMINISTRATOR_PASSWORD, ADMINISTRATOR_USERNAME, signIn } from './signin'
 
-test('Desktop text editor and WPS Office plugin enforce quotas, preserve unsaved text, allow preview, and record failed audits', async ({ page }) => {
+test('Desktop text editor and Office Plugin enforce quotas, preserve unsaved text, allow preview, and record failed audits', async ({ page }) => {
   const suffix = Date.now().toString()
   const orgName = `EditQuotaOrg-${suffix}`
   const dirName = `EditQuotaDir-${suffix}`
@@ -188,6 +188,30 @@ test('Desktop text editor and WPS Office plugin enforce quotas, preserve unsaved
   expect(previewRes.hasSaveUrl).toBe(false)
   expect(previewRes.docStatus).toBe(200)
   expect(previewRes.docBytes).toBe(docxBytes.length)
+
+  // 6b. When Office editing is disabled, opening report.docx in FileViewer must NOT display a false save-quota warning.
+  await page.evaluate(() => document.documentElement.removeAttribute('data-ftp-office-preview'))
+  await panel.getByRole('button', { name: 'report.docx', exact: true }).click()
+  await expect(page.locator('.viewer-quota-warning')).toBeVisible()
+  await page.getByRole('button', { name: '关闭文件查看', exact: true }).click()
+
+  await page.route('**/api/office-edit-policy', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: false }) }),
+  )
+  try {
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(panel.getByRole('link', { name: '在线编辑 report.docx', exact: true })).toHaveCount(0)
+    await panel.getByRole('button', { name: 'report.docx', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'report.docx' })).toBeVisible()
+    await expect(page.locator('.viewer-quota-warning')).toHaveCount(0)
+    await page.getByRole('button', { name: '关闭文件查看', exact: true }).click()
+  } finally {
+    await page.unroute('**/api/office-edit-policy')
+    await page.evaluate(() => {
+      document.documentElement.setAttribute('data-ftp-office-preview', '1')
+      window.dispatchEvent(new Event('focus'))
+    })
+  }
 
   // 7. Admin raises org & cappedUser quotas to leave positive headroom smaller than editedDocxBytes.length (90 used, leave editedDocxBytes.length - 10).
   // Also keep poolSize = 80 so poolUser can test org-pool blocked text open afterwards.

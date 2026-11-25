@@ -49,7 +49,7 @@ export function TextEditorDialog({ node, availableQuotaBytes, close, saved }: {
         setContent(data.content)
         setSavedContent(data.content)
         setBase(data.versionId)
-        setServerAvailableQuota(data.availableQuotaBytes)
+        setServerAvailableQuota(data.availableQuotaBytes ?? null)
         setLoaded(true)
       } else if (isQuotaExceededError(response.status, error)) {
         const payload = error as QuotaExceededPayload | undefined

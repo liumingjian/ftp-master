@@ -1,4 +1,4 @@
-import { formatSize } from './FileIcon'
+import { formatSize } from './formatSize'
 
 export type TransferAnomaly = 'none' | 'stall' | 'failed'
 

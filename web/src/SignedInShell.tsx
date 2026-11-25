@@ -373,10 +373,12 @@ function Workspace({ user }: { user: CurrentUser }) {
             user={user}
             organizationPath={organizationPath}
             onBackToFiles={() => navigate()}
-            storageSummary={storageSummary}
-            storageLoading={storageLoading}
-            storageError={storageError}
-            onRefreshStorage={refreshStorage}
+            storage={{
+              summary: storageSummary,
+              loading: storageLoading,
+              error: storageError,
+              refresh: refreshStorage,
+            }}
           />
           : AdminPanel && <AdminPanel />}
       </main>}

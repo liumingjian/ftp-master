@@ -179,7 +179,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [versionId, content, availableQuotaBytes]
+                required: [versionId, content]
                 properties:
                   versionId: {type: integer, format: int64}
                   content: {type: string}
@@ -188,7 +188,7 @@ paths:
                     format: int64
                     minimum: 0
                     nullable: true
-                    description: Effective remaining Storage Quota in bytes for the caller; null when unlimited.
+                    description: Effective remaining Storage Quota in bytes for the caller; null or omitted when unlimited.
         '507': {$ref: '#/components/responses/QuotaExceeded'}
         default: {$ref: '#/components/responses/Unauthorized'}
     put:
@@ -1875,6 +1875,9 @@ components:
           type: integer
           format: int64
           nullable: true
+        updateQuota:
+          type: boolean
+          description: Optional for PATCH /organizations/{id}. When true, apply quotaBytes (including null to clear to unlimited); when false, preserve the existing Organization Quota; when omitted, preserve the existing Organization Quota unless quotaBytes is provided.
         quotaBytes:
           type: integer
           format: int64

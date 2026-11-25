@@ -24,8 +24,8 @@ test('Desktop upload UI surfaces 507 quota refusals, releases reserved quota on 
 
   const csv = [
     'username,display_name,password,organization_id',
-    `${cappedUser},Capped Uploader,${userPass},${org.id}`,
-    `${poolUser},Pool Uploader,${userPass},${org.id}`,
+    `${cappedUser},Capped User,${userPass},${org.id}`,
+    `${poolUser},Pool User,${userPass},${org.id}`,
   ].join('\n')
   expect((await page.request.post('/api/users/import', { data: { csv } })).status()).toBe(201)
 

@@ -26,12 +26,24 @@ test('Administrator manages hierarchical Organization Quotas and audits quota_ch
     has: page.getByRole('button', { name: '编辑组织 ' + name, exact: true }),
   })
   const initialOrgs = (await (await page.request.get('/api/organizations')).json()) as Array<{
-    parentId: number | null; quotaBytes: number | null; allocatedBytes: number
+    id: number; parentId: number | null; quotaBytes: number | null
   }>
+  const orgChildren = new Map<number, typeof initialOrgs>()
+  for (const org of initialOrgs) {
+    if (org.parentId !== null) {
+      const list = orgChildren.get(org.parentId) ?? []
+      list.push(org)
+      orgChildren.set(org.parentId, list)
+    }
+  }
+  const topLevelCappedOrgBytes = (org: (typeof initialOrgs)[number]): number =>
+    org.quotaBytes !== null
+      ? org.quotaBytes
+      : (orgChildren.get(org.id) ?? []).reduce((sum, child) => sum + topLevelCappedOrgBytes(child), 0)
   const baselineTopLevelGB = Math.round(
     initialOrgs
       .filter(o => o.parentId === null)
-      .reduce((sum, o) => sum + (o.quotaBytes ?? o.allocatedBytes), 0) / (1024 ** 3),
+      .reduce((sum, o) => sum + topLevelCappedOrgBytes(o), 0) / (1024 ** 3),
   )
 
   // 1. Create capped root org (10 GB).

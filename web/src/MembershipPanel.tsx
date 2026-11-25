@@ -24,12 +24,12 @@ import { api } from './api/client'
 import { avatarInitial } from './avatar'
 import type { components } from './api/schema.gen'
 import { systemClock } from './clock'
+import { formatSize } from './formatSize'
 import {
   bytesToQuotaDraft,
   computeOrgAncestorBudget,
   computePlatformStorageSummary,
   computeUserOrgBudget,
-  formatBinaryBytes,
   parseQuotaInput,
   quotaUsageState,
   type QuotaUnit,
@@ -39,16 +39,31 @@ type Organization = components['schemas']['Organization']
 type UserGroup = components['schemas']['UserGroup']
 type User = components['schemas']['ManagedUser']
 type View = 'organizations' | 'groups' | 'users'
+
+interface QuotaDraft {
+  value: string
+  unit: QuotaUnit
+  initialBytes: number | null
+  touched: boolean
+}
+
+function createQuotaDraft(initialBytes: number | null): QuotaDraft {
+  const { value, unit } = bytesToQuotaDraft(initialBytes)
+  return { value, unit, initialBytes, touched: false }
+}
+
+function resolveQuotaDraft(draft: QuotaDraft): { ok: true; bytes: number | null } | { ok: false; error: string } {
+  if (!draft.touched) return { ok: true, bytes: draft.initialBytes }
+  return parseQuotaInput(draft.value, draft.unit)
+}
+
 type Editor =
   | {
     kind: 'organization'
     id?: number
     name: string
     parentId: string
-    quotaValue: string
-    quotaUnit: QuotaUnit
-    initialQuotaBytes: number | null
-    quotaTouched: boolean
+    quota: QuotaDraft
     confirmDelete?: boolean
   }
   | { kind: 'group'; name: string }
@@ -58,10 +73,7 @@ type Editor =
     id: number
     organizationId: string
     groupIds: number[]
-    quotaValue: string
-    quotaUnit: QuotaUnit
-    initialQuotaBytes: number | null
-    quotaTouched: boolean
+    quota: QuotaDraft
     confirmDeactivate?: boolean
   }
   | { kind: 'import' }
@@ -298,32 +310,34 @@ export function MembershipPanel() {
   function saveOrganization(draft: Extract<Editor, { kind: 'organization' }>) {
     const name = draft.name.trim()
     if (!name) return setError('请输入组织名称')
-    let quotaBytes = draft.initialQuotaBytes
-    if (draft.quotaTouched) {
-      const parsed = parseQuotaInput(draft.quotaValue, draft.quotaUnit)
-      if (!parsed.ok) return setError(parsed.error)
-      quotaBytes = parsed.bytes
+    const parentId = draft.parentId ? Number(draft.parentId) : null
+    if (draft.id) {
+      if (draft.quota.touched) {
+        const parsed = resolveQuotaDraft(draft.quota)
+        if (!parsed.ok) return setError(parsed.error)
+        const body = { name, parentId, updateQuota: true, quotaBytes: parsed.bytes }
+        void run(() => api.PATCH('/organizations/{id}', { params: { path: { id: draft.id! } }, body }),
+          '组织已保存', '无法保存组织，请检查名称和上级组织')
+      } else {
+        const body = { name, parentId, updateQuota: false }
+        void run(() => api.PATCH('/organizations/{id}', { params: { path: { id: draft.id! } }, body }),
+          '组织已保存', '无法保存组织，请检查名称和上级组织')
+      }
+      return
     }
-    const body = {
-      name,
-      parentId: draft.parentId ? Number(draft.parentId) : null,
-      quotaBytes,
-    }
-    void run(() => draft.id
-      ? api.PATCH('/organizations/{id}', { params: { path: { id: draft.id } }, body })
-      : api.POST('/organizations', { body }), '组织已保存', '无法保存组织，请检查名称和上级组织')
+    const parsed = resolveQuotaDraft(draft.quota)
+    if (!parsed.ok) return setError(parsed.error)
+    const body = { name, parentId, quotaBytes: parsed.bytes }
+    void run(() => api.POST('/organizations', { body }), '组织已保存', '无法保存组织，请检查名称和上级组织')
   }
 
   async function saveUserChanges(draft: Extract<Editor, { kind: 'user' }>, user: User) {
     if (busy) return
     const nextOrgId = Number(draft.organizationId)
     const orgChanged = nextOrgId !== user.organizationId
-    let nextQuotaBytes = draft.initialQuotaBytes
-    if (draft.quotaTouched) {
-      const parsed = parseQuotaInput(draft.quotaValue, draft.quotaUnit)
-      if (!parsed.ok) return setError(parsed.error)
-      nextQuotaBytes = parsed.bytes
-    }
+    const parsed = resolveQuotaDraft(draft.quota)
+    if (!parsed.ok) return setError(parsed.error)
+    const nextQuotaBytes = parsed.bytes
     const quotaChanged = nextQuotaBytes !== user.quotaBytes
     const nextGroupSet = new Set(draft.groupIds)
     const changedGroups = groups.filter(group => {
@@ -455,38 +469,27 @@ export function MembershipPanel() {
       kind: 'organization',
       name: '',
       parentId,
-      quotaValue: '',
-      quotaUnit: 'GB',
-      initialQuotaBytes: null,
-      quotaTouched: false,
+      quota: createQuotaDraft(null),
     })
   }
 
   function openEditOrganization(organization: Organization) {
-    const quotaDraft = bytesToQuotaDraft(organization.quotaBytes)
     open({
       kind: 'organization',
       id: organization.id,
       name: organization.name,
       parentId: String(organization.parentId ?? ''),
-      quotaValue: quotaDraft.value,
-      quotaUnit: quotaDraft.unit,
-      initialQuotaBytes: organization.quotaBytes,
-      quotaTouched: false,
+      quota: createQuotaDraft(organization.quotaBytes),
     })
   }
 
   function openManageUser(user: User) {
-    const quotaDraft = bytesToQuotaDraft(user.quotaBytes)
     open({
       kind: 'user',
       id: user.id,
       organizationId: String(user.organizationId),
       groupIds: (groupsByUserId.get(user.id) ?? []).map(group => group.id),
-      quotaValue: quotaDraft.value,
-      quotaUnit: quotaDraft.unit,
-      initialQuotaBytes: user.quotaBytes,
-      quotaTouched: false,
+      quota: createQuotaDraft(user.quotaBytes),
     })
   }
 
@@ -514,9 +517,9 @@ export function MembershipPanel() {
               <HardDrive size={15} aria-hidden="true" />
               平台总存储用量
             </span>
-            <strong className="membership-summary-value">{formatBinaryBytes(platformSummary.totalUsedBytes)}</strong>
+            <strong className="membership-summary-value">{formatSize(platformSummary.totalUsedBytes)}</strong>
             {platformSummary.totalReservedBytes > 0 && (
-              <span className="membership-summary-sub">含上传预留 {formatBinaryBytes(platformSummary.totalReservedBytes)}</span>
+              <span className="membership-summary-sub">含上传预留 {formatSize(platformSummary.totalReservedBytes)}</span>
             )}
           </div>
           <div className="membership-summary-divider" aria-hidden="true" />
@@ -525,7 +528,7 @@ export function MembershipPanel() {
               <Layers size={15} aria-hidden="true" />
               顶层已分配组织配额
             </span>
-            <strong className="membership-summary-value">{formatBinaryBytes(platformSummary.topLevelAllocatedBytes)}</strong>
+            <strong className="membership-summary-value">{formatSize(platformSummary.topLevelAllocatedBytes)}</strong>
             <span className="membership-summary-sub">已设限组织 {platformSummary.cappedOrgCount} 个</span>
           </div>
         </div>
@@ -559,10 +562,6 @@ export function MembershipPanel() {
             const direct = directCounts.get(organization.id) ?? 0
             const total = subtreeCounts.get(organization.id) ?? direct
             const copied = copiedId === organization.id
-            const usage = quotaUsageState(organization.usedBytes, organization.quotaBytes)
-            const barWidth = organization.quotaBytes === 0
-              ? 100
-              : Math.min(100, Math.max(organization.usedBytes > 0 ? 4 : 0, usage.percent))
             return <tr key={organization.id}>
               <td>
                 <div className="membership-org-cell" style={{ paddingInlineStart: searching ? 0 : Math.min(ancestors.length, 6) * 20 }}>
@@ -604,45 +603,14 @@ export function MembershipPanel() {
                     : <>{direct} 人</>}
                 </button>
               </td>
-              <td data-label="存储用量与配额" className="membership-quota-cell">
-                <div className="membership-quota-stack">
-                  <div className="membership-quota-line">
-                    <strong>{formatBinaryBytes(organization.usedBytes)}</strong>
-                    <span className="muted"> / {organization.quotaBytes !== null ? formatBinaryBytes(organization.quotaBytes) : '不限'}</span>
-                    {organization.quotaBytes === 0 && (
-                      <span className="membership-quota-tag exceeded">已禁写</span>
-                    )}
-                    {organization.quotaBytes !== null && organization.quotaBytes > 0 && usage.tone === 'exceeded' && (
-                      <span className="membership-quota-tag exceeded">已超额</span>
-                    )}
-                    {organization.quotaBytes !== null && organization.quotaBytes > 0 && usage.tone === 'warning' && (
-                      <span className="membership-quota-tag warning">接近上限</span>
-                    )}
-                  </div>
-                  {organization.quotaBytes !== null && (
-                    <div
-                      className="membership-quota-bar"
-                      role="progressbar"
-                      aria-label={organization.name + ' 存储用量'}
-                      aria-valuenow={Math.min(100, Math.round(usage.percent))}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                    >
-                      <span className={'membership-quota-fill ' + usage.tone} style={{ width: `${barWidth}%` }} />
-                    </div>
-                  )}
-                  {(organization.quotaBytes !== null || organization.allocatedBytes > 0 || organization.reservedBytes > 0) && (
-                    <div className="membership-quota-meta">
-                      {(organization.quotaBytes !== null || organization.allocatedBytes > 0) && (
-                        <span>已分配下级 {formatBinaryBytes(organization.allocatedBytes)}</span>
-                      )}
-                      {organization.reservedBytes > 0 && (
-                        <span>上传预留 {formatBinaryBytes(organization.reservedBytes)}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </td>
+              <QuotaUsageCell
+                label={organization.name}
+                usedBytes={organization.usedBytes}
+                quotaBytes={organization.quotaBytes}
+                reservedBytes={organization.reservedBytes}
+                allocatedBytes={organization.allocatedBytes}
+                showAllocated
+              />
               <td>
                 <div className="membership-row-actions">
                   <button type="button" className="ghost membership-row-secondary"
@@ -840,10 +808,6 @@ export function MembershipPanel() {
               const visibleGroups = userGroups.slice(0, 2)
               const hiddenCount = userGroups.length - visibleGroups.length
               const orgPath = organizationNames.get(user.organizationId) ?? '—'
-              const usage = quotaUsageState(user.usedBytes, user.quotaBytes)
-              const barWidth = user.quotaBytes === 0
-                ? 100
-                : Math.min(100, Math.max(user.usedBytes > 0 ? 4 : 0, usage.percent))
               return <tr key={user.id}>
                 <td><UserName user={user} /></td>
                 <td data-label="所属组织">
@@ -867,40 +831,13 @@ export function MembershipPanel() {
                       {hiddenCount > 0 && <span className="membership-mini-more">+{hiddenCount}</span>}
                     </span>}
                 </td>
-                <td data-label="存储用量与配额" className="membership-quota-cell compact">
-                  <div className="membership-quota-stack">
-                    <div className="membership-quota-line">
-                      <strong>{formatBinaryBytes(user.usedBytes)}</strong>
-                      <span className="muted"> / {user.quotaBytes !== null ? formatBinaryBytes(user.quotaBytes) : '不限'}</span>
-                      {user.quotaBytes === 0 && (
-                        <span className="membership-quota-tag exceeded">已禁写</span>
-                      )}
-                      {user.quotaBytes !== null && user.quotaBytes > 0 && usage.tone === 'exceeded' && (
-                        <span className="membership-quota-tag exceeded">已超额</span>
-                      )}
-                      {user.quotaBytes !== null && user.quotaBytes > 0 && usage.tone === 'warning' && (
-                        <span className="membership-quota-tag warning">接近上限</span>
-                      )}
-                    </div>
-                    {user.quotaBytes !== null && (
-                      <div
-                        className="membership-quota-bar"
-                        role="progressbar"
-                        aria-label={user.username + ' 存储用量'}
-                        aria-valuenow={Math.min(100, Math.round(usage.percent))}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                      >
-                        <span className={'membership-quota-fill ' + usage.tone} style={{ width: `${barWidth}%` }} />
-                      </div>
-                    )}
-                    {user.reservedBytes > 0 && (
-                      <div className="membership-quota-meta">
-                        <span>上传预留 {formatBinaryBytes(user.reservedBytes)}</span>
-                      </div>
-                    )}
-                  </div>
-                </td>
+                <QuotaUsageCell
+                  label={user.username}
+                  usedBytes={user.usedBytes}
+                  quotaBytes={user.quotaBytes}
+                  reservedBytes={user.reservedBytes}
+                  compact
+                />
                 <td>
                   <span className={'pill ' + (user.status === 'active' ? 'positive' : 'neutral')}>
                     {user.status === 'active' ? '已激活' : '已停用'}
@@ -953,56 +890,26 @@ export function MembershipPanel() {
               .map(({ organization }) => <option key={organization.id} value={organization.id}>{organizationNames.get(organization.id)}</option>)}
           </select></label>
 
-          <div className="membership-quota-field">
-            <span className="membership-field-label">存储配额</span>
-            <div className="membership-quota-input-row">
-              <input
-                type="number"
-                min="0"
-                step="any"
-                aria-label="存储配额"
-                placeholder="留空为不限"
-                value={editor.quotaValue}
-                disabled={busy}
-                onChange={event => setEditor({ ...editor, quotaValue: event.target.value, quotaTouched: true })}
-              />
-              <select
-                aria-label="配额单位"
-                value={editor.quotaUnit}
-                disabled={busy}
-                onChange={event => setEditor({ ...editor, quotaUnit: event.target.value as QuotaUnit, quotaTouched: true })}
-              >
-                <option value="MB">MB</option>
-                <option value="GB">GB</option>
-                <option value="TB">TB</option>
-              </select>
-              {editor.quotaValue !== '' && (
-                <button
-                  type="button"
-                  className="ghost membership-quota-clear"
-                  disabled={busy}
-                  onClick={() => setEditor({ ...editor, quotaValue: '', quotaTouched: true })}
-                >
-                  清除配额
-                </button>
-              )}
-            </div>
-            <div className="membership-quota-budget" role="status">
-              {ancestorBudget.ancestor ? (
-                <span>
-                  约束上级「{ancestorBudget.ancestor.name}」剩余可分配 {formatBinaryBytes(ancestorBudget.ancestorUnallocatedBytes)}
-                  {editor.id !== undefined && ancestorBudget.maxAllowedQuotaBytes !== ancestorBudget.ancestorUnallocatedBytes && (
-                    <> · 本组织可设上限 {formatBinaryBytes(ancestorBudget.maxAllowedQuotaBytes)}</>
-                  )}
-                </span>
-              ) : (
-                <span>上级无配额限制</span>
-              )}
-              {ancestorBudget.minRequiredQuotaBytes > 0 && (
-                <span>下级已分配 {formatBinaryBytes(ancestorBudget.minRequiredQuotaBytes)}</span>
-              )}
-            </div>
-          </div>
+          <QuotaInputField
+            draft={editor.quota}
+            busy={busy}
+            onChange={quota => setEditor({ ...editor, quota })}
+            budgetRole="status"
+          >
+            {ancestorBudget.ancestor ? (
+              <span>
+                约束上级「{ancestorBudget.ancestor.name}」剩余可分配 {formatSize(ancestorBudget.ancestorUnallocatedBytes)}
+                {editor.id !== undefined && ancestorBudget.maxAllowedQuotaBytes !== ancestorBudget.ancestorUnallocatedBytes && (
+                  <> · 本组织可设上限 {formatSize(ancestorBudget.maxAllowedQuotaBytes)}</>
+                )}
+              </span>
+            ) : (
+              <span>上级无配额限制</span>
+            )}
+            {ancestorBudget.minRequiredQuotaBytes > 0 && (
+              <span>下级已分配 {formatSize(ancestorBudget.minRequiredQuotaBytes)}</span>
+            )}
+          </QuotaInputField>
 
           {editor.id && deleteBlockers.length > 0 && (
             <p className="membership-blocker-note">
@@ -1090,6 +997,132 @@ export function MembershipPanel() {
   </section>
 }
 
+function QuotaUsageCell({
+  label,
+  usedBytes,
+  quotaBytes,
+  reservedBytes,
+  allocatedBytes = 0,
+  showAllocated = false,
+  compact = false,
+}: {
+  label: string
+  usedBytes: number
+  quotaBytes: number | null
+  reservedBytes: number
+  allocatedBytes?: number
+  showAllocated?: boolean
+  compact?: boolean
+}) {
+  const usage = quotaUsageState(usedBytes, quotaBytes)
+  const barWidth = quotaBytes === 0
+    ? 100
+    : Math.min(100, Math.max(usedBytes > 0 ? 4 : 0, usage.percent))
+  const showAllocatedLine = showAllocated && (quotaBytes !== null || allocatedBytes > 0)
+  const showMeta = showAllocatedLine || reservedBytes > 0
+
+  return (
+    <td data-label="存储用量与配额" className={compact ? 'membership-quota-cell compact' : 'membership-quota-cell'}>
+      <div className="membership-quota-stack">
+        <div className="membership-quota-line">
+          <strong>{formatSize(usedBytes)}</strong>
+          <span className="muted"> / {quotaBytes !== null ? formatSize(quotaBytes) : '不限'}</span>
+          {quotaBytes === 0 && (
+            <span className="membership-quota-tag exceeded">已禁写</span>
+          )}
+          {quotaBytes !== null && quotaBytes > 0 && usage.tone === 'exceeded' && (
+            <span className="membership-quota-tag exceeded">已超额</span>
+          )}
+          {quotaBytes !== null && quotaBytes > 0 && usage.tone === 'warning' && (
+            <span className="membership-quota-tag warning">接近上限</span>
+          )}
+        </div>
+        {quotaBytes !== null && (
+          <div
+            className="membership-quota-bar"
+            role="progressbar"
+            aria-label={label + ' 存储用量'}
+            aria-valuenow={Math.min(100, Math.round(usage.percent))}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <span className={'membership-quota-fill ' + usage.tone} style={{ width: `${barWidth}%` }} />
+          </div>
+        )}
+        {showMeta && (
+          <div className="membership-quota-meta">
+            {showAllocatedLine && (
+              <span>已分配下级 {formatSize(allocatedBytes)}</span>
+            )}
+            {reservedBytes > 0 && (
+              <span>上传预留 {formatSize(reservedBytes)}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </td>
+  )
+}
+
+function QuotaInputField({
+  draft,
+  busy,
+  onChange,
+  budgetRole,
+  budgetLabel,
+  budgetLive,
+  children,
+}: {
+  draft: QuotaDraft
+  busy: boolean
+  onChange: (next: QuotaDraft) => void
+  budgetRole: 'status' | 'note'
+  budgetLabel?: string
+  budgetLive?: 'polite'
+  children: ReactNode
+}) {
+  return (
+    <div className="membership-quota-field">
+      <span className="membership-field-label">存储配额</span>
+      <div className="membership-quota-input-row">
+        <input
+          type="number"
+          min="0"
+          step="any"
+          aria-label="存储配额"
+          placeholder="留空为不限"
+          value={draft.value}
+          disabled={busy}
+          onChange={event => onChange({ ...draft, value: event.target.value, touched: true })}
+        />
+        <select
+          aria-label="配额单位"
+          value={draft.unit}
+          disabled={busy}
+          onChange={event => onChange({ ...draft, unit: event.target.value as QuotaUnit, touched: true })}
+        >
+          <option value="MB">MB</option>
+          <option value="GB">GB</option>
+          <option value="TB">TB</option>
+        </select>
+        {draft.value !== '' && (
+          <button
+            type="button"
+            className="ghost membership-quota-clear"
+            disabled={busy}
+            onClick={() => onChange({ ...draft, value: '', touched: true })}
+          >
+            清除配额
+          </button>
+        )}
+      </div>
+      <div className="membership-quota-budget" role={budgetRole} aria-label={budgetLabel} aria-live={budgetLive}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function MembershipDialog({ title, wide, close, busy, children }: {
   title: string
   wide?: boolean
@@ -1150,11 +1183,8 @@ function UserEditor({ user, draft, organizations, tree, groups, organizationName
   const selectedGroupSet = new Set(draft.groupIds)
   const selectedOrgId = Number(draft.organizationId)
   const orgChanged = selectedOrgId !== user.organizationId
-  let quotaChanged = false
-  if (draft.quotaTouched) {
-    const parsed = parseQuotaInput(draft.quotaValue, draft.quotaUnit)
-    quotaChanged = !parsed.ok || parsed.bytes !== user.quotaBytes
-  }
+  const parsedQuota = resolveQuotaDraft(draft.quota)
+  const quotaChanged = draft.quota.touched && (!parsedQuota.ok || parsedQuota.bytes !== user.quotaBytes)
   const groupsChanged = groups.some(group => group.userIds.includes(user.id) !== selectedGroupSet.has(group.id))
   const hasChanges = orgChanged || quotaChanged || groupsChanged
   const matchingGroups = groups.filter(group => matchesSearch(groupQuery, group.name))
@@ -1206,59 +1236,31 @@ function UserEditor({ user, draft, organizations, tree, groups, organizationName
         </select>
       </label>
 
-      <div className="membership-quota-field">
-        <span className="membership-field-label">存储配额</span>
-        <div className="membership-quota-input-row">
-          <input
-            type="number"
-            min="0"
-            step="any"
-            aria-label="存储配额"
-            placeholder="留空为不限"
-            value={draft.quotaValue}
-            disabled={busy}
-            onChange={event => onUpdate({ ...draft, quotaValue: event.target.value, quotaTouched: true })}
-          />
-          <select
-            aria-label="配额单位"
-            value={draft.quotaUnit}
-            disabled={busy}
-            onChange={event => onUpdate({ ...draft, quotaUnit: event.target.value as QuotaUnit, quotaTouched: true })}
-          >
-            <option value="MB">MB</option>
-            <option value="GB">GB</option>
-            <option value="TB">TB</option>
-          </select>
-          {draft.quotaValue !== '' && (
-            <button
-              type="button"
-              className="ghost membership-quota-clear"
-              disabled={busy}
-              onClick={() => onUpdate({ ...draft, quotaValue: '', quotaTouched: true })}
-            >
-              清除配额
-            </button>
-          )}
-        </div>
-        <div className="membership-quota-budget" role="note" aria-label="组织配额预算" aria-live="polite">
-          {orgBudget.ancestor ? (
-            <span>
-              {orgBudget.ancestor.id === selectedOrgId ? '所属组织' : '约束上级'}「{orgBudget.ancestor.name}」剩余可分配 {formatBinaryBytes(orgBudget.ancestorUnallocatedBytes)}
-              {orgBudget.maxAllowedQuotaBytes !== orgBudget.ancestorUnallocatedBytes && (
-                <> · 本用户可设上限 {formatBinaryBytes(orgBudget.maxAllowedQuotaBytes)}</>
-              )}
-            </span>
-          ) : (
-            <span>所属组织无配额限制</span>
-          )}
-          {user.usedBytes > 0 && (
-            <span>
-              已用 {formatBinaryBytes(user.usedBytes)}
-              {user.reservedBytes > 0 ? `（含预留 ${formatBinaryBytes(user.reservedBytes)}）` : ''}
-            </span>
-          )}
-        </div>
-      </div>
+      <QuotaInputField
+        draft={draft.quota}
+        busy={busy}
+        onChange={quota => onUpdate({ ...draft, quota })}
+        budgetRole="note"
+        budgetLabel="组织配额预算"
+        budgetLive="polite"
+      >
+        {orgBudget.ancestor ? (
+          <span>
+            {orgBudget.ancestor.id === selectedOrgId ? '所属组织' : '约束上级'}「{orgBudget.ancestor.name}」剩余可分配 {formatSize(orgBudget.ancestorUnallocatedBytes)}
+            {orgBudget.maxAllowedQuotaBytes !== orgBudget.ancestorUnallocatedBytes && (
+              <> · 本用户可设上限 {formatSize(orgBudget.maxAllowedQuotaBytes)}</>
+            )}
+          </span>
+        ) : (
+          <span>所属组织无配额限制</span>
+        )}
+        {user.usedBytes > 0 && (
+          <span>
+            已用 {formatSize(user.usedBytes)}
+            {user.reservedBytes > 0 ? `（含预留 ${formatSize(user.reservedBytes)}）` : ''}
+          </span>
+        )}
+      </QuotaInputField>
 
       <fieldset className="membership-user-groups">
         <legend>

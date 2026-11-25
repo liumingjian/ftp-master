@@ -78,9 +78,10 @@ export function OfficeEditAction({ node, onOpen, icon = false, className, availa
   </a>
 }
 
-export function FileViewer({ node, officePreview, viewerUser, availableQuotaBytes, close, saved }: {
+export function FileViewer({ node, officePreview, officeEditing, viewerUser, availableQuotaBytes, close, saved }: {
   node: Node
   officePreview: boolean
+  officeEditing: boolean
   viewerUser?: ViewerUser
   availableQuotaBytes?: number | null
   close: () => void
@@ -91,7 +92,7 @@ export function FileViewer({ node, officePreview, viewerUser, availableQuotaByte
   const kind = previewKind(node)
   const office = version && officeFormats.has(version.format)
   const download = !!(node.rights & 2)
-  const editWarning = version && (canEditText(node) || editableOfficeVersion(node))
+  const editWarning = version && (canEditText(node) || (officeEditing && Boolean(editableOfficeVersion(node))))
     ? editQuotaWarning(availableQuotaBytes, version.size)
     : undefined
   const [openedAt] = useState(() => formatCurrentLocalMinute())

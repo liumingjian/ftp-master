@@ -1,8 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowLeft } from 'lucide-react'
-import { AccountStorageSection } from './AccountStorageSection'
+import { AccountStorageSection, type StorageState } from './AccountStorageSection'
 import { api, type CurrentUser } from './api/client'
-import type { SelfStorageSummary } from './SidebarStorageBar'
 import { avatarInitial } from './avatar'
 import { PageHeading } from './PageHeading'
 import { PasswordInput } from './PasswordInput'
@@ -11,18 +10,12 @@ export function PasswordPanel({
   user,
   organizationPath,
   onBackToFiles,
-  storageSummary,
-  storageLoading = false,
-  storageError,
-  onRefreshStorage,
+  storage,
 }: {
   user: CurrentUser
   organizationPath?: string
   onBackToFiles: () => void
-  storageSummary?: SelfStorageSummary
-  storageLoading?: boolean
-  storageError?: string
-  onRefreshStorage?: () => void
+  storage: StorageState
 }) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -119,12 +112,7 @@ export function PasswordPanel({
           </form>
         </div>
 
-        <AccountStorageSection
-          summary={storageSummary}
-          loading={storageLoading}
-          error={storageError}
-          onRefresh={() => onRefreshStorage?.()}
-        />
+        <AccountStorageSection storage={storage} />
       </div>
     </section>
   )

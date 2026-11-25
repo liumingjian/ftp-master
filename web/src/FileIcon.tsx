@@ -27,7 +27,4 @@ export function fileTypeLabel(node: Node) {
   return format ? typeLabels[format] ?? `${format.toUpperCase()} 文件` : '文件'
 }
 
-export function formatSize(bytes: number) {
-  const unit = Math.min(4, Math.floor(Math.log(Math.max(1, bytes)) / Math.log(1024)))
-  return `${(bytes / 1024 ** unit).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} ${['B', 'KB', 'MB', 'GB', 'TB'][unit]}`
-}
+export { formatSize } from './formatSize'
