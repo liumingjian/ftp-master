@@ -303,6 +303,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/upload-batches/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["cancelUploadBatch"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/uploads": {
         parameters: {
             query?: never;
@@ -314,6 +332,24 @@ export interface paths {
         put?: never;
         post: operations["initiateUpload"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/uploads/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["cancelUpload"];
         options?: never;
         head?: never;
         patch?: never;
@@ -653,6 +689,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the signed-in User's own Storage Usage, User Quota, effective headroom, constraining ancestor Organization aggregate status, and pending uploads/batches. */
+        get: operations["getMyStorage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/password": {
         parameters: {
             query?: never;
@@ -783,6 +836,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{userId}/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setUserQuota"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/managed-users": {
         parameters: {
             query?: never;
@@ -833,6 +902,11 @@ export interface components {
             expiresAt: string;
             /** Format: int64 */
             versionId: number;
+            /**
+             * Format: int64
+             * @description Effective remaining Storage Quota in bytes for the caller on write-mode edit permits; omitted for read-only previews and null when unlimited.
+             */
+            availableQuotaBytes?: number | null;
         };
         TreeNode: {
             /** Format: int64 */
@@ -907,11 +981,133 @@ export interface components {
             status: string;
             /** Format: int64 */
             organizationId: number;
+            /**
+             * Format: int64
+             * @description Configured User Quota in bytes; null means unlimited, 0 blocks new storage.
+             */
+            quotaBytes: number | null;
+            /**
+             * Format: int64
+             * @description Deduplicated retained File Version bytes attributed to this User.
+             */
+            committedBytes: number;
+            /**
+             * Format: int64
+             * @description Active incomplete upload reservation bytes for this User.
+             */
+            reservedBytes: number;
+            /**
+             * Format: int64
+             * @description Total live Storage Usage (committedBytes + reservedBytes) for this User.
+             */
+            usedBytes: number;
         };
         Error: {
             /** @description Stable machine-readable reason, e.g. unauthenticated, invalid_credentials. */
             code: string;
             message: string;
+        };
+        QuotaExceededError: {
+            /** @enum {string} */
+            code: "quota_exceeded";
+            message: string;
+            /** @enum {string} */
+            scope: "user" | "organization_pool" | "organization_total";
+            /** Format: int64 */
+            requiredBytes: number;
+            /** Format: int64 */
+            availableBytes: number;
+            organizationName?: string;
+        };
+        /** @description Aggregate storage state of the single tightest constraining ancestor Organization; never exposes peer Users or the Organization hierarchy. */
+        ConstrainingOrganizationStorage: {
+            name: string;
+            /** Format: int64 */
+            quotaBytes: number;
+            /** Format: int64 */
+            usedBytes: number;
+            /** Format: int64 */
+            allocatedBytes: number;
+            /** Format: int64 */
+            unallocatedPoolBytes: number;
+            /** Format: int64 */
+            unallocatedPoolUsedBytes: number;
+            /** Format: int64 */
+            remainingBytes: number;
+            /** @enum {string} */
+            constraintKind: "organization_pool" | "organization_total";
+        } | null;
+        PendingUpload: {
+            id: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: int64 */
+            parentId: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** @enum {string} */
+            state: "uploading" | "completing";
+        };
+        PendingUploadBatch: {
+            id: string;
+            name: string;
+            fileCount: number;
+            /** Format: int64 */
+            reservedBytes: number;
+            /** Format: int64 */
+            committedBytes: number;
+            /** Format: int64 */
+            totalBytes: number;
+            /** Format: int64 */
+            parentId: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SelfStorageSummary: {
+            /**
+             * Format: int64
+             * @description Caller's own deduplicated retained File Version bytes.
+             */
+            committedBytes: number;
+            /**
+             * Format: int64
+             * @description Caller's own active incomplete upload reservation bytes.
+             */
+            reservedBytes: number;
+            /**
+             * Format: int64
+             * @description Caller's own total live Storage Usage (committedBytes + reservedBytes).
+             */
+            usedBytes: number;
+            /**
+             * Format: int64
+             * @description Caller's personal User Quota in bytes; null means unlimited.
+             */
+            quotaBytes: number | null;
+            /**
+             * Format: int64
+             * @description Effective remaining writable bytes; null only when neither User nor any ancestor Organization is capped.
+             */
+            availableBytes: number | null;
+            /**
+             * Format: int64
+             * @description Effective storage ceiling paired with effectiveUsedBytes for progress display; null when completely unlimited.
+             */
+            effectiveLimitBytes: number | null;
+            /**
+             * Format: int64
+             * @description Storage Usage paired with effectiveLimitBytes.
+             */
+            effectiveUsedBytes: number;
+            /**
+             * @description Active limiting quota scope; null when completely unlimited.
+             * @enum {string|null}
+             */
+            effectiveScope: "user" | "organization_pool" | "organization_total" | null;
+            constrainingOrganization: components["schemas"]["ConstrainingOrganizationStorage"];
+            pendingUploads: components["schemas"]["PendingUpload"][];
+            pendingBatches: components["schemas"]["PendingUploadBatch"][];
         };
         SignInRequest: {
             username: string;
@@ -960,6 +1156,13 @@ export interface components {
             name: string;
             /** Format: int64 */
             parentId?: number | null;
+            /** @description Optional for PATCH /organizations/{id}. When true, apply quotaBytes (including null to clear to unlimited); when false, preserve the existing Organization Quota; when omitted, preserve the existing Organization Quota unless quotaBytes is provided. */
+            updateQuota?: boolean;
+            /**
+             * Format: int64
+             * @description Optional Organization Quota in bytes; null means unlimited, 0 blocks new storage.
+             */
+            quotaBytes?: number | null;
         };
         Organization: {
             /** Format: int64 */
@@ -967,6 +1170,36 @@ export interface components {
             name: string;
             /** Format: int64 */
             parentId: number | null;
+            /**
+             * Format: int64
+             * @description Configured Organization Quota in bytes; null means unlimited.
+             */
+            quotaBytes: number | null;
+            /**
+             * Format: int64
+             * @description Deduplicated retained File Version bytes across current Users in this Organization's subtree.
+             */
+            committedBytes: number;
+            /**
+             * Format: int64
+             * @description Active incomplete upload reservation bytes across current Users in this Organization's subtree.
+             */
+            reservedBytes: number;
+            /**
+             * Format: int64
+             * @description Total live Storage Usage (committedBytes + reservedBytes) across this Organization's subtree.
+             */
+            usedBytes: number;
+            /**
+             * Format: int64
+             * @description Sum of explicit Storage Quotas on nearest capped descendant Organizations and Users.
+             */
+            allocatedBytes: number;
+            /**
+             * Format: int64
+             * @description Remaining unallocated pool (quotaBytes - allocatedBytes) when quotaBytes is set; null when unlimited.
+             */
+            unallocatedBytes: number | null;
         };
         UserGroupInput: {
             name: string;
@@ -1007,6 +1240,7 @@ export interface components {
             /** Format: int64 */
             partSize: number;
             partCount: number;
+            batchId?: string;
         };
         PartInput: {
             numbers: number[];
@@ -1069,6 +1303,15 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Storage Quota exceeded; no bytes were reserved or written. */
+        QuotaExceeded: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["QuotaExceededError"];
             };
         };
     };
@@ -1249,6 +1492,21 @@ export interface operations {
                     };
                 };
             };
+            /** @description Storage Quota exceeded; file unchanged. Uses the Office Plugin JSON receipt contract. */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        Success: boolean;
+                        Message: string;
+                        Data: {
+                            [key: string]: unknown;
+                        } | null;
+                    };
+                };
+            };
             /** @description Failed; file unchanged. */
             default: {
                 headers: {
@@ -1320,6 +1578,7 @@ export interface operations {
                     "application/json": components["schemas"]["OfficeEdit"];
                 };
             };
+            507: components["responses"]["QuotaExceeded"];
             default: components["responses"]["Unauthorized"];
         };
     };
@@ -1344,9 +1603,15 @@ export interface operations {
                         /** Format: int64 */
                         versionId: number;
                         content: string;
+                        /**
+                         * Format: int64
+                         * @description Effective remaining Storage Quota in bytes for the caller; null or omitted when unlimited.
+                         */
+                        availableQuotaBytes?: number | null;
                     };
                 };
             };
+            507: components["responses"]["QuotaExceeded"];
             default: components["responses"]["Unauthorized"];
         };
     };
@@ -1378,6 +1643,7 @@ export interface operations {
                     "application/json": components["schemas"]["UploadReceipt"];
                 };
             };
+            507: components["responses"]["QuotaExceeded"];
             default: components["responses"]["Unauthorized"];
         };
     };
@@ -1651,6 +1917,28 @@ export interface operations {
                     "application/json": components["schemas"]["UploadSession"][];
                 };
             };
+            507: components["responses"]["QuotaExceeded"];
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    cancelUploadBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unrevealed folder upload batch cancelled and rolled back. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             default: components["responses"]["Unauthorized"];
         };
     };
@@ -1675,6 +1963,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UploadSession"];
                 };
+            };
+            507: components["responses"]["QuotaExceeded"];
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    cancelUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Incomplete upload session cancelled and queued for storage garbage collection. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Unauthorized"];
         };
@@ -2490,6 +2800,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getMyStorage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Self-service storage summary scoped strictly to the signed-in User. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfStorageSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Unauthorized"];
+        };
+    };
     changePassword: {
         parameters: {
             query?: never;
@@ -3002,6 +3334,13 @@ export interface operations {
                 "application/json": {
                     /** Format: int64 */
                     organizationId: number;
+                    /** @description When true, atomically update the User Quota to quotaBytes alongside the Organization move; when false or omitted with quotaBytes omitted, preserve the existing User Quota. */
+                    updateQuota?: boolean;
+                    /**
+                     * Format: int64
+                     * @description Target User Quota in bytes when updating quota atomically; null clears to unlimited, 0 blocks new storage.
+                     */
+                    quotaBytes?: number | null;
                 };
             };
         };
@@ -3013,7 +3352,112 @@ export interface operations {
                 };
                 content?: never;
             };
-            default: components["responses"]["Unauthorized"];
+            /** @description Request refused. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Request refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request refused. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request refused. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setUserQuota: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: int64
+                     * @description Target User Quota in bytes; null clears to unlimited, 0 blocks new storage.
+                     */
+                    quotaBytes?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated User quota and live Storage Usage. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedUser"];
+                };
+            };
+            /** @description Request refused. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Request refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request refused. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request refused. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listManagedUsers: {

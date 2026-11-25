@@ -1,121 +1,237 @@
 import { useEffect, useRef, useState } from 'react'
-import {api} from './api/client'
-import {putPart, UPLOAD_COMPLETE_MESSAGE_MS} from './UploadRow'
-import {systemClock} from './clock'
-type DirectoryHandle={kind:'directory';name:string;values:()=>AsyncIterable<DirectoryHandle|{kind:'file';name:string;getFile:()=>Promise<File>}>}
-type Manifest = {name:string; files:{path:string;size:number;id:string;partSize:number;partCount:number}[]}
-export function FolderUpload({parentId,visible,dropZone,completed,onTaskChange,onActivityChange,onStatusChange}:{parentId:number;visible:boolean;dropZone?:HTMLElement|null;completed:()=>void;onTaskChange?:(label:string)=>void;onActivityChange?:(active:boolean)=>void;onStatusChange?:(visible:boolean)=>void}) {
- const key=`ftp-folder:${parentId}`
- const [manifest,setManifest]=useState<Manifest|undefined>(()=>{ try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
- const [folder,setFolder]=useState('')
- const [progress,setProgress]=useState({done:0,total:0})
- const [status,setStatus]=useState<{ text: string; complete?: true }>()
- useEffect(() => {
-  if (!status?.complete) return
-  return systemClock.after(UPLOAD_COMPLETE_MESSAGE_MS, () => {
-   setStatus(current => current === status ? undefined : current)
+import { api } from './api/client'
+import { putPart, UPLOAD_COMPLETE_MESSAGE_MS } from './UploadRow'
+import { systemClock } from './clock'
+import { formatQuotaExceededError, isQuotaExceededError } from './quota'
+import {
+  classifyCancelOutcome,
+  folderBatchId,
+  isAbortError,
+  STORAGE_UPLOAD_CANCELLED_EVENT,
+  type StorageUploadCancelledDetail,
+} from './uploadCancel'
+
+type DirectoryHandle = { kind: 'directory'; name: string; values: () => AsyncIterable<DirectoryHandle | { kind: 'file'; name: string; getFile: () => Promise<File> }> }
+type Manifest = { batchId?: string; name: string; files: { path: string; size: number; id: string; partSize: number; partCount: number; batchId?: string }[] }
+
+export function FolderUpload({ parentId, visible, dropZone, completed, onStorageChanged, onTaskChange, onActivityChange, onStatusChange }: { parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; onStorageChanged?: () => void; onTaskChange?: (label: string) => void; onActivityChange?: (active: boolean) => void; onStatusChange?: (visible: boolean) => void }) {
+  const key = `ftp-folder:${parentId}`
+  const [manifest, setManifest] = useState<Manifest | undefined>(() => { try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
+  const manifestRef = useRef<Manifest | undefined>(manifest)
+  manifestRef.current = manifest
+  const [folder, setFolder] = useState('')
+  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [status, setStatus] = useState<{ text: string; complete?: true; error?: true }>()
+  useEffect(() => {
+    if (!status?.complete) return
+    return systemClock.after(UPLOAD_COMPLETE_MESSAGE_MS, () => {
+      setStatus(current => current === status ? undefined : current)
+    })
+  }, [status])
+  const [busy, setBusy] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const selected = useRef<File[]>([])
+  const running = useRef(false)
+  const abortRef = useRef<AbortController | undefined>(undefined)
+  const cancelledRef = useRef(false)
+  useEffect(() => {
+    function onExternalCancel(event: Event) {
+      const detail = (event as CustomEvent<StorageUploadCancelledDetail>).detail
+      if (!detail || detail.kind !== 'batch') return
+      if (folderBatchId(manifestRef.current) !== detail.id) return
+      cancelledRef.current = true
+      abortRef.current?.abort()
+      localStorage.removeItem(key)
+      manifestRef.current = undefined
+      setManifest(undefined)
+      selected.current = []
+      setFolder('')
+      setProgress({ done: 0, total: 0 })
+      setStatus(undefined)
+    }
+    window.addEventListener(STORAGE_UPLOAD_CANCELLED_EVENT, onExternalCancel)
+    return () => window.removeEventListener(STORAGE_UPLOAD_CANCELLED_EVENT, onExternalCancel)
+  }, [key])
+  useEffect(() => { if (!busy) return; const leave = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }; window.addEventListener('beforeunload', leave); return () => window.removeEventListener('beforeunload', leave) }, [busy])
+  useEffect(() => { const online = () => { if (selected.current.length && !running.current && !cancelledRef.current) void upload(selected.current) }; window.addEventListener('online', online); return () => window.removeEventListener('online', online) })
+  const taskCallback = useRef(onTaskChange)
+  taskCallback.current = onTaskChange
+  const taskLabel = [manifest?.name || folder, status?.text].filter(Boolean).join(' · ')
+  useEffect(() => { taskCallback.current?.(taskLabel) }, [taskLabel])
+  const activityCallback = useRef(onActivityChange); activityCallback.current = onActivityChange
+  const active = busy || cancelling || !!manifest
+  useEffect(() => { activityCallback.current?.(active) }, [active])
+  const statusCallback = useRef(onStatusChange)
+  statusCallback.current = onStatusChange
+  const hasStatus = !!(manifest || status || cancelling)
+  useEffect(() => { statusCallback.current?.(hasStatus) }, [hasStatus])
+  function clear() {
+    localStorage.removeItem(key)
+    manifestRef.current = undefined
+    setManifest(undefined)
+    selected.current = []
+  }
+  async function upload(files: File[], directories: string[] = [], folderName?: string) {
+    if (running.current || cancelling || (!files.length && !folderName)) return
+    const root = folderName ?? files[0]!.webkitRelativePath.split('/')[0]!
+    const paths = files.map(f => f.webkitRelativePath.split('/').slice(1).join('/'))
+    if (manifest && (manifest.name !== root || manifest.files.length !== files.length || manifest.files.some((m, i) => m.path !== paths[i] || m.size !== files[i]!.size))) { setStatus({ text: '文件名称或大小不匹配，请重新选择原文件夹' }); return }
+    cancelledRef.current = false
+    const controller = new AbortController()
+    abortRef.current = controller
+    const { signal } = controller
+    setFolder(root); setStatus({ text: '验证中' }); setProgress({ done: 0, total: files.reduce((sum, file) => sum + file.size, 0) })
+    selected.current = files; running.current = true; setBusy(true)
+    const start = systemClock.now(); let bytes = 0
+    try {
+      let active = manifestRef.current
+      if (!active) {
+        const result = await api.POST('/upload-batches', { body: { parentId, name: root, directories, files: files.map((f, i) => ({ path: paths[i]!, size: f.size })) }, signal })
+        if (cancelledRef.current) {
+          const createdBatchId = result.data?.[0]?.batchId
+          if (createdBatchId) void api.DELETE('/upload-batches/{id}', { params: { path: { id: createdBatchId } } })
+          return
+        }
+        if (!result.data) {
+          if (isQuotaExceededError(result.response.status, result.error)) {
+            clear()
+            setStatus({ text: formatQuotaExceededError(result.error, '存储配额不足'), error: true })
+            return
+          }
+          throw Error(result.error?.message ?? '无法创建上传')
+        }
+        active = {
+          batchId: result.data[0]?.batchId,
+          name: root,
+          files: result.data.map((s, i) => ({ ...s, path: paths[i]!, size: files[i]!.size })),
+        }
+        if (files.length > 0) {
+          manifestRef.current = active
+          localStorage.setItem(key, JSON.stringify(active))
+          setManifest(active)
+          onStorageChanged?.()
+        }
+      }
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i]!, s = active.files[i]!
+        const stored = await api.GET('/uploads/{id}/parts', { params: { path: { id: s.id } }, signal }); if (!stored.data) throw Error(stored.error?.message ?? '无法恢复上传')
+        const saved = new Set(stored.data.map(p => p.number))
+        for (let n = 1; n <= s.partCount; n++) {
+          const part = f.slice((n - 1) * s.partSize, n * s.partSize)
+          if (saved.has(n)) { bytes += part.size; continue }
+          const signed = await api.POST('/uploads/{id}/parts', { params: { path: { id: s.id } }, body: { numbers: [n] }, signal }); if (!signed.data) throw Error('无法获取上传地址')
+          await putPart(signed.data[0]!.url, part, loaded => {
+            const total = files.reduce((sum, file) => sum + file.size, 0), done = bytes + loaded
+            const speed = done / Math.max((systemClock.now() - start) / 1000, 0.001)
+            setProgress({ done, total })
+            setStatus({ text: `${i}/${files.length} 个文件 · ${done}/${total} 字节 · ${(speed / 1048576).toFixed(1)} MB/s · 剩余 ${Math.ceil((total - done) / speed)} 秒` })
+          }, signal); bytes += part.size
+        }
+        const finish = await api.POST('/uploads/{id}/complete', { params: { path: { id: s.id } }, signal }); if (!finish.data) throw Error(finish.error?.message ?? '发布失败')
+        const speed = bytes / Math.max((systemClock.now() - start) / 1000, 0.001)
+        setStatus({ text: `${i + 1}/${files.length} 个文件 · ${(speed / 1048576).toFixed(1)} MB/s · 剩余 ${Math.ceil((files.reduce((a, f) => a + f.size, 0) - bytes) / speed)} 秒` })
+      }
+      setProgress({ done: bytes, total: bytes })
+      setStatus({ text: `${files.length}/${files.length} 个文件 · 上传完成`, complete: true })
+      clear()
+      completed()
+    } catch (error) {
+      if (cancelledRef.current || isAbortError(error)) return
+      const text = navigator.onLine
+        ? (error instanceof Error ? error.message : '上传失败')
+        : '网络已中断，已保存分片会保留；恢复后自动继续'
+      setStatus({ text, error: true })
+    } finally {
+      if (abortRef.current === controller) abortRef.current = undefined
+      running.current = false
+      setBusy(false)
+    }
+  }
+  async function cancel() {
+    if (cancelling) return
+    setCancelling(true)
+    cancelledRef.current = true
+    abortRef.current?.abort()
+    const activeManifest = manifestRef.current ?? manifest
+    const batchId = folderBatchId(activeManifest)
+    if (!batchId) {
+      clear()
+      setFolder('')
+      setProgress({ done: 0, total: 0 })
+      setStatus(undefined)
+      setCancelling(false)
+      return
+    }
+    try {
+      const result = await api.DELETE('/upload-batches/{id}', { params: { path: { id: batchId } } })
+      const outcome = classifyCancelOutcome(result.response.status)
+      if (outcome === 'cleared') {
+        clear()
+        setFolder('')
+        setProgress({ done: 0, total: 0 })
+        setStatus(undefined)
+        onStorageChanged?.()
+      } else if (outcome === 'already_completed') {
+        clear()
+        setStatus({ text: '上传已完成，无法取消', complete: true })
+        completed()
+        onStorageChanged?.()
+      } else {
+        cancelledRef.current = false
+        setStatus({ text: result.error?.message ?? '取消上传失败，请重试' })
+      }
+    } catch {
+      cancelledRef.current = false
+      setStatus({ text: '取消上传失败，请重试' })
+    } finally {
+      setCancelling(false)
+    }
+  }
+  // FileList omits empty directories. Prefer directory handles when supported.
+  async function chooseDirectory(pick: () => Promise<DirectoryHandle>) {
+    try {
+      const root = await pick(), files: File[] = [], directories: string[] = []
+      async function walk(dir: DirectoryHandle, prefix: string): Promise<void> {
+        for await (const entry of dir.values()) {
+          const relative = prefix + entry.name
+          if (entry.kind === 'directory') { directories.push(relative); await walk(entry, relative + '/') }
+          else { const file = await entry.getFile(); Object.defineProperty(file, 'webkitRelativePath', { value: root.name + '/' + relative }); files.push(file) }
+        }
+      }
+      await walk(root, ''); await upload(files.sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath)), directories, root.name)
+    } catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) setStatus({ text: error instanceof Error ? error.message : '无法读取文件夹' }) }
+  }
+  async function drop(entry: FileSystemEntry) {
+    const files: File[] = []; const directories: string[] = []; let root: string | undefined
+    async function walk(entry: FileSystemEntry, prefix = ''): Promise<void> {
+      const name = prefix + entry.name
+      if (entry.isFile) { const f = await new Promise<File>((resolve, reject) => (entry as FileSystemFileEntry).file(resolve, reject)); Object.defineProperty(f, 'webkitRelativePath', { value: name }); files.push(f) }
+      else { if (!prefix) root = entry.name; else directories.push(name.split('/').slice(1).join('/')); const reader = (entry as FileSystemDirectoryEntry).createReader(); for (; ;) { const entries = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject)); if (!entries.length) break; for (const child of entries) await walk(child, name + '/') } }
+    }
+    await walk(entry)
+    if (root) void upload(files.sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath)), directories, root)
+  }
+  useEffect(() => {
+    if (!dropZone) return
+    function handleDrop(event: DragEvent) {
+      const items = Array.from(event.dataTransfer?.items ?? [])
+      const entry = items.length === 1 ? items[0]?.webkitGetAsEntry() : null
+      if (!entry?.isDirectory || running.current || cancelling) return
+      event.preventDefault()
+      void drop(entry).catch(() => setStatus({ text: '无法读取文件夹' }))
+    }
+    dropZone.addEventListener('drop', handleDrop)
+    return () => dropZone.removeEventListener('drop', handleDrop)
   })
- }, [status])
- const [busy,setBusy]=useState(false)
- const selected=useRef<File[]>([])
- const running=useRef(false)
- useEffect(()=>{if(!busy)return;const leave=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',leave);return()=>window.removeEventListener('beforeunload',leave)},[busy])
- useEffect(()=>{const online=()=>{if(selected.current.length&&!running.current)void upload(selected.current)};window.addEventListener('online',online);return()=>window.removeEventListener('online',online)})
- const taskCallback = useRef(onTaskChange)
- taskCallback.current = onTaskChange
- const taskLabel = [manifest?.name || folder, status?.text].filter(Boolean).join(' · ')
- useEffect(() => { taskCallback.current?.(taskLabel) }, [taskLabel])
- const activityCallback = useRef(onActivityChange); activityCallback.current=onActivityChange
- const active= busy || !!manifest
- useEffect(()=>{activityCallback.current?.(active)},[active])
- const statusCallback = useRef(onStatusChange)
- statusCallback.current = onStatusChange
- const hasStatus = !!(manifest || status)
- useEffect(() => { statusCallback.current?.(hasStatus) }, [hasStatus])
- async function upload(files:File[],directories:string[]=[],folderName?:string) {
-  if(running.current || (!files.length&&!folderName))return
-  const root=folderName??files[0]!.webkitRelativePath.split('/')[0]!
-  const paths=files.map(f=>f.webkitRelativePath.split('/').slice(1).join('/'))
-  if(manifest&&(manifest.name!==root||manifest.files.length!==files.length||manifest.files.some((m,i)=>m.path!==paths[i]||m.size!==files[i]!.size))){setStatus({text:'文件名称或大小不匹配，请重新选择原文件夹'});return}
-  setFolder(root);setStatus({text:'验证中'});setProgress({done:0,total:files.reduce((sum,file)=>sum+file.size,0)});
-  selected.current=files;running.current=true;setBusy(true)
-  const start=systemClock.now();let bytes=0
-  try {
-   let active=manifest
-   if(!active){const result=await api.POST('/upload-batches',{body:{parentId,name:root,directories,files:files.map((f,i)=>({path:paths[i]!,size:f.size}))}});if(!result.data)throw Error(result.error?.message??'无法创建上传');active={name:root,files:result.data.map((s,i)=>({...s,path:paths[i]!,size:files[i]!.size}))};localStorage.setItem(key,JSON.stringify(active));setManifest(active)}
-   for(let i=0;i<files.length;i++) {
-    const f=files[i]!,s=active.files[i]!
-    const stored=await api.GET('/uploads/{id}/parts',{params:{path:{id:s.id}}});if(!stored.data)throw Error(stored.error?.message??'无法恢复上传')
-    const saved=new Set(stored.data.map(p=>p.number))
-    for(let n=1;n<=s.partCount;n++) {
-     const part=f.slice((n-1)*s.partSize,n*s.partSize)
-     if(saved.has(n)){bytes+=part.size;continue}
-     const signed=await api.POST('/uploads/{id}/parts',{params:{path:{id:s.id}},body:{numbers:[n]}});if(!signed.data)throw Error('无法获取上传地址')
-     await putPart(signed.data[0]!.url,part,loaded=>{
-      const total=files.reduce((sum,file)=>sum+file.size,0),done=bytes+loaded
-      const speed=done/Math.max((systemClock.now()-start)/1000,0.001)
-      setProgress({done,total})
-      setStatus({text:`${i}/${files.length} 个文件 · ${done}/${total} 字节 · ${(speed/1048576).toFixed(1)} MB/s · 剩余 ${Math.ceil((total-done)/speed)} 秒`})
-     });bytes+=part.size
-    }
-    const finish=await api.POST('/uploads/{id}/complete',{params:{path:{id:s.id}}});if(!finish.data)throw Error(finish.error?.message??'发布失败')
-    const speed=bytes/Math.max((systemClock.now()-start)/1000,0.001)
-    setStatus({text:`${i+1}/${files.length} 个文件 · ${(speed/1048576).toFixed(1)} MB/s · 剩余 ${Math.ceil((files.reduce((a,f)=>a+f.size,0)-bytes)/speed)} 秒`})
-   }
-   setProgress({ done: bytes, total: bytes })
-   setStatus({ text: `${files.length}/${files.length} 个文件 · 上传完成`, complete: true })
-   localStorage.removeItem(key)
-   setManifest(undefined)
-   selected.current = []
-   completed()
-  } catch (error) {
-   const text = navigator.onLine
-    ? (error instanceof Error ? error.message : '上传失败')
-    : '网络已中断，已保存分片会保留；恢复后自动继续'
-   setStatus({ text })
-  }
-  finally{running.current=false;setBusy(false)}
- }
- // FileList omits empty directories. Prefer directory handles when supported.
- async function chooseDirectory(pick:()=>Promise<DirectoryHandle>) {
-  try {
-   const root=await pick(),files:File[]=[],directories:string[]=[]
-   async function walk(dir:DirectoryHandle,prefix:string):Promise<void>{
-    for await(const entry of dir.values()){
-     const relative=prefix+entry.name
-     if(entry.kind==='directory'){directories.push(relative);await walk(entry,relative+'/')}
-     else {const file=await entry.getFile();Object.defineProperty(file,'webkitRelativePath',{value:root.name+'/'+relative});files.push(file)}
-    }
-   }
-   await walk(root,'');await upload(files.sort((a,b)=>a.webkitRelativePath.localeCompare(b.webkitRelativePath)),directories,root.name)
-  }catch(error){if(!(error instanceof DOMException&&error.name==='AbortError'))setStatus({text:error instanceof Error?error.message:'无法读取文件夹'})}
- }
- async function drop(entry:FileSystemEntry) {
-  const files:File[]=[];const directories:string[]=[];let root:string|undefined
-  async function walk(entry:FileSystemEntry,prefix=''):Promise<void> {
-   const name=prefix+entry.name
-   if(entry.isFile){const f=await new Promise<File>((resolve,reject)=>(entry as FileSystemFileEntry).file(resolve,reject));Object.defineProperty(f,'webkitRelativePath',{value:name});files.push(f)}
-   else {if(!prefix)root=entry.name;else directories.push(name.split('/').slice(1).join('/'));const reader=(entry as FileSystemDirectoryEntry).createReader();for(;;){const entries=await new Promise<FileSystemEntry[]>((resolve,reject)=>reader.readEntries(resolve,reject));if(!entries.length)break;for(const child of entries)await walk(child,name+'/')}}
-  }
-  await walk(entry)
-  if(root)void upload(files.sort((a,b)=>a.webkitRelativePath.localeCompare(b.webkitRelativePath)),directories,root)
- }
- useEffect(() => {
-  if (!dropZone) return
-  function handleDrop(event: DragEvent) {
-   const items = Array.from(event.dataTransfer?.items ?? [])
-   const entry = items.length === 1 ? items[0]?.webkitGetAsEntry() : null
-   if (!entry?.isDirectory || running.current) return
-   event.preventDefault()
-   void drop(entry).catch(() => setStatus({ text: '无法读取文件夹' }))
-  }
-  dropZone.addEventListener('drop', handleDrop)
-  return () => dropZone.removeEventListener('drop', handleDrop)
- })
- return <div>{visible && <label className={manifest&&!busy ? 'resume-folder' : 'visually-hidden'} onClick={event=>{const pick=(window as Window&{showDirectoryPicker?:()=>Promise<DirectoryHandle>}).showDirectoryPicker;if(pick&&!busy){event.preventDefault();void chooseDirectory(()=>pick.call(window))}}}>{manifest?'重新选择文件夹':'选择文件夹'}<input id={`upload-folder-${parentId}`} type="file" multiple {...{webkitdirectory:''}} disabled={busy} onChange={e=>{void upload(Array.from(e.target.files??[]).sort((a,b)=>a.webkitRelativePath.localeCompare(b.webkitRelativePath)));e.target.value=''}}/></label>}
-  {(manifest || status) && <div className="upload-row" role="status" aria-label="文件夹上传进度">
-   <span className="transfer-name">{manifest?.name || folder} · {status?.text ?? '重新选择文件夹'}</span>
-   <progress aria-label="目录上传进度" value={progress.done} max={progress.total || 1} />
-  </div>}
- </div>
+  return <div>
+    {visible && <label className={manifest && !busy && !cancelling ? 'resume-folder' : 'visually-hidden'} onClick={event => {
+      const pick = (window as Window & { showDirectoryPicker?: () => Promise<DirectoryHandle> }).showDirectoryPicker
+      if (pick && !busy && !cancelling) { event.preventDefault(); void chooseDirectory(() => pick.call(window)) }
+    }}>{manifest ? '重新选择文件夹' : '选择文件夹'}<input id={`upload-folder-${parentId}`} type="file" multiple {...{ webkitdirectory: '' }} disabled={busy || cancelling} onChange={e => { void upload(Array.from(e.target.files ?? []).sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath))); e.target.value = '' }} /></label>}
+    {(manifest || status) && <div className={status?.error ? 'upload-row is-error' : 'upload-row'} role="status" aria-label="文件夹上传进度">
+      <span className="transfer-name">{manifest?.name || folder} · {status?.text ?? '重新选择文件夹'}</span>
+      {!status?.error && <progress aria-label="目录上传进度" value={progress.done} max={progress.total || 1} />}
+      {!status?.complete && <button type="button" disabled={cancelling} onClick={() => void cancel()}>取消上传</button>}
+    </div>}
+  </div>
 }

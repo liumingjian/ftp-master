@@ -18,6 +18,7 @@ export const actionNames: Record<string, string> = {
   directory_create: '创建目录', rename: '重命名', move: '移动', delete: '删除', restore: '恢复',
   purge: '永久删除', automatic_purge: '自动清理回收站', grant_change: '变更授权',
   account_change: '变更账户', account_import: '导入账户', account_lock: '锁定账户',
+  quota_change: '变更存储配额',
   password_change: '修改密码', password_reset: '重置密码',
   open_for_edit: '打开 Office 编辑',
   office_save: '保存 Office 文件', text_open: '打开文本编辑', text_save: '保存文本',

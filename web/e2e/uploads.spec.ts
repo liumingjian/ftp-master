@@ -268,3 +268,226 @@ test('an active multipart upload survives switching to service status and back',
   await expect(explorer.getByRole('status', { name: '上传进度', exact: true })).toContainText('上传完成')
   await expect(explorer.getByRole('button', { name: 'switch.txt', exact: true })).toBeVisible()
 })
+
+test('cancelling an active single-file upload aborts the transfer and resets state', async ({ page }) => {
+  await page.goto('/sign-in')
+  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  const panel = page.getByRole('region', { name: '共享目录' })
+  const dir = `CancelActive-${Date.now()}`
+  await createAndOpenFolder(page, dir)
+
+  let releasePart!: () => void
+  const gate = new Promise<void>(resolve => { releasePart = resolve })
+  const secondPartStarted = page.waitForRequest(request =>
+    request.method() === 'PUT' && /\/api\/uploads\/[^/]+\/parts\/2$/.test(new URL(request.url()).pathname),
+  )
+  const secondPartAborted = page.waitForEvent('requestfailed', request =>
+    request.method() === 'PUT' && /\/api\/uploads\/[^/]+\/parts\/2$/.test(new URL(request.url()).pathname),
+  )
+  await page.route('**/api/uploads/*/parts/2', async route => {
+    await gate
+    await route.continue().catch(() => {})
+  })
+
+  try {
+    await panel.getByLabel('上传文件', { exact: true }).setInputFiles({
+      name: 'active-cancel.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.alloc(9 * 1024 * 1024, 65),
+    })
+    await secondPartStarted
+    const statusBar = panel.getByRole('status', { name: '上传进度', exact: true })
+    await expect(statusBar).toContainText('上传中')
+
+    const cancelResponse = page.waitForResponse(response =>
+      response.request().method() === 'DELETE' && /\/api\/uploads\/[^/]+$/.test(new URL(response.url()).pathname),
+    )
+    await statusBar.getByRole('button', { name: '取消上传', exact: true }).click()
+    await secondPartAborted
+    expect((await cancelResponse).status()).toBe(204)
+
+    await expect(statusBar).toHaveCount(0)
+    await expect(panel.locator('tr.transfer-row')).toHaveAttribute('hidden', '')
+    await expect(panel.getByRole('button', { name: 'active-cancel.txt', exact: true })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: '上传文件', exact: true })).toBeEnabled()
+    const savedKeys = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('ftp-upload:')))
+    expect(savedKeys).toEqual([])
+  } finally {
+    releasePart()
+    await page.unroute('**/api/uploads/*/parts/2')
+  }
+
+  // User can immediately upload again after cancelling.
+  await panel.getByLabel('上传文件', { exact: true }).setInputFiles({
+    name: 'active-cancel.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('after cancel'),
+  })
+  await expect(panel.getByRole('status', { name: '上传进度', exact: true })).toContainText('上传完成')
+  await expect(panel.getByRole('button', { name: 'active-cancel.txt', exact: true })).toBeVisible()
+})
+
+test('cancelling failed, conflicting, and resumable single-file uploads clears persisted resume state', async ({ page }) => {
+  await page.goto('/sign-in')
+  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  const panel = page.getByRole('region', { name: '共享目录' })
+  const dir = `CancelResume-${Date.now()}`
+  await createAndOpenFolder(page, dir)
+
+  // 1. Failed-before-session upload can be dismissed cleanly.
+  await panel.getByLabel('上传文件', { exact: true }).setInputFiles({
+    name: 'blocked.exe',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from('nope'),
+  })
+  const statusBar = panel.getByRole('status', { name: '上传进度', exact: true })
+  await expect(statusBar).toContainText('blocked extension')
+  await statusBar.getByRole('button', { name: '取消上传', exact: true }).click()
+  await expect(statusBar).toHaveCount(0)
+  await expect(panel.locator('tr.transfer-row')).toHaveAttribute('hidden', '')
+
+  // 2. Interrupted upload persists resume state, and cancelling after reload clears server and localStorage.
+  await page.route('**/api/uploads/*/parts/2', async route => { await route.abort() })
+  await panel.getByLabel('上传文件', { exact: true }).setInputFiles({
+    name: 'resumable-cancel.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.alloc(9 * 1024 * 1024, 66),
+  })
+  await expect(panel.getByLabel('重新选择文件')).toBeVisible()
+  await page.unroute('**/api/uploads/*/parts/2')
+
+  await page.reload()
+  const resumeBar = panel.locator('.upload-resume')
+  await expect(resumeBar).toBeVisible()
+  const cancelResume = page.waitForResponse(response =>
+    response.request().method() === 'DELETE' && /\/api\/uploads\/[^/]+$/.test(new URL(response.url()).pathname),
+  )
+  await resumeBar.getByRole('button', { name: '取消上传', exact: true }).click()
+  expect((await cancelResume).status()).toBe(204)
+  await expect(resumeBar).toHaveCount(0)
+  await expect(panel.locator('tr.transfer-row')).toHaveAttribute('hidden', '')
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('ftp-upload:')))).toEqual([])
+
+  await page.reload()
+  await expect(panel.locator('.upload-resume')).toHaveCount(0)
+
+  // 3. Name-conflict upload can be cancelled without modifying or duplicating the existing file.
+  const file = { name: 'conflict.txt', mimeType: 'text/plain', buffer: Buffer.from('original') }
+  await panel.getByLabel('上传文件', { exact: true }).setInputFiles(file)
+  await expect(statusBar).toContainText('上传完成')
+  await panel.getByLabel('上传文件', { exact: true }).setInputFiles({ ...file, buffer: Buffer.from('duplicate') })
+  await expect(panel.getByRole('button', { name: '存为新版本', exact: true })).toBeVisible()
+  const cancelConflict = page.waitForResponse(response =>
+    response.request().method() === 'DELETE' && /\/api\/uploads\/[^/]+$/.test(new URL(response.url()).pathname),
+  )
+  await statusBar.getByRole('button', { name: '取消上传', exact: true }).click()
+  expect((await cancelConflict).status()).toBe(204)
+  await expect(statusBar).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'conflict.txt', exact: true })).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'conflict (1).txt', exact: true })).toHaveCount(0)
+})
+
+test('cancelling active and resumable folder upload batches rolls back hidden folders and clears state', async ({ page }) => {
+  await page.goto('/sign-in')
+  await signIn(page, ADMINISTRATOR_USERNAME, ADMINISTRATOR_PASSWORD)
+  const panel = page.getByRole('region', { name: '共享目录' })
+  const dir = `CancelFolder-${Date.now()}`
+  await createAndOpenFolder(page, dir)
+
+  const dropCancelBatch = async () => {
+    await expect(panel.getByRole('table', { name: '文件列表' }).getByLabel('选择文件夹', { exact: true })).toBeAttached()
+    await panel.getByRole('table', { name: '文件列表' }).evaluate(table => {
+      const directory = (name: string, children: unknown[]) => ({
+        name,
+        isFile: false,
+        isDirectory: true,
+        createReader: () => {
+          let read = false
+          return { readEntries: (done: (entries: unknown[]) => void) => { done(read ? [] : children); read = true } }
+        },
+      })
+      const small = { name: 'a.txt', isFile: true, isDirectory: false, file: (done: (file: File) => void) => done(new File(['one'], 'a.txt')) }
+      const large = { name: 'large.bin', isFile: true, isDirectory: false, file: (done: (file: File) => void) => done(new File([new Uint8Array(9 * 1024 * 1024)], 'large.bin')) }
+      const root = directory('CancelBatch', [small, directory('nested', [large])])
+      const event = new Event('drop', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'dataTransfer', { value: { items: [{ webkitGetAsEntry: () => root }] } })
+      table.dispatchEvent(event)
+    })
+  }
+
+  // 1. Cancel an active folder upload after its first child completes and second child pauses mid-transfer.
+  let releasePart!: () => void
+  const gate = new Promise<void>(resolve => { releasePart = resolve })
+  const secondPartStarted = page.waitForRequest(request =>
+    request.method() === 'PUT' && /\/api\/uploads\/[^/]+\/parts\/2$/.test(new URL(request.url()).pathname),
+  )
+  await page.route('**/api/uploads/*/parts/2', async route => {
+    await gate
+    await route.continue().catch(() => {})
+  })
+  const folderStatus = panel.getByRole('status', { name: '文件夹上传进度', exact: true })
+  try {
+    await dropCancelBatch()
+    await secondPartStarted
+    await expect(folderStatus).toContainText('1/2 个文件')
+
+    const persistedBatch = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find(k => k.startsWith('ftp-folder:'))
+      return key ? JSON.parse(localStorage.getItem(key) ?? 'null') : null
+    })
+    expect(persistedBatch?.batchId).toBeTruthy()
+
+    const cancelBatch = page.waitForResponse(response =>
+      response.request().method() === 'DELETE' && /\/api\/upload-batches\/[^/]+$/.test(new URL(response.url()).pathname),
+    )
+    await folderStatus.getByRole('button', { name: '取消上传', exact: true }).click()
+    expect((await cancelBatch).status()).toBe(204)
+
+    await expect(folderStatus).toHaveCount(0)
+    await expect(panel.locator('tr.transfer-row')).toHaveAttribute('hidden', '')
+    await expect(panel.getByRole('button', { name: 'CancelBatch', exact: true })).toHaveCount(0)
+    expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('ftp-folder:')))).toEqual([])
+  } finally {
+    releasePart()
+    await page.unroute('**/api/uploads/*/parts/2')
+  }
+
+  // 2. Re-upload the same folder name (verifying hidden root was rolled back), interrupt, reload, and cancel resumable batch.
+  await page.route('**/api/uploads/*/parts/2', async route => { await route.abort() })
+  await dropCancelBatch()
+  await expect(panel.getByLabel('重新选择文件夹')).toBeVisible()
+  await page.unroute('**/api/uploads/*/parts/2')
+
+  await page.reload()
+  await expect(folderStatus).toContainText('CancelBatch')
+  const cancelResumableBatch = page.waitForResponse(response =>
+    response.request().method() === 'DELETE' && /\/api\/upload-batches\/[^/]+$/.test(new URL(response.url()).pathname),
+  )
+  await folderStatus.getByRole('button', { name: '取消上传', exact: true }).click()
+  expect((await cancelResumableBatch).status()).toBe(204)
+  await expect(folderStatus).toHaveCount(0)
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('ftp-folder:')))).toEqual([])
+
+  await page.reload()
+  await expect(folderStatus).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'CancelBatch', exact: true })).toHaveCount(0)
+
+  // 3. Re-uploading the same folder name now completes and publishes cleanly.
+  await panel.getByRole('table', { name: '文件列表' }).evaluate(table => {
+    const file = { name: 'ok.txt', isFile: true, isDirectory: false, file: (done: (file: File) => void) => done(new File(['ok'], 'ok.txt')) }
+    const root = {
+      name: 'CancelBatch',
+      isFile: false,
+      isDirectory: true,
+      createReader: () => {
+        let read = false
+        return { readEntries: (done: (entries: unknown[]) => void) => { done(read ? [] : [file]); read = true } }
+      },
+    }
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', { value: { items: [{ webkitGetAsEntry: () => root }] } })
+    table.dispatchEvent(event)
+  })
+  await expect(folderStatus).toContainText('1/1 个文件 · 上传完成')
+  await expect(panel.getByRole('button', { name: 'CancelBatch', exact: true })).toBeVisible()
+})

@@ -9,11 +9,13 @@ Administrators can enable Office editing in **管理 → 系统设置 → Office
 
 `POST /api/files/{id}/office-edits` requires the active User's session cookie and JSON `{}` (latest version), or `{"versionId": 123}` (an explicit version belonging to this file). Current Modify is required, including for historical versions. The selected version's recorded actual format must be doc, docx, wps, xls or xlsx, and its size must be at most 26,214,400 bytes.
 
-HTTP 201 returns `permitId`, `versionId`, `documentUrl`, `saveUrl`, `deliveryCheckUrl`, `title`, `format` and RFC3339 `expiresAt`. Each start creates a fresh cryptographically random 192-bit identifier. The database holds its User/file/version binding. The permit and `open_for_edit` Audit Event commit in one transaction. The event detail contains `versionId` and `permitId`.
+HTTP 201 returns `permitId`, `versionId`, `documentUrl`, `saveUrl`, `deliveryCheckUrl`, `title`, `format`, RFC3339 `expiresAt`, and optional nullable `availableQuotaBytes` (the caller's effective remaining Storage Quota in bytes for write-mode edits; omitted or null when unlimited). Each start creates a fresh cryptographically random 192-bit identifier. The database holds its User/file/version binding. The permit and `open_for_edit` Audit Event commit in one transaction under the canonical advisory lock order (`725005` membership/quota before `725010` Shared Tree). The event detail contains `versionId` and `permitId`.
 
-Qaxbrowser can request a read-only permit by adding `"preview": true` to the same POST. Preview requires Browse and uses the same file format, size and five-minute delivery limits. The response omits `saveUrl`. The server rejects saves with a preview permit even when the User has Modify. Preview does not create an Audit Event.
+Write-mode starts pre-check the caller's effective Storage Quota (User Quota, nearest capped Organization's unallocated pool, and every capped ancestor Organization's total Storage Usage). When effective available storage is `<= 0`, the server refuses issuance with HTTP 507 and the `QuotaExceededError` JSON envelope (`code: "quota_exceeded"`, `scope`, `requiredBytes: 0`, `availableBytes: 0`, optional `organizationName`, and a Chinese `message`), issuing neither an Edit Permit nor an Audit Event.
 
-Errors use the ordinary API error envelope: 400 invalid input; 401 missing/invalid session; 403 visible file without Modify; 404 invisible/missing file or version outside the file; 409 directory; 413 too large; 415 unsupported format. No permit or success event is issued on failure.
+Qaxbrowser can request a read-only permit by adding `"preview": true` to the same POST. Preview requires Browse and uses the same file format, size and five-minute delivery limits, skips the Storage Quota pre-check so read-only previews remain unrestricted even when over quota, and omits `saveUrl` and `availableQuotaBytes`. The server rejects saves with a preview permit even when the User has Modify. Preview does not create an Audit Event.
+
+Errors use the ordinary API error envelope: 400 invalid input; 401 missing/invalid session; 403 visible file without Modify or Office editing disabled; 404 invisible/missing file or version outside the file; 409 directory; 413 too large; 415 unsupported format; 507 Storage Quota exceeded (`code: "quota_exceeded"`). No permit or success event is issued on failure.
 
 ## Permit routes
 
@@ -65,15 +67,22 @@ MIME type determines the stored format. The current shared-tree name stays intac
 
 HTTP 200 returns `{ "Success": true, "Message": "Saved", "Data": { ... } }`.
 `Data` includes `versionId`, `baseVersionId`, `permitId`, `format` and
-`staleSave`. Every failure, including authentication, decoding and storage
-failure, uses a non-2xx response with `{ "Success": false, "Message": "...",
-"Data": null }`. A fresh immutable content object is published with exactly
-one File Version and one `office_save` Audit Event in the same database
-transaction. Failed publication rolls back both and removes the unused object.
-The tree mutation lock serializes publication and current Modify checks;
-staleness always compares the latest version to the permit's original base,
-including on repeated saves. A delivered permit's initial retrieval expiry does
-not prevent later saves by its owner.
+`staleSave`. Every failure, including authentication, decoding, Storage Quota
+and storage failure, uses a non-2xx response with `{ "Success": false,
+"Message": "...", "Data": null }`. Before publishing the object, `POST saveUrl`
+checks the submitting User's effective Storage Quota against the saved file size
+under the canonical advisory lock order (`725005` before `725010`). When the
+saved bytes exceed available headroom, the transaction rolls back without
+writing an object or File Version, records a failed `office_save` Audit Event
+with `detail.reason: "quota_exceeded"`, and returns HTTP 507 with
+`{ "Success": false, "Message": "...", "Data": null }`. A fresh immutable
+content object is published with exactly one File Version and one `office_save`
+Audit Event in the same database transaction. Failed publication rolls back both
+and removes the unused object. The membership and tree mutation locks serialize
+quota validation, publication and current Modify checks; staleness always
+compares the latest version to the permit's original base, including on repeated
+saves. A delivered permit's initial retrieval expiry does not prevent later
+saves by its owner.
 
 ## File-browser presence and edit-link contract
 

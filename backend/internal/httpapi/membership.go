@@ -50,14 +50,6 @@ func membershipError(err error) (membershipFailure, error) {
 func validMembershipName(name string) bool {
 	return strings.TrimSpace(name) != "" && utf8.RuneCountInString(name) <= 150
 }
-func orgResponse(row sqlcdb.Organization) api.Organization {
-	var parent *int64
-	if row.ParentID.Valid {
-		v := row.ParentID.Int64
-		parent = &v
-	}
-	return api.Organization{Id: row.ID, Name: row.Name, ParentId: parent}
-}
 func parentID(p *int64) pgtype.Int8 {
 	if p == nil {
 		return pgtype.Int8{}
@@ -96,54 +88,113 @@ func (s *Server) ListOrganizations(ctx context.Context, _ api.ListOrganizationsR
 	if !requestFrom(ctx).session.User.IsAdministrator {
 		return api.ListOrganizations403JSONResponse{Code: "forbidden", Message: "Administrator required"}, nil
 	}
-	rows, err := sqlcdb.New(s.membership.Pool).ListOrganizations(ctx)
+	tx, err := s.membership.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, err
 	}
-	result := api.ListOrganizations200JSONResponse{}
+	defer tx.Rollback(ctx)
+	ledger, rows, err := loadQuotaLedger(ctx, sqlcdb.New(tx))
+	if err != nil {
+		return nil, err
+	}
+	result := make(api.ListOrganizations200JSONResponse, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, orgResponse(row))
+		summary, _ := ledger.Organization(row.ID)
+		result = append(result, orgSummaryResponse(summary))
 	}
 	return result, nil
 }
 func (s *Server) CreateOrganization(ctx context.Context, r api.CreateOrganizationRequestObject) (api.CreateOrganizationResponseObject, error) {
+	info := requestFrom(ctx)
 	result, err := s.changeMembership(ctx, "create_organization", func(q *sqlcdb.Queries) (any, error) {
 		if r.Body == nil || !validMembershipName(r.Body.Name) {
 			return nil, membershipFailure{400, "name must contain 1 to 150 characters"}
 		}
-		row, err := q.CreateOrganization(ctx, sqlcdb.CreateOrganizationParams{Name: r.Body.Name, ParentID: parentID(r.Body.ParentId)})
-		return orgResponse(row), err
+		ledger, _, err := loadQuotaLedger(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		if v := ledger.ValidateCreateOrganization(r.Body.ParentId, r.Body.QuotaBytes); v != nil {
+			return nil, quotaViolationError(v)
+		}
+		row, err := q.CreateOrganization(ctx, sqlcdb.CreateOrganizationParams{
+			Name:       r.Body.Name,
+			ParentID:   parentID(r.Body.ParentId),
+			QuotaBytes: optionalInt8(r.Body.QuotaBytes),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if r.Body.QuotaBytes != nil {
+			if err := recordQuotaChangeAudit(ctx, q, s.membership.Clock, info, "organization", row.ID, row.Name, nil, r.Body.QuotaBytes); err != nil {
+				return nil, err
+			}
+		}
+		nextLedger, _, err := loadQuotaLedger(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		summary, _ := nextLedger.Organization(row.ID)
+		return orgSummaryResponse(summary), nil
 	})
 	if err != nil {
+		var af apiFailure
+		if errors.As(err, &af) {
+			return af, nil
+		}
 		f, e := membershipError(err)
 		return f, e
 	}
 	return api.CreateOrganization201JSONResponse(result.(api.Organization)), nil
 }
 func (s *Server) UpdateOrganization(ctx context.Context, r api.UpdateOrganizationRequestObject) (api.UpdateOrganizationResponseObject, error) {
+	info := requestFrom(ctx)
 	result, err := s.changeMembership(ctx, "update_organization", func(q *sqlcdb.Queries) (any, error) {
 		if r.Body == nil || !validMembershipName(r.Body.Name) {
 			return nil, membershipFailure{400, "name must contain 1 to 150 characters"}
 		}
-		rows, err := q.ListOrganizations(ctx)
+		ledger, _, err := loadQuotaLedger(ctx, q)
 		if err != nil {
 			return nil, err
 		}
-		parents := map[int64]int64{}
-		for _, row := range rows {
-			parents[row.ID] = row.ParentID.Int64
+		current, exists := ledger.Organization(r.Id)
+		if !exists {
+			return nil, pgx.ErrNoRows
 		}
-		if r.Body.ParentId != nil {
-			for id := *r.Body.ParentId; id != 0; id = parents[id] {
-				if id == r.Id {
-					return nil, membershipFailure{409, "Organization move would create a cycle"}
-				}
+		updateQuota := (r.Body.UpdateQuota != nil && *r.Body.UpdateQuota) || (r.Body.UpdateQuota == nil && r.Body.QuotaBytes != nil)
+		targetQuota := current.QuotaBytes
+		if updateQuota {
+			targetQuota = r.Body.QuotaBytes
+		}
+		if v := ledger.ValidateUpdateOrganization(r.Id, r.Body.ParentId, targetQuota); v != nil {
+			return nil, quotaViolationError(v)
+		}
+		row, err := q.UpdateOrganization(ctx, sqlcdb.UpdateOrganizationParams{
+			ID:         r.Id,
+			Name:       r.Body.Name,
+			ParentID:   parentID(r.Body.ParentId),
+			QuotaBytes: optionalInt8(targetQuota),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !sameOptionalInt64(current.QuotaBytes, targetQuota) {
+			if err := recordQuotaChangeAudit(ctx, q, s.membership.Clock, info, "organization", row.ID, row.Name, current.QuotaBytes, targetQuota); err != nil {
+				return nil, err
 			}
 		}
-		row, err := q.UpdateOrganization(ctx, sqlcdb.UpdateOrganizationParams{ID: r.Id, Name: r.Body.Name, ParentID: parentID(r.Body.ParentId)})
-		return orgResponse(row), err
+		nextLedger, _, err := loadQuotaLedger(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		summary, _ := nextLedger.Organization(row.ID)
+		return orgSummaryResponse(summary), nil
 	})
 	if err != nil {
+		var af apiFailure
+		if errors.As(err, &af) {
+			return af, nil
+		}
 		f, e := membershipError(err)
 		return f, e
 	}

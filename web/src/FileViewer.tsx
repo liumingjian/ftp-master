@@ -2,8 +2,9 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Download, Eye, Pencil, X } from 'lucide-react'
 import { previewKind } from './BrowseTools'
 import { FileIcon } from './FileIcon'
-import { TextEditor } from './TextEditor'
+import { canEditText, TextEditor } from './TextEditor'
 import { formatCurrentLocalMinute } from './clock'
+import { editQuotaWarning } from './quota'
 import type { components } from './api/schema.gen'
 
 type Node = components['schemas']['TreeNode']
@@ -47,19 +48,22 @@ function buildWatermarkDataUri(user: ViewerUser, timestamp: string) {
   return `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`
 }
 
-export function OfficeEditAction({ node, onOpen, icon = false, className }: {
+export function OfficeEditAction({ node, onOpen, icon = false, className, availableQuotaBytes }: {
   node: Node
   onOpen: () => void
   icon?: boolean
   className?: string
+  availableQuotaBytes?: number | null
 }) {
   const version = editableOfficeVersion(node)
   if (!version) return null
 
+  const warning = editQuotaWarning(availableQuotaBytes, version.size)
   const baseClass = icon ? 'button icon office-edit-indicator' : 'button office-edit'
-  return <a className={className ? `${baseClass} ${className}` : baseClass} href={`/api/files/${node.id}/office-edits`}
+  const classes = [baseClass, className, warning ? 'quota-tight' : ''].filter(Boolean).join(' ')
+  return <a className={classes} href={`/api/files/${node.id}/office-edits`}
     data-ftp-office-edit="1" data-ftp-office-version={version.id} target="_blank" rel="noopener"
-    title="在线编辑"
+    title={warning ? `在线编辑（${warning}）` : '在线编辑'}
     onAuxClick={event => event.preventDefault()}
     onClick={event => {
       // The extension claims the trusted click in its document capture listener.
@@ -74,10 +78,12 @@ export function OfficeEditAction({ node, onOpen, icon = false, className }: {
   </a>
 }
 
-export function FileViewer({ node, officePreview, viewerUser, close, saved }: {
+export function FileViewer({ node, officePreview, officeEditing, viewerUser, availableQuotaBytes, close, saved }: {
   node: Node
   officePreview: boolean
+  officeEditing: boolean
   viewerUser?: ViewerUser
+  availableQuotaBytes?: number | null
   close: () => void
   saved: () => void
 }) {
@@ -86,6 +92,9 @@ export function FileViewer({ node, officePreview, viewerUser, close, saved }: {
   const kind = previewKind(node)
   const office = version && officeFormats.has(version.format)
   const download = !!(node.rights & 2)
+  const editWarning = version && (canEditText(node) || (officeEditing && Boolean(editableOfficeVersion(node))))
+    ? editQuotaWarning(availableQuotaBytes, version.size)
+    : undefined
   const [openedAt] = useState(() => formatCurrentLocalMinute())
   const watermarkImage = useMemo(
     () => viewerUser && kind && kind !== 'audio' ? buildWatermarkDataUri(viewerUser, openedAt) : undefined,
@@ -117,7 +126,7 @@ export function FileViewer({ node, officePreview, viewerUser, close, saved }: {
           {!download && <span className="pill neutral viewer-readonly-pill" title="当前账户对该文件无下载权限">
             <Eye size={13} aria-hidden="true" />仅在线预览
           </span>}
-          <TextEditor node={node} saved={saved} />
+          <TextEditor node={node} availableQuotaBytes={availableQuotaBytes} saved={saved} />
           {download && <a className="button" href={`/api/tree/${node.id}/download`} download>
             <Download size={16} aria-hidden="true" />下载
           </a>}
@@ -126,6 +135,7 @@ export function FileViewer({ node, officePreview, viewerUser, close, saved }: {
           </button>
         </div>
       </header>
+      {editWarning && <p className="banner warning viewer-quota-warning" role="status">{editWarning}</p>}
       {kind ? <section aria-label="文件预览" className={`file-viewer-body ${kind}`}>
         <PreviewContent key={version?.id} node={node} kind={kind} />
         {watermarkImage && <div className="preview-watermark" aria-hidden="true" style={{ backgroundImage: watermarkImage }} />}

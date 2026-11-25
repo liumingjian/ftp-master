@@ -7,6 +7,7 @@ import { canPreviewOffice, editableOfficeVersion, FileViewer, OfficeEditAction, 
 import { ZipDownload } from './ZipDownload'
 import { RecycleBin } from './RecycleBin'
 import { DirectorySidebar } from './DirectorySidebar'
+import type { SelfStorageSummary } from './SidebarStorageBar'
 import { FolderUpload } from './FolderUpload'
 import { UploadRow, type FileUploadState } from './UploadRow'
 import { GrantsPanel } from './GrantsPanel'
@@ -17,6 +18,7 @@ import { CreateFolderDialog, DeleteFolderDialog, MoveDialog, RenameDialog } from
 import { api } from './api/client'
 import { loadAncestors, loadBranches, loadDirectory } from './treePath'
 import { systemClock } from './clock'
+import { editQuotaWarning } from './quota'
 import type { components } from './api/schema.gen'
 
 type Node = components['schemas']['TreeNode']
@@ -46,9 +48,14 @@ type Props = {
   recycle: boolean
   openRecycle: () => void
   recycleHref: string
+  storageSummary?: SelfStorageSummary
+  onStorageChanged?: () => void
+  accountHref?: string
+  openAccount?: () => void
 }
 
-export function TreePanel({ administrator, active, hash, query, navigate, transferSlot, sidebarWidth, resizeSidebar, sidebarCollapsed = false, viewerUser, grantId, openGrant, recycle, openRecycle, recycleHref }: Props) {
+export function TreePanel({ administrator, active, hash, query, navigate, transferSlot, sidebarWidth, resizeSidebar, sidebarCollapsed = false, viewerUser, grantId, openGrant, recycle, openRecycle, recycleHref, storageSummary, onStorageChanged, accountHref, openAccount }: Props) {
+  const availableQuotaBytes = storageSummary?.availableBytes ?? null
   const [officeEditing, setOfficeEditing] = useState(false)
   useEffect(() => {
     if (!active) return
@@ -107,6 +114,13 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const restoredLocation = useRef<string>(undefined)
   const officeEditStarted = useRef(false)
   const openedLinkedFile = useRef(false)
+  const storageChangedRef = useRef(onStorageChanged)
+  storageChangedRef.current = onStorageChanged
+
+  function refreshTreeAndStorage() {
+    refresh(value => value + 1)
+    storageChangedRef.current?.()
+  }
 
   const current = path.at(-1)
   const currentId = current?.id ?? ROOT
@@ -166,7 +180,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
     function refreshEditedFile() {
       if (!officeEditStarted.current || document.visibilityState !== 'visible') return
       officeEditStarted.current = false
-      refresh(value => value + 1)
+      refreshTreeAndStorage()
     }
     window.addEventListener('focus', refreshEditedFile)
     document.addEventListener('visibilitychange', refreshEditedFile)
@@ -365,6 +379,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
         setInspector(previous => previous?.node.id === node.id ? undefined : previous)
         setDeletingFolder(undefined)
         update(`「${node.name}」已移入回收站`)
+        storageChangedRef.current?.()
       } else {
         setDeletingFolder(undefined)
         setMessage(response.status === 403 ? '当前账户没有删除权限' : '移入回收站失败，请刷新后重试')
@@ -396,6 +411,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       path={path} branches={branches} revision={revision} width={sidebarWidth} resize={resizeSidebar}
       collapsed={sidebarCollapsed}
       drawerOpen={directoryOpen} closeDrawer={() => setDirectoryOpen(false)}
+      storageSummary={storageSummary} accountHref={accountHref} openAccount={openAccount}
     />
     <main id={browsing ? 'main-content' : undefined} tabIndex={browsing ? -1 : undefined} className="shell-main explorer" ref={explorerRef} hidden={!browsing} onScroll={event => {
       if (browsing && !pending && restoredLocation.current === scrollKey) scrollPositions.current.set(scrollKey, event.currentTarget.scrollTop)
@@ -485,9 +501,9 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                         setFileUploads(previous => ({ ...previous, [id]: state }))
                         report('file', state !== 'idle')
                       }}
-                        onStatusChange={value => reportStatus('file', value)} completed={() => refresh(v => v + 1)} />
+                        onStatusChange={value => reportStatus('file', value)} completed={refreshTreeAndStorage} onStorageChanged={() => storageChangedRef.current?.()} />
                       <FolderUpload onTaskChange={label => describe('folder', label)} parentId={id} visible={visible} dropZone={visible ? dropZone : null} onActivityChange={value => report('folder', value)}
-                        onStatusChange={value => reportStatus('folder', value)} completed={() => refresh(v => v + 1)} />
+                        onStatusChange={value => reportStatus('folder', value)} completed={refreshTreeAndStorage} onStorageChanged={() => storageChangedRef.current?.()} />
                     </td>
                   </tr>
                 })}
@@ -496,6 +512,9 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                     const isDropBox = !node.isFile && !(node.rights & BROWSE) && Boolean(node.rights & UPLOAD)
                     const hasOfficeEdit = officeEditing && Boolean(editableOfficeVersion(node))
                     const hasTextEdit = !hasOfficeEdit && canEditText(node)
+                    const textEditWarning = hasTextEdit && node.latestVersion
+                      ? editQuotaWarning(availableQuotaBytes, node.latestVersion.size)
+                      : undefined
                     const isMenuOpen = menuNode?.id === node.id
 
                     return <tr key={node.id}
@@ -537,9 +556,9 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                         : <span aria-hidden="true">—</span>}</td>
                       <td className="file-size">{node.latestVersion ? formatSize(node.latestVersion.size) : <span aria-hidden="true">—</span>}</td>
                       <td><div className="row-actions">
-                        {hasOfficeEdit && <OfficeEditAction node={node} onOpen={trackOfficeEdit} icon className="row-hover-action" />}
-                        {hasTextEdit && <button type="button" className="icon row-hover-action text-edit-indicator"
-                          title="编辑文本" aria-label={`编辑文本 ${node.name}`}
+                        {hasOfficeEdit && <OfficeEditAction node={node} onOpen={trackOfficeEdit} icon className="row-hover-action" availableQuotaBytes={availableQuotaBytes} />}
+                        {hasTextEdit && <button type="button" className={textEditWarning ? 'icon row-hover-action text-edit-indicator quota-tight' : 'icon row-hover-action text-edit-indicator'}
+                          title={textEditWarning ? `编辑文本（${textEditWarning}）` : '编辑文本'} aria-label={`编辑文本 ${node.name}`}
                           onClick={() => setTextEditNode(node)}>
                           <Pencil size={16} aria-hidden="true" />
                         </button>}
@@ -602,6 +621,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
         anchor={menu.anchor}
         officeEditing={officeEditing}
         canMove={canMoveNode(menuNode)}
+        availableQuotaBytes={availableQuotaBytes}
         onClose={closeMenu}
         onEditText={node => setTextEditNode(node)}
         onOfficeEditOpen={trackOfficeEdit}
@@ -619,7 +639,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
         initialTab={inspector.tab}
         location={inspectorLocation}
         onClose={() => { setInspector(undefined); menuTrigger.current?.focus() }}
-        onRestored={() => refresh(value => value + 1)}
+        onRestored={refreshTreeAndStorage}
         onManageGrants={node => showGrants(node.id)}
       />}
 
@@ -667,17 +687,19 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       {browsing && textEditNode && <TextEditorDialog
         key={textEditNode.id}
         node={textEditNode}
+        availableQuotaBytes={availableQuotaBytes}
         close={() => setTextEditNode(undefined)}
-        saved={() => refresh(value => value + 1)}
+        saved={refreshTreeAndStorage}
       />}
 
       {browsing && viewerNode && <FileViewer key={viewerNode.id} node={viewerNode} officePreview={officePreview}
-        viewerUser={viewerUser}
-        close={() => setViewedFile(undefined)} saved={() => refresh(value => value + 1)} />}
+        officeEditing={officeEditing}
+        viewerUser={viewerUser} availableQuotaBytes={availableQuotaBytes}
+        close={() => setViewedFile(undefined)} saved={refreshTreeAndStorage} />}
     </main>
 
     {active && recycle && <main id="main-content" tabIndex={-1} className="shell-main"><button className="directory-trigger" aria-haspopup="dialog" aria-expanded={directoryOpen} aria-controls="file-directories"
-      onClick={() => setDirectoryOpen(true)}><PanelLeft size={16} />目录</button><RecycleBin administrator={administrator} changed={() => refresh(v => v + 1)} /></main>}
+      onClick={() => setDirectoryOpen(true)}><PanelLeft size={16} />目录</button><RecycleBin administrator={administrator} changed={refreshTreeAndStorage} /></main>}
     {active && grantId && grantNode?.id !== grantId && <main id="main-content" tabIndex={-1} className="shell-main"><button onClick={() => navigate(hash)}>返回目录</button></main>}
     {grantNode && <main id={active && grantNode.id === grantId ? 'main-content' : undefined} tabIndex={active && grantNode.id === grantId ? -1 : undefined} className="shell-main" hidden={!active || grantNode.id !== grantId}><GrantsPanel key={grantNode.id} administrator={administrator} node={grantNode} onDirtyChange={setGrantDirty}
       close={() => { navigate(hash); refresh(v => v + 1) }} /></main>}

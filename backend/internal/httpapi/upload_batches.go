@@ -2,15 +2,19 @@ package httpapi
 
 import (
 	"context"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/liumingjian/ftp-master/backend/internal/api"
-	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
-	"github.com/liumingjian/ftp-master/backend/internal/permission"
-	"github.com/minio/minio-go/v7"
+	"errors"
 	"net/http"
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/liumingjian/ftp-master/backend/internal/api"
+	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
+	"github.com/liumingjian/ftp-master/backend/internal/permission"
+	"github.com/liumingjian/ftp-master/backend/internal/recycle"
+	"github.com/minio/minio-go/v7"
 )
 
 func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBatchRequestObject) (api.InitiateUploadBatchResponseObject, error) {
@@ -23,6 +27,7 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 	}
 	files := map[string]bool{}
 	dirs := map[string]bool{}
+	var totalSize int64
 	for _, f := range r.Body.Files {
 		if !validUploadPath(f.Path) || files[f.Path] || f.Size < 0 || f.Size > 20000000000 {
 			return membershipFailure{400, "invalid folder manifest"}, nil
@@ -34,6 +39,7 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 			}
 		}
 		files[f.Path] = true
+		totalSize += f.Size
 		for d := path.Dir(f.Path); d != "."; d = path.Dir(d) {
 			dirs[d] = true
 		}
@@ -62,7 +68,7 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = lockMembershipAndTree(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)
@@ -77,6 +83,19 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 	parent, _ := snap.Node(r.Body.ParentId)
 	if parent.IsFile {
 		return membershipFailure{409, "destination must be a directory"}, nil
+	}
+	info := requestFrom(ctx)
+	decision, err := checkWriteQuota(ctx, q, info.session.User.ID, totalSize)
+	if err != nil {
+		return nil, err
+	}
+	if !decision.Allowed {
+		batchPath := snap.Path(r.Body.ParentId) + "/" + r.Body.Name
+		_ = tx.Rollback(ctx)
+		if err = s.recordQuotaExceededAudit(ctx, info, "upload", 0, batchPath, decision); err != nil {
+			return nil, err
+		}
+		return api.InitiateUploadBatch507JSONResponse{QuotaExceededJSONResponse: quotaExceededResponse(decision)}, nil
 	}
 	root, err := q.CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&r.Body.ParentId), Name: r.Body.Name})
 	if err != nil {
@@ -140,7 +159,8 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 		if err = q.AttachUploadBatch(ctx, sqlcdb.AttachUploadBatchParams{ID: sid, BatchID: pgtype.Text{String: id, Valid: true}, RelativePath: f.Path}); err != nil {
 			return nil, err
 		}
-		out = append(out, api.UploadSession{Id: sid, PartCount: int(count), PartSize: uploadPartSize})
+		batchID := id
+		out = append(out, api.UploadSession{Id: sid, PartCount: int(count), PartSize: uploadPartSize, BatchId: &batchID})
 	}
 	if !hasFiles {
 		if _, err = q.CreateGrant(ctx, sqlcdb.CreateGrantParams{NodeID: root.ID, PrincipalKind: "user", PrincipalID: requestFrom(ctx).session.User.ID, Rights: 63, Scope: "subtree", Creator: true}); err != nil {
@@ -165,5 +185,55 @@ func validUploadPath(value string) bool {
 	return true
 }
 func (e membershipFailure) VisitInitiateUploadBatchResponse(w http.ResponseWriter) error {
+	return e.write(w)
+}
+func (s *Server) CancelUploadBatch(ctx context.Context, r api.CancelUploadBatchRequestObject) (api.CancelUploadBatchResponseObject, error) {
+	tx, err := s.membership.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	// Serialize with upload publication and scheduler retention via the Shared Tree lock.
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+		return nil, err
+	}
+	q := sqlcdb.New(tx)
+	batch, err := q.GetUploadBatchForUpdate(ctx, r.Id)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && batch.OwnerID != requestFrom(ctx).session.User.ID) {
+		return membershipFailure{http.StatusNotFound, "upload batch not found"}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	hiddenNodes, err := q.ListUploadBatchNodeIDs(ctx, batch.ID)
+	if err != nil {
+		return nil, err
+	}
+	// RevealUploadBatch clears upload_batch_nodes while leaving upload_batches until 24h cleanup.
+	if len(hiddenNodes) == 0 {
+		return membershipFailure{http.StatusConflict, "upload batch already completed"}, nil
+	}
+	batchRef := pgtype.Text{String: batch.ID, Valid: true}
+	for _, step := range []func() error{
+		func() error { return q.QueueUploadBatchSessions(ctx, batchRef) },
+		func() error { return q.QueueUploadBatchVersions(ctx, batch.ID) },
+		func() error { return q.DeleteUploadBatchSessions(ctx, batchRef) },
+		func() error { return q.DeleteUploadBatchVersions(ctx, batch.ID) },
+		func() error { return q.DeleteUploadBatchNodes(ctx, batch.ID) },
+		func() error { return q.DeleteUploadBatch(ctx, batch.ID) },
+		func() error { return q.DeleteTreeNodesByIDs(ctx, hiddenNodes) },
+	} {
+		if err = step(); err != nil {
+			return nil, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	// Best-effort collection; durable storage_gc work retries on failure.
+	_ = recycle.Collect(ctx, s.membership.Pool, s.transfer.Client, s.transfer.Bucket)
+	return api.CancelUploadBatch204Response{}, nil
+}
+func (e membershipFailure) VisitCancelUploadBatchResponse(w http.ResponseWriter) error {
 	return e.write(w)
 }

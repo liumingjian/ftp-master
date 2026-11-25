@@ -26,6 +26,24 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for ConstrainingOrganizationStorageConstraintKind.
+const (
+	ConstrainingOrganizationStorageConstraintKindOrganizationPool  ConstrainingOrganizationStorageConstraintKind = "organization_pool"
+	ConstrainingOrganizationStorageConstraintKindOrganizationTotal ConstrainingOrganizationStorageConstraintKind = "organization_total"
+)
+
+// Valid indicates whether the value is a known member of the ConstrainingOrganizationStorageConstraintKind enum.
+func (e ConstrainingOrganizationStorageConstraintKind) Valid() bool {
+	switch e {
+	case ConstrainingOrganizationStorageConstraintKindOrganizationPool:
+		return true
+	case ConstrainingOrganizationStorageConstraintKindOrganizationTotal:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	Degraded HealthStatus = "degraded"
@@ -65,6 +83,81 @@ func (e OfficeEditFormat) Valid() bool {
 	case Xls:
 		return true
 	case Xlsx:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PendingUploadState.
+const (
+	Completing PendingUploadState = "completing"
+	Uploading  PendingUploadState = "uploading"
+)
+
+// Valid indicates whether the value is a known member of the PendingUploadState enum.
+func (e PendingUploadState) Valid() bool {
+	switch e {
+	case Completing:
+		return true
+	case Uploading:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QuotaExceededErrorCode.
+const (
+	QuotaExceededErrorCodeQuotaExceeded QuotaExceededErrorCode = "quota_exceeded"
+)
+
+// Valid indicates whether the value is a known member of the QuotaExceededErrorCode enum.
+func (e QuotaExceededErrorCode) Valid() bool {
+	switch e {
+	case QuotaExceededErrorCodeQuotaExceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QuotaExceededErrorScope.
+const (
+	QuotaExceededErrorScopeOrganizationPool  QuotaExceededErrorScope = "organization_pool"
+	QuotaExceededErrorScopeOrganizationTotal QuotaExceededErrorScope = "organization_total"
+	QuotaExceededErrorScopeUser              QuotaExceededErrorScope = "user"
+)
+
+// Valid indicates whether the value is a known member of the QuotaExceededErrorScope enum.
+func (e QuotaExceededErrorScope) Valid() bool {
+	switch e {
+	case QuotaExceededErrorScopeOrganizationPool:
+		return true
+	case QuotaExceededErrorScopeOrganizationTotal:
+		return true
+	case QuotaExceededErrorScopeUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SelfStorageSummaryEffectiveScope.
+const (
+	SelfStorageSummaryEffectiveScopeOrganizationPool  SelfStorageSummaryEffectiveScope = "organization_pool"
+	SelfStorageSummaryEffectiveScopeOrganizationTotal SelfStorageSummaryEffectiveScope = "organization_total"
+	SelfStorageSummaryEffectiveScopeUser              SelfStorageSummaryEffectiveScope = "user"
+)
+
+// Valid indicates whether the value is a known member of the SelfStorageSummaryEffectiveScope enum.
+func (e SelfStorageSummaryEffectiveScope) Valid() bool {
+	switch e {
+	case SelfStorageSummaryEffectiveScopeOrganizationPool:
+		return true
+	case SelfStorageSummaryEffectiveScopeOrganizationTotal:
+		return true
+	case SelfStorageSummaryEffectiveScopeUser:
 		return true
 	default:
 		return false
@@ -236,6 +329,21 @@ func (e SetUserStatusJSONBodyStatus) Valid() bool {
 	}
 }
 
+// ConstrainingOrganizationStorage Aggregate storage state of the single tightest constraining ancestor Organization; never exposes peer Users or the Organization hierarchy.
+type ConstrainingOrganizationStorage struct {
+	AllocatedBytes           int64                                         `json:"allocatedBytes"`
+	ConstraintKind           ConstrainingOrganizationStorageConstraintKind `json:"constraintKind"`
+	Name                     string                                        `json:"name"`
+	QuotaBytes               int64                                         `json:"quotaBytes"`
+	RemainingBytes           int64                                         `json:"remainingBytes"`
+	UnallocatedPoolBytes     int64                                         `json:"unallocatedPoolBytes"`
+	UnallocatedPoolUsedBytes int64                                         `json:"unallocatedPoolUsedBytes"`
+	UsedBytes                int64                                         `json:"usedBytes"`
+}
+
+// ConstrainingOrganizationStorageConstraintKind defines model for ConstrainingOrganizationStorage.ConstraintKind.
+type ConstrainingOrganizationStorageConstraintKind string
+
 // CurrentUser defines model for CurrentUser.
 type CurrentUser struct {
 	DisplayName     string `json:"displayName"`
@@ -308,20 +416,33 @@ type HealthStatus string
 
 // ManagedUser defines model for ManagedUser.
 type ManagedUser struct {
+	// CommittedBytes Deduplicated retained File Version bytes attributed to this User.
+	CommittedBytes int64  `json:"committedBytes"`
 	DisplayName    string `json:"displayName"`
 	Id             int64  `json:"id"`
 	OrganizationId int64  `json:"organizationId"`
-	Status         string `json:"status"`
-	Username       string `json:"username"`
+
+	// QuotaBytes Configured User Quota in bytes; null means unlimited, 0 blocks new storage.
+	QuotaBytes *int64 `json:"quotaBytes"`
+
+	// ReservedBytes Active incomplete upload reservation bytes for this User.
+	ReservedBytes int64  `json:"reservedBytes"`
+	Status        string `json:"status"`
+
+	// UsedBytes Total live Storage Usage (committedBytes + reservedBytes) for this User.
+	UsedBytes int64  `json:"usedBytes"`
+	Username  string `json:"username"`
 }
 
 // OfficeEdit defines model for OfficeEdit.
 type OfficeEdit struct {
-	DeliveryCheckUrl string           `json:"deliveryCheckUrl"`
-	DocumentUrl      string           `json:"documentUrl"`
-	ExpiresAt        time.Time        `json:"expiresAt"`
-	Format           OfficeEditFormat `json:"format"`
-	PermitId         string           `json:"permitId"`
+	// AvailableQuotaBytes Effective remaining Storage Quota in bytes for the caller on write-mode edit permits; omitted for read-only previews and null when unlimited.
+	AvailableQuotaBytes *int64           `json:"availableQuotaBytes,omitempty"`
+	DeliveryCheckUrl    string           `json:"deliveryCheckUrl"`
+	DocumentUrl         string           `json:"documentUrl"`
+	ExpiresAt           time.Time        `json:"expiresAt"`
+	Format              OfficeEditFormat `json:"format"`
+	PermitId            string           `json:"permitId"`
 
 	// SaveUrl Present for edit permits only.
 	SaveUrl   *string `json:"saveUrl,omitempty"`
@@ -339,15 +460,38 @@ type OfficeEditPolicy struct {
 
 // Organization defines model for Organization.
 type Organization struct {
-	Id       int64  `json:"id"`
-	Name     string `json:"name"`
-	ParentId *int64 `json:"parentId"`
+	// AllocatedBytes Sum of explicit Storage Quotas on nearest capped descendant Organizations and Users.
+	AllocatedBytes int64 `json:"allocatedBytes"`
+
+	// CommittedBytes Deduplicated retained File Version bytes across current Users in this Organization's subtree.
+	CommittedBytes int64  `json:"committedBytes"`
+	Id             int64  `json:"id"`
+	Name           string `json:"name"`
+	ParentId       *int64 `json:"parentId"`
+
+	// QuotaBytes Configured Organization Quota in bytes; null means unlimited.
+	QuotaBytes *int64 `json:"quotaBytes"`
+
+	// ReservedBytes Active incomplete upload reservation bytes across current Users in this Organization's subtree.
+	ReservedBytes int64 `json:"reservedBytes"`
+
+	// UnallocatedBytes Remaining unallocated pool (quotaBytes - allocatedBytes) when quotaBytes is set; null when unlimited.
+	UnallocatedBytes *int64 `json:"unallocatedBytes"`
+
+	// UsedBytes Total live Storage Usage (committedBytes + reservedBytes) across this Organization's subtree.
+	UsedBytes int64 `json:"usedBytes"`
 }
 
 // OrganizationInput defines model for OrganizationInput.
 type OrganizationInput struct {
 	Name     string `json:"name"`
 	ParentId *int64 `json:"parentId,omitempty"`
+
+	// QuotaBytes Optional Organization Quota in bytes; null means unlimited, 0 blocks new storage.
+	QuotaBytes *int64 `json:"quotaBytes,omitempty"`
+
+	// UpdateQuota Optional for PATCH /organizations/{id}. When true, apply quotaBytes (including null to clear to unlimited); when false, preserve the existing Organization Quota; when omitted, preserve the existing Organization Quota unless quotaBytes is provided.
+	UpdateQuota *bool `json:"updateQuota,omitempty"`
 }
 
 // Organizations defines model for Organizations.
@@ -364,6 +508,31 @@ type PartURLs = []struct {
 	Url    string `json:"url"`
 }
 
+// PendingUpload defines model for PendingUpload.
+type PendingUpload struct {
+	CreatedAt time.Time          `json:"createdAt"`
+	Id        string             `json:"id"`
+	Name      string             `json:"name"`
+	ParentId  int64              `json:"parentId"`
+	Size      int64              `json:"size"`
+	State     PendingUploadState `json:"state"`
+}
+
+// PendingUploadState defines model for PendingUpload.State.
+type PendingUploadState string
+
+// PendingUploadBatch defines model for PendingUploadBatch.
+type PendingUploadBatch struct {
+	CommittedBytes int64     `json:"committedBytes"`
+	CreatedAt      time.Time `json:"createdAt"`
+	FileCount      int       `json:"fileCount"`
+	Id             string    `json:"id"`
+	Name           string    `json:"name"`
+	ParentId       int64     `json:"parentId"`
+	ReservedBytes  int64     `json:"reservedBytes"`
+	TotalBytes     int64     `json:"totalBytes"`
+}
+
 // PermissionInspection defines model for PermissionInspection.
 type PermissionInspection struct {
 	Administrator bool           `json:"administrator"`
@@ -372,6 +541,22 @@ type PermissionInspection struct {
 	Traversable   bool           `json:"traversable"`
 	UserId        int64          `json:"userId"`
 }
+
+// QuotaExceededError defines model for QuotaExceededError.
+type QuotaExceededError struct {
+	AvailableBytes   int64                   `json:"availableBytes"`
+	Code             QuotaExceededErrorCode  `json:"code"`
+	Message          string                  `json:"message"`
+	OrganizationName *string                 `json:"organizationName,omitempty"`
+	RequiredBytes    int64                   `json:"requiredBytes"`
+	Scope            QuotaExceededErrorScope `json:"scope"`
+}
+
+// QuotaExceededErrorCode defines model for QuotaExceededError.Code.
+type QuotaExceededErrorCode string
+
+// QuotaExceededErrorScope defines model for QuotaExceededError.Scope.
+type QuotaExceededErrorScope string
 
 // Registration defines model for Registration.
 type Registration struct {
@@ -388,6 +573,41 @@ type RegistrationInput struct {
 	Password         string `json:"password"`
 	Username         string `json:"username"`
 }
+
+// SelfStorageSummary defines model for SelfStorageSummary.
+type SelfStorageSummary struct {
+	// AvailableBytes Effective remaining writable bytes; null only when neither User nor any ancestor Organization is capped.
+	AvailableBytes *int64 `json:"availableBytes"`
+
+	// CommittedBytes Caller's own deduplicated retained File Version bytes.
+	CommittedBytes int64 `json:"committedBytes"`
+
+	// ConstrainingOrganization Aggregate storage state of the single tightest constraining ancestor Organization; never exposes peer Users or the Organization hierarchy.
+	ConstrainingOrganization *ConstrainingOrganizationStorage `json:"constrainingOrganization"`
+
+	// EffectiveLimitBytes Effective storage ceiling paired with effectiveUsedBytes for progress display; null when completely unlimited.
+	EffectiveLimitBytes *int64 `json:"effectiveLimitBytes"`
+
+	// EffectiveScope Active limiting quota scope; null when completely unlimited.
+	EffectiveScope *SelfStorageSummaryEffectiveScope `json:"effectiveScope"`
+
+	// EffectiveUsedBytes Storage Usage paired with effectiveLimitBytes.
+	EffectiveUsedBytes int64                `json:"effectiveUsedBytes"`
+	PendingBatches     []PendingUploadBatch `json:"pendingBatches"`
+	PendingUploads     []PendingUpload      `json:"pendingUploads"`
+
+	// QuotaBytes Caller's personal User Quota in bytes; null means unlimited.
+	QuotaBytes *int64 `json:"quotaBytes"`
+
+	// ReservedBytes Caller's own active incomplete upload reservation bytes.
+	ReservedBytes int64 `json:"reservedBytes"`
+
+	// UsedBytes Caller's own total live Storage Usage (committedBytes + reservedBytes).
+	UsedBytes int64 `json:"usedBytes"`
+}
+
+// SelfStorageSummaryEffectiveScope Active limiting quota scope; null when completely unlimited.
+type SelfStorageSummaryEffectiveScope string
 
 // SignInRequest defines model for SignInRequest.
 type SignInRequest struct {
@@ -503,9 +723,10 @@ type UploadReceipt struct {
 
 // UploadSession defines model for UploadSession.
 type UploadSession struct {
-	Id        string `json:"id"`
-	PartCount int    `json:"partCount"`
-	PartSize  int64  `json:"partSize"`
+	BatchId   *string `json:"batchId,omitempty"`
+	Id        string  `json:"id"`
+	PartCount int     `json:"partCount"`
+	PartSize  int64   `json:"partSize"`
 }
 
 // UserGroup defines model for UserGroup.
@@ -522,6 +743,9 @@ type UserGroupInput struct {
 
 // UserGroups defines model for UserGroups.
 type UserGroups = []UserGroup
+
+// QuotaExceeded defines model for QuotaExceeded.
+type QuotaExceeded = QuotaExceededError
 
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
@@ -681,11 +905,23 @@ type ImportUsersJSONBody struct {
 // MoveUserJSONBody defines parameters for MoveUser.
 type MoveUserJSONBody struct {
 	OrganizationId int64 `json:"organizationId"`
+
+	// QuotaBytes Target User Quota in bytes when updating quota atomically; null clears to unlimited, 0 blocks new storage.
+	QuotaBytes *int64 `json:"quotaBytes,omitempty"`
+
+	// UpdateQuota When true, atomically update the User Quota to quotaBytes alongside the Organization move; when false or omitted with quotaBytes omitted, preserve the existing User Quota.
+	UpdateQuota *bool `json:"updateQuota,omitempty"`
 }
 
 // ResetPasswordJSONBody defines parameters for ResetPassword.
 type ResetPasswordJSONBody struct {
 	NewPassword string `json:"newPassword"`
+}
+
+// SetUserQuotaJSONBody defines parameters for SetUserQuota.
+type SetUserQuotaJSONBody struct {
+	// QuotaBytes Target User Quota in bytes; null clears to unlimited, 0 blocks new storage.
+	QuotaBytes *int64 `json:"quotaBytes,omitempty"`
 }
 
 // SetUserStatusJSONBody defines parameters for SetUserStatus.
@@ -777,6 +1013,9 @@ type MoveUserJSONRequestBody MoveUserJSONBody
 // ResetPasswordJSONRequestBody defines body for ResetPassword for application/json ContentType.
 type ResetPasswordJSONRequestBody ResetPasswordJSONBody
 
+// SetUserQuotaJSONRequestBody defines body for SetUserQuota for application/json ContentType.
+type SetUserQuotaJSONRequestBody SetUserQuotaJSONBody
+
 // SetUserStatusJSONRequestBody defines body for SetUserStatus for application/json ContentType.
 type SetUserStatusJSONRequestBody SetUserStatusJSONBody
 
@@ -797,6 +1036,9 @@ type ServerInterface interface {
 
 	// (GET /managed-users)
 	ListManagedUsers(w http.ResponseWriter, r *http.Request)
+	// GetMyStorage Read the signed-in User's own Storage Usage, User Quota, effective headroom, constraining ancestor Organization aggregate status, and pending uploads/batches.
+	// (GET /me/storage)
+	GetMyStorage(w http.ResponseWriter, r *http.Request)
 
 	// (GET /office-edit-policy)
 	GetOfficeEditPolicy(w http.ResponseWriter, r *http.Request)
@@ -924,6 +1166,9 @@ type ServerInterface interface {
 	// (POST /upload-batches)
 	InitiateUploadBatch(w http.ResponseWriter, r *http.Request)
 
+	// (DELETE /upload-batches/{id})
+	CancelUploadBatch(w http.ResponseWriter, r *http.Request, id string)
+
 	// (GET /upload-policy)
 	GetUploadPolicy(w http.ResponseWriter, r *http.Request)
 
@@ -932,6 +1177,9 @@ type ServerInterface interface {
 
 	// (POST /uploads)
 	InitiateUpload(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /uploads/{id})
+	CancelUpload(w http.ResponseWriter, r *http.Request, id string)
 
 	// (POST /uploads/{id}/complete)
 	CompleteUpload(w http.ResponseWriter, r *http.Request, id string, params CompleteUploadParams)
@@ -962,6 +1210,9 @@ type ServerInterface interface {
 	// ResetPassword Reset a User's password as an Administrator.
 	// (PUT /users/{userId}/password)
 	ResetPassword(w http.ResponseWriter, r *http.Request, userId int64)
+
+	// (PUT /users/{userId}/quota)
+	SetUserQuota(w http.ResponseWriter, r *http.Request, userId int64)
 
 	// (PATCH /users/{userId}/status)
 	SetUserStatus(w http.ResponseWriter, r *http.Request, userId int64)
@@ -1077,6 +1328,20 @@ func (siw *ServerInterfaceWrapper) ListManagedUsers(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListManagedUsers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMyStorage operation middleware
+func (siw *ServerInterfaceWrapper) GetMyStorage(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMyStorage(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2173,6 +2438,32 @@ func (siw *ServerInterfaceWrapper) InitiateUploadBatch(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// CancelUploadBatch operation middleware
+func (siw *ServerInterfaceWrapper) CancelUploadBatch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelUploadBatch(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUploadPolicy operation middleware
 func (siw *ServerInterfaceWrapper) GetUploadPolicy(w http.ResponseWriter, r *http.Request) {
 
@@ -2206,6 +2497,32 @@ func (siw *ServerInterfaceWrapper) InitiateUpload(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.InitiateUpload(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelUpload operation middleware
+func (siw *ServerInterfaceWrapper) CancelUpload(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelUpload(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2464,6 +2781,32 @@ func (siw *ServerInterfaceWrapper) ResetPassword(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// SetUserQuota operation middleware
+func (siw *ServerInterfaceWrapper) SetUserQuota(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetUserQuota(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // SetUserStatus operation middleware
 func (siw *ServerInterfaceWrapper) SetUserStatus(w http.ResponseWriter, r *http.Request) {
 
@@ -2628,7 +2971,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/audit/{id}/transfer-series", wrapper.GetAuditTransferSeries)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/audit/query", wrapper.QueryAudit)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/upload-batches", wrapper.InitiateUploadBatch)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/upload-batches/{id}", wrapper.CancelUploadBatch)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads", wrapper.InitiateUpload)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/uploads/{id}", wrapper.CancelUpload)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/uploads/{id}/parts", wrapper.ListUploadParts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/uploads/{id}/parts", wrapper.IssueUploadParts)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/uploads/{id}/parts/{partNumber}", wrapper.UploadPart)
@@ -2658,6 +3003,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/session", wrapper.SignOut)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/session", wrapper.SignIn)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/me/storage", wrapper.GetMyStorage)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/password", wrapper.ChangePassword)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/users/{userId}/password", wrapper.ResetPassword)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/organizations", wrapper.ListOrganizations)
@@ -2669,11 +3015,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/user-groups/{id}/members", wrapper.SetUserGroupMembers)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/users/{userId}/status", wrapper.SetUserStatus)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/users/{userId}/organization", wrapper.MoveUser)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/users/{userId}/quota", wrapper.SetUserQuota)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/managed-users", wrapper.ListManagedUsers)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/users/import", wrapper.ImportUsers)
 
 	return m
 }
+
+type QuotaExceededJSONResponse QuotaExceededError
 
 type UnauthorizedJSONResponse Error
 
@@ -2818,6 +3167,20 @@ func (response StartOfficeEdit201JSONResponse) VisitStartOfficeEditResponse(w ht
 	return err
 }
 
+type StartOfficeEdit507JSONResponse struct{ QuotaExceededJSONResponse }
+
+func (response StartOfficeEdit507JSONResponse) VisitStartOfficeEditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(507)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type StartOfficeEditdefaultJSONResponse struct {
 	Body       Error
 	StatusCode int
@@ -2897,6 +3260,58 @@ type ListManagedUsersdefaultJSONResponse struct {
 }
 
 func (response ListManagedUsersdefaultJSONResponse) VisitListManagedUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyStorageRequestObject struct {
+}
+
+type GetMyStorageResponseObject interface {
+	VisitGetMyStorageResponse(w http.ResponseWriter) error
+}
+
+type GetMyStorage200JSONResponse SelfStorageSummary
+
+func (response GetMyStorage200JSONResponse) VisitGetMyStorageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyStorage401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetMyStorage401JSONResponse) VisitGetMyStorageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyStoragedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetMyStoragedefaultJSONResponse) VisitGetMyStorageResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3095,6 +3510,24 @@ func (response SaveOffice200JSONResponse) VisitSaveOfficeResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveOffice507JSONResponse struct {
+	Data    *map[string]interface{} `json:"Data"`
+	Message string                  `json:"Message"`
+	Success bool                    `json:"Success"`
+}
+
+func (response SaveOffice507JSONResponse) VisitSaveOfficeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(507)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4639,8 +5072,10 @@ type OpenTextResponseObject interface {
 }
 
 type OpenText200JSONResponse struct {
-	Content   string `json:"content"`
-	VersionId int64  `json:"versionId"`
+	// AvailableQuotaBytes Effective remaining Storage Quota in bytes for the caller; null or omitted when unlimited.
+	AvailableQuotaBytes *int64 `json:"availableQuotaBytes,omitempty"`
+	Content             string `json:"content"`
+	VersionId           int64  `json:"versionId"`
 }
 
 func (response OpenText200JSONResponse) VisitOpenTextResponse(w http.ResponseWriter) error {
@@ -4651,6 +5086,20 @@ func (response OpenText200JSONResponse) VisitOpenTextResponse(w http.ResponseWri
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenText507JSONResponse struct{ QuotaExceededJSONResponse }
+
+func (response OpenText507JSONResponse) VisitOpenTextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(507)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4691,6 +5140,20 @@ func (response SaveText201JSONResponse) VisitSaveTextResponse(w http.ResponseWri
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveText507JSONResponse struct{ QuotaExceededJSONResponse }
+
+func (response SaveText507JSONResponse) VisitSaveTextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(507)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4813,12 +5276,59 @@ func (response InitiateUploadBatch201JSONResponse) VisitInitiateUploadBatchRespo
 	return err
 }
 
+type InitiateUploadBatch507JSONResponse struct{ QuotaExceededJSONResponse }
+
+func (response InitiateUploadBatch507JSONResponse) VisitInitiateUploadBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(507)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type InitiateUploadBatchdefaultJSONResponse struct {
 	Body       Error
 	StatusCode int
 }
 
 func (response InitiateUploadBatchdefaultJSONResponse) VisitInitiateUploadBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelUploadBatchRequestObject struct {
+	Id string `json:"id"`
+}
+
+type CancelUploadBatchResponseObject interface {
+	VisitCancelUploadBatchResponse(w http.ResponseWriter) error
+}
+
+type CancelUploadBatch204Response struct {
+}
+
+func (response CancelUploadBatch204Response) VisitCancelUploadBatchResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type CancelUploadBatchdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CancelUploadBatchdefaultJSONResponse) VisitCancelUploadBatchResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4929,12 +5439,59 @@ func (response InitiateUpload201JSONResponse) VisitInitiateUploadResponse(w http
 	return err
 }
 
+type InitiateUpload507JSONResponse struct{ QuotaExceededJSONResponse }
+
+func (response InitiateUpload507JSONResponse) VisitInitiateUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(507)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type InitiateUploaddefaultJSONResponse struct {
 	Body       Error
 	StatusCode int
 }
 
 func (response InitiateUploaddefaultJSONResponse) VisitInitiateUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelUploadRequestObject struct {
+	Id string `json:"id"`
+}
+
+type CancelUploadResponseObject interface {
+	VisitCancelUploadResponse(w http.ResponseWriter) error
+}
+
+type CancelUpload204Response struct {
+}
+
+func (response CancelUpload204Response) VisitCancelUploadResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type CancelUploaddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CancelUploaddefaultJSONResponse) VisitCancelUploadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5449,19 +6006,72 @@ func (response MoveUser204Response) VisitMoveUserResponse(w http.ResponseWriter)
 	return nil
 }
 
-type MoveUserdefaultJSONResponse struct {
-	Body       Error
-	StatusCode int
-}
+type MoveUser400JSONResponse Error
 
-func (response MoveUserdefaultJSONResponse) VisitMoveUserResponse(w http.ResponseWriter) error {
+func (response MoveUser400JSONResponse) VisitMoveUserResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MoveUser401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response MoveUser401JSONResponse) VisitMoveUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MoveUser403JSONResponse Error
+
+func (response MoveUser403JSONResponse) VisitMoveUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MoveUser404JSONResponse Error
+
+func (response MoveUser404JSONResponse) VisitMoveUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MoveUser409JSONResponse Error
+
+func (response MoveUser409JSONResponse) VisitMoveUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5496,6 +6106,99 @@ func (response ResetPassworddefaultJSONResponse) VisitResetPasswordResponse(w ht
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserQuotaRequestObject struct {
+	UserId int64 `json:"userId"`
+	Body   *SetUserQuotaJSONRequestBody
+}
+
+type SetUserQuotaResponseObject interface {
+	VisitSetUserQuotaResponse(w http.ResponseWriter) error
+}
+
+type SetUserQuota200JSONResponse ManagedUser
+
+func (response SetUserQuota200JSONResponse) VisitSetUserQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserQuota400JSONResponse Error
+
+func (response SetUserQuota400JSONResponse) VisitSetUserQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserQuota401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetUserQuota401JSONResponse) VisitSetUserQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserQuota403JSONResponse Error
+
+func (response SetUserQuota403JSONResponse) VisitSetUserQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserQuota404JSONResponse Error
+
+func (response SetUserQuota404JSONResponse) VisitSetUserQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserQuota409JSONResponse Error
+
+func (response SetUserQuota409JSONResponse) VisitSetUserQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5551,6 +6254,9 @@ type StrictServerInterface interface {
 
 	// (GET /managed-users)
 	ListManagedUsers(ctx context.Context, request ListManagedUsersRequestObject) (ListManagedUsersResponseObject, error)
+	// GetMyStorage Read the signed-in User's own Storage Usage, User Quota, effective headroom, constraining ancestor Organization aggregate status, and pending uploads/batches.
+	// (GET /me/storage)
+	GetMyStorage(ctx context.Context, request GetMyStorageRequestObject) (GetMyStorageResponseObject, error)
 
 	// (GET /office-edit-policy)
 	GetOfficeEditPolicy(ctx context.Context, request GetOfficeEditPolicyRequestObject) (GetOfficeEditPolicyResponseObject, error)
@@ -5678,6 +6384,9 @@ type StrictServerInterface interface {
 	// (POST /upload-batches)
 	InitiateUploadBatch(ctx context.Context, request InitiateUploadBatchRequestObject) (InitiateUploadBatchResponseObject, error)
 
+	// (DELETE /upload-batches/{id})
+	CancelUploadBatch(ctx context.Context, request CancelUploadBatchRequestObject) (CancelUploadBatchResponseObject, error)
+
 	// (GET /upload-policy)
 	GetUploadPolicy(ctx context.Context, request GetUploadPolicyRequestObject) (GetUploadPolicyResponseObject, error)
 
@@ -5686,6 +6395,9 @@ type StrictServerInterface interface {
 
 	// (POST /uploads)
 	InitiateUpload(ctx context.Context, request InitiateUploadRequestObject) (InitiateUploadResponseObject, error)
+
+	// (DELETE /uploads/{id})
+	CancelUpload(ctx context.Context, request CancelUploadRequestObject) (CancelUploadResponseObject, error)
 
 	// (POST /uploads/{id}/complete)
 	CompleteUpload(ctx context.Context, request CompleteUploadRequestObject) (CompleteUploadResponseObject, error)
@@ -5716,6 +6428,9 @@ type StrictServerInterface interface {
 	// ResetPassword Reset a User's password as an Administrator.
 	// (PUT /users/{userId}/password)
 	ResetPassword(ctx context.Context, request ResetPasswordRequestObject) (ResetPasswordResponseObject, error)
+
+	// (PUT /users/{userId}/quota)
+	SetUserQuota(ctx context.Context, request SetUserQuotaRequestObject) (SetUserQuotaResponseObject, error)
 
 	// (PATCH /users/{userId}/status)
 	SetUserStatus(ctx context.Context, request SetUserStatusRequestObject) (SetUserStatusResponseObject, error)
@@ -5892,6 +6607,30 @@ func (sh *strictHandler) ListManagedUsers(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListManagedUsersResponseObject); ok {
 		if err := validResponse.VisitListManagedUsersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMyStorage operation middleware
+func (sh *strictHandler) GetMyStorage(w http.ResponseWriter, r *http.Request) {
+	var request GetMyStorageRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMyStorage(ctx, request.(GetMyStorageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMyStorage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMyStorageResponseObject); ok {
+		if err := validResponse.VisitGetMyStorageResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -7090,6 +7829,32 @@ func (sh *strictHandler) InitiateUploadBatch(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// CancelUploadBatch operation middleware
+func (sh *strictHandler) CancelUploadBatch(w http.ResponseWriter, r *http.Request, id string) {
+	var request CancelUploadBatchRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelUploadBatch(ctx, request.(CancelUploadBatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelUploadBatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CancelUploadBatchResponseObject); ok {
+		if err := validResponse.VisitCancelUploadBatchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetUploadPolicy operation middleware
 func (sh *strictHandler) GetUploadPolicy(w http.ResponseWriter, r *http.Request) {
 	var request GetUploadPolicyRequestObject
@@ -7169,6 +7934,32 @@ func (sh *strictHandler) InitiateUpload(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(InitiateUploadResponseObject); ok {
 		if err := validResponse.VisitInitiateUploadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelUpload operation middleware
+func (sh *strictHandler) CancelUpload(w http.ResponseWriter, r *http.Request, id string) {
+	var request CancelUploadRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelUpload(ctx, request.(CancelUploadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelUpload")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CancelUploadResponseObject); ok {
+		if err := validResponse.VisitCancelUploadResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -7476,6 +8267,39 @@ func (sh *strictHandler) ResetPassword(w http.ResponseWriter, r *http.Request, u
 	}
 }
 
+// SetUserQuota operation middleware
+func (sh *strictHandler) SetUserQuota(w http.ResponseWriter, r *http.Request, userId int64) {
+	var request SetUserQuotaRequestObject
+
+	request.UserId = userId
+
+	var body SetUserQuotaJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetUserQuota(ctx, request.(SetUserQuotaRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetUserQuota")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetUserQuotaResponseObject); ok {
+		if err := validResponse.VisitSetUserQuotaResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // SetUserStatus operation middleware
 func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, userId int64) {
 	var request SetUserStatusRequestObject
@@ -7514,113 +8338,139 @@ func (sh *strictHandler) SetUserStatus(w http.ResponseWriter, r *http.Request, u
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"b/8/AAD//w==",
+	"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",
+	"HsxwRoK7D3f/EwAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

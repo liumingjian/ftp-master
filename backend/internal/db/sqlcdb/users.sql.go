@@ -81,7 +81,7 @@ func (q *Queries) CreateInitialAdministrator(ctx context.Context, arg CreateInit
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE id = $1
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch, quota_bytes FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -98,12 +98,13 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.OrganizationID,
 		&i.OrganizationHint,
 		&i.SessionEpoch,
+		&i.QuotaBytes,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE lower(username) = lower($1)
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch, quota_bytes FROM users WHERE lower(username) = lower($1)
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -120,12 +121,13 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.OrganizationID,
 		&i.OrganizationHint,
 		&i.SessionEpoch,
+		&i.QuotaBytes,
 	)
 	return i, err
 }
 
 const listManagedUsers = `-- name: ListManagedUsers :many
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE status IN ('active','deactivated') ORDER BY username
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch, quota_bytes FROM users WHERE status IN ('active','deactivated') ORDER BY username
 `
 
 func (q *Queries) ListManagedUsers(ctx context.Context) ([]User, error) {
@@ -148,6 +150,7 @@ func (q *Queries) ListManagedUsers(ctx context.Context) ([]User, error) {
 			&i.OrganizationID,
 			&i.OrganizationHint,
 			&i.SessionEpoch,
+			&i.QuotaBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -170,6 +173,41 @@ type MoveUserParams struct {
 
 func (q *Queries) MoveUser(ctx context.Context, arg MoveUserParams) (int64, error) {
 	result, err := q.db.Exec(ctx, moveUser, arg.OrganizationID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const moveUserWithQuota = `-- name: MoveUserWithQuota :execrows
+UPDATE users SET organization_id = $1, quota_bytes = $2 WHERE id = $3 AND status IN ('active', 'deactivated')
+`
+
+type MoveUserWithQuotaParams struct {
+	OrganizationID int64
+	QuotaBytes     pgtype.Int8
+	ID             int64
+}
+
+func (q *Queries) MoveUserWithQuota(ctx context.Context, arg MoveUserWithQuotaParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveUserWithQuota, arg.OrganizationID, arg.QuotaBytes, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setUserQuota = `-- name: SetUserQuota :execrows
+UPDATE users SET quota_bytes = $1 WHERE id = $2 AND status IN ('active', 'deactivated')
+`
+
+type SetUserQuotaParams struct {
+	QuotaBytes pgtype.Int8
+	ID         int64
+}
+
+func (q *Queries) SetUserQuota(ctx context.Context, arg SetUserQuotaParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserQuota, arg.QuotaBytes, arg.ID)
 	if err != nil {
 		return 0, err
 	}

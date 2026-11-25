@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { FolderInput, History, Info, KeyRound, Link2, Pencil, PencilLine, ShieldCheck, Trash2 } from 'lucide-react'
 import { editableOfficeVersion, officeMissingPluginMessage } from './FileViewer'
 import { canEditText } from './TextEditor'
+import { editQuotaWarning } from './quota'
 import type { components } from './api/schema.gen'
 
 type Node = components['schemas']['TreeNode']
@@ -21,6 +22,7 @@ export function ItemActionMenu({
   anchor,
   officeEditing,
   canMove,
+  availableQuotaBytes,
   onClose,
   onEditText,
   onOfficeEditOpen,
@@ -35,6 +37,7 @@ export function ItemActionMenu({
   anchor: MenuAnchor
   officeEditing: boolean
   canMove: boolean
+  availableQuotaBytes?: number | null
   onClose: (restoreFocus?: boolean) => void
   onEditText: (node: Node) => void
   onOfficeEditOpen: () => void
@@ -132,18 +135,21 @@ export function ItemActionMenu({
   }, [onClose])
 
   const officeVersion = officeEditing ? editableOfficeVersion(node) : undefined
+  const editWarning = node.latestVersion ? editQuotaWarning(availableQuotaBytes, node.latestVersion.size) : undefined
 
   const group1: ReactNode[] = []
   if (canEditText(node)) {
     group1.push(
-      <button key="edit-text" type="button" role="menuitem" onClick={() => { onClose(false); onEditText(node) }}>
+      <button key="edit-text" type="button" role="menuitem" className={editWarning ? 'quota-tight' : undefined}
+        title={editWarning} onClick={() => { onClose(false); onEditText(node) }}>
         <Pencil size={16} aria-hidden="true" />编辑文本
       </button>,
     )
   }
   if (officeVersion) {
     group1.push(
-      <a key="edit-office" role="menuitem" className="item-menu-link" href={`/api/files/${node.id}/office-edits`}
+      <a key="edit-office" role="menuitem" className={editWarning ? 'item-menu-link quota-tight' : 'item-menu-link'}
+        href={`/api/files/${node.id}/office-edits`} title={editWarning}
         data-ftp-office-edit="1" data-ftp-office-version={officeVersion.id} target="_blank" rel="noopener"
         onAuxClick={event => event.preventDefault()}
         onClick={event => {

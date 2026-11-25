@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowLeft } from 'lucide-react'
+import { AccountStorageSection, type StorageState } from './AccountStorageSection'
 import { api, type CurrentUser } from './api/client'
 import { avatarInitial } from './avatar'
 import { PageHeading } from './PageHeading'
@@ -9,10 +10,12 @@ export function PasswordPanel({
   user,
   organizationPath,
   onBackToFiles,
+  storage,
 }: {
   user: CurrentUser
   organizationPath?: string
   onBackToFiles: () => void
+  storage: StorageState
 }) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -57,55 +60,59 @@ export function PasswordPanel({
           <ArrowLeft size={16} aria-hidden="true" />返回文件
         </button>} />
 
-      <div className="panel account-card">
-        <div className="account-identity" aria-label="账号信息">
-          <span className="avatar account-avatar" aria-hidden="true">{avatarInitial(user.displayName)}</span>
-          <div className="account-identity-text">
-            <div className="account-title-row">
-              <strong>{user.displayName}</strong>
-              <span className="pill account-role">{user.isAdministrator ? '系统管理员' : '授权用户'}</span>
-            </div>
-            <p className="account-meta">
-              <span className="account-mono">{user.username}</span>
-              <span aria-hidden="true">·</span>
-              <span className="account-mono tabular-nums">#{user.id}</span>
-              {organizationPath && <>
+      <div className="account-stack">
+        <div className="panel account-card">
+          <div className="account-identity" aria-label="账号信息">
+            <span className="avatar account-avatar" aria-hidden="true">{avatarInitial(user.displayName)}</span>
+            <div className="account-identity-text">
+              <div className="account-title-row">
+                <strong>{user.displayName}</strong>
+                <span className="pill account-role">{user.isAdministrator ? '系统管理员' : '授权用户'}</span>
+              </div>
+              <p className="account-meta">
+                <span className="account-mono">{user.username}</span>
                 <span aria-hidden="true">·</span>
-                <span>{organizationPath}</span>
-              </>}
-            </p>
+                <span className="account-mono tabular-nums">#{user.id}</span>
+                {organizationPath && <>
+                  <span aria-hidden="true">·</span>
+                  <span>{organizationPath}</span>
+                </>}
+              </p>
+            </div>
           </div>
+
+          <form className="panel-form account-password-form" onSubmit={event => void submit(event)}>
+            <input type="hidden" name="username" value={user.username} autoComplete="username" />
+            <div className="account-password-fields">
+              <PasswordInput label="当前密码" name="currentPassword" autoComplete="current-password"
+                required maxLength={1024} value={currentPassword}
+                onChange={event => { setCurrentPassword(event.target.value); setFeedback(undefined) }} />
+              <PasswordInput label="新密码" name="newPassword" autoComplete="new-password"
+                required maxLength={1024} value={newPassword}
+                onChange={event => { setNewPassword(event.target.value); setFeedback(undefined) }} />
+              <div className="account-confirm-field">
+                <PasswordInput label="确认新密码" name="confirmPassword" autoComplete="new-password"
+                  required maxLength={1024} value={confirmPassword}
+                  aria-invalid={mismatch || undefined}
+                  aria-describedby={mismatch ? 'password-mismatch-hint' : undefined}
+                  onChange={event => { setConfirmPassword(event.target.value); setFeedback(undefined) }} />
+                {mismatch && <small id="password-mismatch-hint" className="danger account-inline-error">两次输入的新密码不一致</small>}
+              </div>
+            </div>
+
+            <div className="account-form-footer">
+              <div className="account-footer-left">
+                <button className="primary" disabled={busy}>{busy ? '正在修改…' : '修改密码'}</button>
+                {feedback && (
+                  <p className={`banner ${feedback.ok ? 'success' : 'error'}`} role="status">{feedback.text}</p>
+                )}
+              </div>
+              {!feedback && <span className="account-side-effect">修改后当前会话保持有效</span>}
+            </div>
+          </form>
         </div>
 
-        <form className="panel-form account-password-form" onSubmit={event => void submit(event)}>
-          <input type="hidden" name="username" value={user.username} autoComplete="username" />
-          <div className="account-password-fields">
-            <PasswordInput label="当前密码" name="currentPassword" autoComplete="current-password"
-              required maxLength={1024} value={currentPassword}
-              onChange={event => { setCurrentPassword(event.target.value); setFeedback(undefined) }} />
-            <PasswordInput label="新密码" name="newPassword" autoComplete="new-password"
-              required maxLength={1024} value={newPassword}
-              onChange={event => { setNewPassword(event.target.value); setFeedback(undefined) }} />
-            <div className="account-confirm-field">
-              <PasswordInput label="确认新密码" name="confirmPassword" autoComplete="new-password"
-                required maxLength={1024} value={confirmPassword}
-                aria-invalid={mismatch || undefined}
-                aria-describedby={mismatch ? 'password-mismatch-hint' : undefined}
-                onChange={event => { setConfirmPassword(event.target.value); setFeedback(undefined) }} />
-              {mismatch && <small id="password-mismatch-hint" className="danger account-inline-error">两次输入的新密码不一致</small>}
-            </div>
-          </div>
-
-          <div className="account-form-footer">
-            <div className="account-footer-left">
-              <button className="primary" disabled={busy}>{busy ? '正在修改…' : '修改密码'}</button>
-              {feedback && (
-                <p className={`banner ${feedback.ok ? 'success' : 'error'}`} role="status">{feedback.text}</p>
-              )}
-            </div>
-            {!feedback && <span className="account-side-effect">修改后当前会话保持有效</span>}
-          </div>
-        </form>
+        <AccountStorageSection storage={storage} />
       </div>
     </section>
   )

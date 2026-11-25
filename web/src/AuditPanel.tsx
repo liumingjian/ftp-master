@@ -69,7 +69,15 @@ const detailFieldLabels: Record<string, string> = {
   scope: '作用范围',
   organizationId: '组织编号',
   organization_id: '组织编号',
+  organizationName: '受限组织',
   groupId: '用户组编号',
+  targetKind: '配额对象类型',
+  targetId: '配额对象编号',
+  targetName: '配额对象名称',
+  previousQuotaBytes: '原存储配额',
+  newQuotaBytes: '新存储配额',
+  requiredBytes: '本次需要空间',
+  availableBytes: '当前可用空间',
   targetUserId: '目标用户编号',
   target_user_id: '目标用户编号',
   username: '用户名',
@@ -104,17 +112,28 @@ const principalKindLabels: Record<string, string> = {
 const scopeLabels: Record<string, string> = {
   subtree: '本层及以下',
   this_level_only: '仅本层',
+  user: '用户配额',
+  organization_pool: '组织未分配配额池',
+  organization_total: '组织总配额',
 }
 
+const nullableQuotaFields = new Set(['previousQuotaBytes', 'newQuotaBytes'])
+const byteDetailFields = new Set(['size', 'requiredBytes', 'availableBytes'])
+
 function formatDetailValue(key: string, value: unknown): string {
+  if (nullableQuotaFields.has(key)) {
+    if (value === null || value === undefined) return '不限'
+    if (typeof value === 'number') return formatSize(value)
+  }
   if (value === null || value === undefined) return '—'
   if (key === 'rights' && typeof value === 'number') {
     const names = rightBitLabels.filter(([bit]) => value & bit).map(([, label]) => label)
     return names.length ? `${names.join('、')} (${value})` : String(value)
   }
-  if (key === 'principalKind' && typeof value === 'string') return principalKindLabels[value] ?? value
+  if ((key === 'principalKind' || key === 'targetKind') && typeof value === 'string') return principalKindLabels[value] ?? value
   if (key === 'scope' && typeof value === 'string') return scopeLabels[value] ?? value
-  if (key === 'size' && typeof value === 'number') return formatSize(value)
+  if (key === 'reason' && value === 'quota_exceeded') return '超出存储配额'
+  if (byteDetailFields.has(key) && typeof value === 'number') return formatSize(value)
   if (key === 'status' && typeof value === 'string') {
     return value === 'active' ? '已激活' : value === 'deactivated' ? '已停用' : value
   }
@@ -133,11 +152,28 @@ function formatDetailValue(key: string, value: unknown): string {
 function structuredDetailEntries(detail: unknown): { label: string; value: string }[] {
   if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return []
   return Object.entries(detail as Record<string, unknown>)
-    .filter(([key, value]) => key !== 'files' && key !== 'transferProfile' && value !== undefined && value !== null && value !== '')
+    .filter(([key, value]) => {
+      if (key === 'files' || key === 'transferProfile' || value === undefined || value === '') return false
+      if (value === null && !nullableQuotaFields.has(key)) return false
+      return true
+    })
     .map(([key, value]) => ({
       label: detailFieldLabels[key] ?? key,
       value: formatDetailValue(key, value),
     }))
+}
+
+function auditTargetLabel(event: Event): string {
+  if (event.path) return event.path
+  if (event.action === 'zip_download') return archivePaths(event).length + ' 个文件'
+  if (event.action === 'quota_change' && event.detail && typeof event.detail === 'object' && !Array.isArray(event.detail)) {
+    const rec = event.detail as Record<string, unknown>
+    const kind = typeof rec.targetKind === 'string' ? (principalKindLabels[rec.targetKind] ?? rec.targetKind) : ''
+    const name = typeof rec.targetName === 'string' ? rec.targetName : ''
+    if (kind && name) return `${kind} · ${name}`
+    if (name) return name
+  }
+  return '—'
 }
 
 function archivePaths(event: Event): string[] {
@@ -377,7 +413,7 @@ export function AuditPanel() {
                   <td>{event.username || '—'}</td>
                   <td className="audit-time-cell">{event.sourceIp || '—'}</td>
                   <td title={event.action}>{actionNames[event.action] ?? event.action}</td>
-                  <td className="audit-object"><span title={event.path}>{event.path || (event.action === 'zip_download' ? archivePaths(event).length + ' 个文件' : '—')}</span></td>
+                  <td className="audit-object"><span title={event.path || auditTargetLabel(event)}>{auditTargetLabel(event)}</span></td>
                   <td className="tp-rate-col">
                     <TransferSparklineCell profile={profile} onInspectTrend={() => setTrendEvent(event)} />
                   </td>

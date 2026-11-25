@@ -26,21 +26,27 @@ func (s *Server) StartOfficeEdit(ctx context.Context, r api.StartOfficeEditReque
 			return membershipFailure{400, "invalid version"}, nil
 		}
 	}
+	preview := r.Body.Preview != nil && *r.Body.Preview
 	tx, err := s.membership.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	// Serialize against tree/grant mutations so permission and issuance share a snapshot.
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
-		return nil, err
+	// Serialize against membership/quota and tree/grant mutations in canonical lock order.
+	if preview {
+		if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+			return nil, err
+		}
+	} else {
+		if err = lockMembershipAndTree(ctx, tx); err != nil {
+			return nil, err
+		}
 	}
 	q := sqlcdb.New(tx)
 	snap, err := s.treeSnapshot(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	preview := r.Body.Preview != nil && *r.Body.Preview
 	right := permission.Modify
 	if preview {
 		right = permission.Browse
@@ -78,6 +84,17 @@ func (s *Server) StartOfficeEdit(ctx context.Context, r api.StartOfficeEditReque
 		return membershipFailure{413, "Office file exceeds 25 MiB"}, nil
 	}
 	info := requestFrom(ctx)
+	var availableQuotaBytes *int64
+	if !preview {
+		decision, err := checkEditOpenQuota(ctx, q, info.session.User.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !decision.Allowed {
+			return api.StartOfficeEdit507JSONResponse{QuotaExceededJSONResponse: quotaExceededResponse(decision)}, nil
+		}
+		availableQuotaBytes = decision.AvailableBytes
+	}
 	now := s.membership.Clock.Now()
 	expires := now.Add(5 * time.Minute)
 	id := opaqueKey()
@@ -98,7 +115,7 @@ func (s *Server) StartOfficeEdit(ctx context.Context, r api.StartOfficeEditReque
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return api.StartOfficeEdit201JSONResponse{PermitId: id, DocumentUrl: base + "/document/" + url.PathEscape(node.Name), SaveUrl: saveURL, DeliveryCheckUrl: base + "/delivery", Title: node.Name, Format: api.OfficeEditFormat(version.Format), ExpiresAt: expires, VersionId: version.ID}, nil
+	return api.StartOfficeEdit201JSONResponse{PermitId: id, DocumentUrl: base + "/document/" + url.PathEscape(node.Name), SaveUrl: saveURL, DeliveryCheckUrl: base + "/delivery", Title: node.Name, Format: api.OfficeEditFormat(version.Format), ExpiresAt: expires, VersionId: version.ID, AvailableQuotaBytes: availableQuotaBytes}, nil
 }
 func (e membershipFailure) VisitStartOfficeEditResponse(w http.ResponseWriter) error {
 	return e.write(w)

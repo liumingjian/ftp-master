@@ -1,9 +1,9 @@
 -- name: ListOrganizations :many
 SELECT * FROM organizations ORDER BY id;
 -- name: CreateOrganization :one
-INSERT INTO organizations(name,parent_id) VALUES (@name,sqlc.narg(parent_id)) RETURNING *;
+INSERT INTO organizations(name,parent_id,quota_bytes) VALUES (@name,sqlc.narg(parent_id),sqlc.narg(quota_bytes)) RETURNING *;
 -- name: UpdateOrganization :one
-UPDATE organizations SET name= @name,parent_id=sqlc.narg(parent_id) WHERE id= @id RETURNING *;
+UPDATE organizations SET name= @name,parent_id=sqlc.narg(parent_id),quota_bytes=sqlc.narg(quota_bytes) WHERE id= @id RETURNING *;
 -- name: DeleteOrganization :execrows
 DELETE FROM organizations WHERE id= @id;
 -- name: ListUserGroups :many
