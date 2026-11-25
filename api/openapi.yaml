@@ -383,6 +383,15 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/UploadSession'}
         default: {$ref: '#/components/responses/Unauthorized'}
+  /upload-batches/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    delete:
+      operationId: cancelUploadBatch
+      responses:
+        '204':
+          description: Unrevealed folder upload batch cancelled and rolled back.
+        default: {$ref: '#/components/responses/Unauthorized'}
   /uploads:
     post:
       operationId: initiateUpload
@@ -397,6 +406,15 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/UploadSession'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /uploads/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    delete:
+      operationId: cancelUpload
+      responses:
+        '204':
+          description: Incomplete upload session cancelled and queued for storage garbage collection.
         default: {$ref: '#/components/responses/Unauthorized'}
   /uploads/{id}/parts:
     parameters:
@@ -1618,6 +1636,7 @@ components:
         id: {type: string}
         partSize: {type: integer, format: int64}
         partCount: {type: integer}
+        batchId: {type: string}
     PartInput:
       type: object
       required: [numbers]

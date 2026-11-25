@@ -20,6 +20,7 @@ import (
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
+	"github.com/liumingjian/ftp-master/backend/internal/recycle"
 	"github.com/liumingjian/ftp-master/backend/internal/tree"
 	"github.com/minio/minio-go/v7"
 )
@@ -661,5 +662,49 @@ func (s *Server) ListUploadParts(ctx context.Context, r api.ListUploadPartsReque
 	return out, nil
 }
 func (e membershipFailure) VisitListUploadPartsResponse(w http.ResponseWriter) error {
+	return e.write(w)
+}
+func (s *Server) CancelUpload(ctx context.Context, r api.CancelUploadRequestObject) (api.CancelUploadResponseObject, error) {
+	tx, err := s.membership.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	// Acquire the Shared Tree lock before locking upload_sessions FOR UPDATE to
+	// match CompleteUpload Tx2 and scheduler lock order.
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+		return nil, err
+	}
+	q := sqlcdb.New(tx)
+	record, err := q.GetUploadSessionForUpdate(ctx, r.Id)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && record.OwnerID != requestFrom(ctx).session.User.ID) {
+		return membershipFailure{http.StatusNotFound, "upload not found"}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if record.State == "complete" {
+		return membershipFailure{http.StatusConflict, "upload already completed"}, nil
+	}
+	if record.BatchID.Valid && record.BatchID.String != "" {
+		return membershipFailure{http.StatusConflict, "batch upload must be cancelled via its upload batch"}, nil
+	}
+	if err = q.QueueCancelledUpload(ctx, sqlcdb.QueueCancelledUploadParams{
+		ObjectKey: record.ObjectKey,
+		UploadID:  pgtype.Text{String: record.StorageUploadID, Valid: record.StorageUploadID != ""},
+	}); err != nil {
+		return nil, err
+	}
+	if err = q.DeleteUploadSession(ctx, record.ID); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	// Best-effort collection; durable storage_gc work retries on failure.
+	_ = recycle.Collect(ctx, s.membership.Pool, s.transfer.Client, s.transfer.Bucket)
+	return api.CancelUpload204Response{}, nil
+}
+func (e membershipFailure) VisitCancelUploadResponse(w http.ResponseWriter) error {
 	return e.write(w)
 }
