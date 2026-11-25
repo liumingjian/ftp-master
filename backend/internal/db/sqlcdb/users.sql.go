@@ -81,7 +81,7 @@ func (q *Queries) CreateInitialAdministrator(ctx context.Context, arg CreateInit
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE id = $1
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch, quota_bytes FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -98,12 +98,13 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.OrganizationID,
 		&i.OrganizationHint,
 		&i.SessionEpoch,
+		&i.QuotaBytes,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE lower(username) = lower($1)
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch, quota_bytes FROM users WHERE lower(username) = lower($1)
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -120,12 +121,13 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.OrganizationID,
 		&i.OrganizationHint,
 		&i.SessionEpoch,
+		&i.QuotaBytes,
 	)
 	return i, err
 }
 
 const listManagedUsers = `-- name: ListManagedUsers :many
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE status IN ('active','deactivated') ORDER BY username
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch, quota_bytes FROM users WHERE status IN ('active','deactivated') ORDER BY username
 `
 
 func (q *Queries) ListManagedUsers(ctx context.Context) ([]User, error) {
@@ -148,6 +150,7 @@ func (q *Queries) ListManagedUsers(ctx context.Context) ([]User, error) {
 			&i.OrganizationID,
 			&i.OrganizationHint,
 			&i.SessionEpoch,
+			&i.QuotaBytes,
 		); err != nil {
 			return nil, err
 		}

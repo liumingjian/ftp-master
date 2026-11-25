@@ -1523,12 +1523,24 @@ components:
           type: integer
           format: int64
           nullable: true
+        quotaBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Optional Organization Quota in bytes; null means unlimited, 0 blocks new storage.
     Organization:
       type: object
       required:
       - id
       - name
       - parentId
+      - quotaBytes
+      - committedBytes
+      - reservedBytes
+      - usedBytes
+      - allocatedBytes
+      - unallocatedBytes
       properties:
         id:
           type: integer
@@ -1541,6 +1553,38 @@ components:
           type: integer
           format: int64
           nullable: true
+        quotaBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Configured Organization Quota in bytes; null means unlimited.
+        committedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Deduplicated retained File Version bytes across current Users in this Organization's subtree.
+        reservedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Active incomplete upload reservation bytes across current Users in this Organization's subtree.
+        usedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Total live Storage Usage (committedBytes + reservedBytes) across this Organization's subtree.
+        allocatedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of explicit Storage Quotas on nearest capped descendant Organizations and Users.
+        unallocatedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Remaining unallocated pool (quotaBytes - allocatedBytes) when quotaBytes is set; null when unlimited.
     UserGroupInput:
       type: object
       required:

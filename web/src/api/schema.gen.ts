@@ -960,6 +960,11 @@ export interface components {
             name: string;
             /** Format: int64 */
             parentId?: number | null;
+            /**
+             * Format: int64
+             * @description Optional Organization Quota in bytes; null means unlimited, 0 blocks new storage.
+             */
+            quotaBytes?: number | null;
         };
         Organization: {
             /** Format: int64 */
@@ -967,6 +972,36 @@ export interface components {
             name: string;
             /** Format: int64 */
             parentId: number | null;
+            /**
+             * Format: int64
+             * @description Configured Organization Quota in bytes; null means unlimited.
+             */
+            quotaBytes: number | null;
+            /**
+             * Format: int64
+             * @description Deduplicated retained File Version bytes across current Users in this Organization's subtree.
+             */
+            committedBytes: number;
+            /**
+             * Format: int64
+             * @description Active incomplete upload reservation bytes across current Users in this Organization's subtree.
+             */
+            reservedBytes: number;
+            /**
+             * Format: int64
+             * @description Total live Storage Usage (committedBytes + reservedBytes) across this Organization's subtree.
+             */
+            usedBytes: number;
+            /**
+             * Format: int64
+             * @description Sum of explicit Storage Quotas on nearest capped descendant Organizations and Users.
+             */
+            allocatedBytes: number;
+            /**
+             * Format: int64
+             * @description Remaining unallocated pool (quotaBytes - allocatedBytes) when quotaBytes is set; null when unlimited.
+             */
+            unallocatedBytes: number | null;
         };
         UserGroupInput: {
             name: string;
