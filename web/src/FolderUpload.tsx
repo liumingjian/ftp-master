@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from './api/client'
 import { putPart, UPLOAD_COMPLETE_MESSAGE_MS } from './UploadRow'
 import { systemClock } from './clock'
+import { formatQuotaExceededError, isQuotaExceededError } from './quota'
 import { classifyCancelOutcome, folderBatchId, isAbortError } from './uploadCancel'
 
 type DirectoryHandle = { kind: 'directory'; name: string; values: () => AsyncIterable<DirectoryHandle | { kind: 'file'; name: string; getFile: () => Promise<File> }> }
@@ -14,7 +15,7 @@ export function FolderUpload({ parentId, visible, dropZone, completed, onTaskCha
   manifestRef.current = manifest
   const [folder, setFolder] = useState('')
   const [progress, setProgress] = useState({ done: 0, total: 0 })
-  const [status, setStatus] = useState<{ text: string; complete?: true }>()
+  const [status, setStatus] = useState<{ text: string; complete?: true; error?: true }>()
   useEffect(() => {
     if (!status?.complete) return
     return systemClock.after(UPLOAD_COMPLETE_MESSAGE_MS, () => {
@@ -67,7 +68,14 @@ export function FolderUpload({ parentId, visible, dropZone, completed, onTaskCha
           if (createdBatchId) void api.DELETE('/upload-batches/{id}', { params: { path: { id: createdBatchId } } })
           return
         }
-        if (!result.data) throw Error(result.error?.message ?? '无法创建上传')
+        if (!result.data) {
+          if (isQuotaExceededError(result.response.status, result.error)) {
+            clear()
+            setStatus({ text: formatQuotaExceededError(result.error, '存储配额不足'), error: true })
+            return
+          }
+          throw Error(result.error?.message ?? '无法创建上传')
+        }
         active = {
           batchId: result.data[0]?.batchId,
           name: root,
@@ -107,7 +115,7 @@ export function FolderUpload({ parentId, visible, dropZone, completed, onTaskCha
       const text = navigator.onLine
         ? (error instanceof Error ? error.message : '上传失败')
         : '网络已中断，已保存分片会保留；恢复后自动继续'
-      setStatus({ text })
+      setStatus({ text, error: true })
     } finally {
       if (abortRef.current === controller) abortRef.current = undefined
       running.current = false
@@ -193,9 +201,9 @@ export function FolderUpload({ parentId, visible, dropZone, completed, onTaskCha
       const pick = (window as Window & { showDirectoryPicker?: () => Promise<DirectoryHandle> }).showDirectoryPicker
       if (pick && !busy && !cancelling) { event.preventDefault(); void chooseDirectory(() => pick.call(window)) }
     }}>{manifest ? '重新选择文件夹' : '选择文件夹'}<input id={`upload-folder-${parentId}`} type="file" multiple {...{ webkitdirectory: '' }} disabled={busy || cancelling} onChange={e => { void upload(Array.from(e.target.files ?? []).sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath))); e.target.value = '' }} /></label>}
-    {(manifest || status) && <div className="upload-row" role="status" aria-label="文件夹上传进度">
+    {(manifest || status) && <div className={status?.error ? 'upload-row is-error' : 'upload-row'} role="status" aria-label="文件夹上传进度">
       <span className="transfer-name">{manifest?.name || folder} · {status?.text ?? '重新选择文件夹'}</span>
-      <progress aria-label="目录上传进度" value={progress.done} max={progress.total || 1} />
+      {!status?.error && <progress aria-label="目录上传进度" value={progress.done} max={progress.total || 1} />}
       {!status?.complete && <button type="button" disabled={cancelling} onClick={() => void cancel()}>取消上传</button>}
     </div>}
   </div>

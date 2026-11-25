@@ -382,6 +382,7 @@ paths:
               schema:
                 type: array
                 items: {$ref: '#/components/schemas/UploadSession'}
+        '507': {$ref: '#/components/responses/QuotaExceeded'}
         default: {$ref: '#/components/responses/Unauthorized'}
   /upload-batches/{id}:
     parameters:
@@ -406,6 +407,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/UploadSession'}
+        '507': {$ref: '#/components/responses/QuotaExceeded'}
         default: {$ref: '#/components/responses/Unauthorized'}
   /uploads/{id}:
     parameters:
@@ -1441,6 +1443,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    QuotaExceeded:
+      description: Storage Quota exceeded; no bytes were reserved or written.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/QuotaExceededError"
   schemas:
     OfficeEdit:
       type: object
@@ -1567,6 +1575,28 @@ components:
           type: string
           description: Stable machine-readable reason, e.g. unauthenticated, invalid_credentials.
         message:
+          type: string
+    QuotaExceededError:
+      type: object
+      required: [code, message, scope, requiredBytes, availableBytes]
+      properties:
+        code:
+          type: string
+          enum: [quota_exceeded]
+        message:
+          type: string
+        scope:
+          type: string
+          enum: [user, organization_pool, organization_total]
+        requiredBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        availableBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        organizationName:
           type: string
     SignInRequest:
       type: object

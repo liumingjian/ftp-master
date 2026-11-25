@@ -190,3 +190,97 @@ func recordQuotaChangeAudit(ctx context.Context, q *sqlcdb.Queries, clk clock.Cl
 		},
 	})
 }
+
+// lockMembershipAndTree acquires the canonical advisory lock order
+// (725005 membership/quota BEFORE 725010 Shared Tree/storage) inside tx.
+func lockMembershipAndTree(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725005)"); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)")
+	return err
+}
+
+// checkWriteQuota evaluates whether userID may reserve or write requiredBytes
+// using the caller's locked transaction. Zero-byte writes are always allowed.
+func checkWriteQuota(ctx context.Context, q *sqlcdb.Queries, userID int64, requiredBytes int64) (quota.WriteDecision, error) {
+	if requiredBytes <= 0 {
+		return quota.WriteDecision{Allowed: true, RequiredBytes: requiredBytes}, nil
+	}
+	ledger, _, err := loadQuotaLedger(ctx, q)
+	if err != nil {
+		return quota.WriteDecision{}, err
+	}
+	return ledger.CheckWrite(userID, requiredBytes), nil
+}
+
+func quotaAvailableBytes(d quota.WriteDecision) int64 {
+	if d.AvailableBytes == nil || *d.AvailableBytes < 0 {
+		return 0
+	}
+	return *d.AvailableBytes
+}
+
+func formatQuotaExceededMessage(d quota.WriteDecision) string {
+	avail := quota.FormatBytes(quotaAvailableBytes(d))
+	need := quota.FormatBytes(d.RequiredBytes)
+	switch d.Scope {
+	case quota.ScopeUser:
+		if d.RequiredBytes > 0 {
+			return fmt.Sprintf("超出个人存储配额（当前可用 %s，本次需要 %s）", avail, need)
+		}
+		return fmt.Sprintf("个人存储配额不足（当前可用 %s）", avail)
+	case quota.ScopeOrganizationPool:
+		if d.RequiredBytes > 0 {
+			return fmt.Sprintf("超出组织“%s”未分配配额池可用空间（当前可用 %s，本次需要 %s）", d.ConstrainingOrgName, avail, need)
+		}
+		return fmt.Sprintf("组织“%s”未分配配额池空间不足（当前可用 %s）", d.ConstrainingOrgName, avail)
+	case quota.ScopeOrganizationTotal:
+		if d.RequiredBytes > 0 {
+			return fmt.Sprintf("超出组织“%s”总存储配额（当前可用 %s，本次需要 %s）", d.ConstrainingOrgName, avail, need)
+		}
+		return fmt.Sprintf("组织“%s”总存储配额不足（当前可用 %s）", d.ConstrainingOrgName, avail)
+	default:
+		return fmt.Sprintf("存储配额不足（当前可用 %s）", avail)
+	}
+}
+
+func quotaExceededResponse(d quota.WriteDecision) api.QuotaExceededJSONResponse {
+	var orgName *string
+	if d.ConstrainingOrgName != "" {
+		name := d.ConstrainingOrgName
+		orgName = &name
+	}
+	return api.QuotaExceededJSONResponse{
+		Code:             api.QuotaExceededErrorCodeQuotaExceeded,
+		Message:          formatQuotaExceededMessage(d),
+		Scope:            api.QuotaExceededErrorScope(d.Scope),
+		RequiredBytes:    d.RequiredBytes,
+		AvailableBytes:   quotaAvailableBytes(d),
+		OrganizationName: orgName,
+	}
+}
+
+// recordQuotaExceededAudit commits a failed Audit Event outside any rolled-back
+// write transaction so quota refusals are durably recorded.
+func (s *Server) recordQuotaExceededAudit(ctx context.Context, info requestInfo, action audit.Action, itemID int64, itemPath string, d quota.WriteDecision) error {
+	detail := map[string]any{
+		"reason":         "quota_exceeded",
+		"scope":          string(d.Scope),
+		"requiredBytes":  d.RequiredBytes,
+		"availableBytes": quotaAvailableBytes(d),
+	}
+	if d.ConstrainingOrgName != "" {
+		detail["organizationName"] = d.ConstrainingOrgName
+	}
+	return audit.NewRecorder(sqlcdb.New(s.membership.Pool), s.membership.Clock).Record(ctx, audit.Event{
+		UserID:   info.session.User.ID,
+		Username: info.session.User.Username,
+		SourceIP: info.sourceIP,
+		Action:   action,
+		Outcome:  audit.OutcomeFailure,
+		ItemID:   itemID,
+		ItemPath: itemPath,
+		Detail:   detail,
+	})
+}
