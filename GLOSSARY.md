@@ -88,6 +88,24 @@ _Avoid_: Token, ticket, capability, lock
 A save of a file whose edit started from a File Version that is no longer the latest; it is accepted and flagged.
 _Avoid_: Conflict, overwrite conflict
 
+### Storage
+
+**Storage Quota**:
+An Administrator-configured byte limit on an Organization or User; when absent, no limit applies at that level.
+_Avoid_: Space limit, capacity authorization, allowance
+
+**Organization Quota**:
+A Storage Quota on an Organization that caps its entire subtree; explicit quotas on its nearest capped descendant Organizations and Users may not exceed it, and any unallocated remainder forms a shared pool exclusively for uncapped descendants.
+_Avoid_: Department space, org capacity
+
+**User Quota**:
+A Storage Quota on a single User, bounded by their Organization's quota hierarchy.
+_Avoid_: Member capacity, personal space limit
+
+**Storage Usage**:
+The stored bytes attributed to a User from retained File Versions they created (including items in the Recycle Bin, without double-counting restored versions) plus bytes reserved by their active uploads; an Organization's Storage Usage sums across the current Users in its subtree.
+_Avoid_: Disk consumption, occupied space
+
 ### Audit
 
 **Audit Event**:
