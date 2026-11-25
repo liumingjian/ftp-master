@@ -1278,11 +1278,98 @@ paths:
                 organizationId:
                   type: integer
                   format: int64
+                updateQuota:
+                  type: boolean
+                  description: When true, atomically update the User Quota to quotaBytes alongside the Organization move; when false or omitted with quotaBytes omitted, preserve the existing User Quota.
+                quotaBytes:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  nullable: true
+                  description: Target User Quota in bytes when updating quota atomically; null clears to unlimited, 0 blocks new storage.
       responses:
         '204':
           description: User changed.
-        default:
-          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+  /users/{userId}/quota:
+    put:
+      operationId: setUserQuota
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: {type: integer, format: int64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quotaBytes:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  nullable: true
+                  description: Target User Quota in bytes; null clears to unlimited, 0 blocks new storage.
+      responses:
+        '200':
+          description: Updated User quota and live Storage Usage.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ManagedUser"
+        '400':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '404':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        '409':
+          description: Request refused.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
   /managed-users:
     get:
       operationId: listManagedUsers
@@ -1444,13 +1531,34 @@ components:
             creator: {type: boolean}
     ManagedUser:
       type: object
-      required: [id, username, displayName, status, organizationId]
+      required: [id, username, displayName, status, organizationId, quotaBytes, committedBytes, reservedBytes, usedBytes]
       properties:
         id: {type: integer, format: int64}
         username: {type: string}
         displayName: {type: string}
         status: {type: string}
         organizationId: {type: integer, format: int64}
+        quotaBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Configured User Quota in bytes; null means unlimited, 0 blocks new storage.
+        committedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Deduplicated retained File Version bytes attributed to this User.
+        reservedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Active incomplete upload reservation bytes for this User.
+        usedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Total live Storage Usage (committedBytes + reservedBytes) for this User.
     Error:
       type: object
       required: [code, message]

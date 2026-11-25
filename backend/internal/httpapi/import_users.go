@@ -46,6 +46,11 @@ func (s *Server) ImportUsers(ctx context.Context, r api.ImportUsersRequestObject
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
+	// Acquire the membership advisory lock before locking public.users to match
+	// canonical lock ordering (725005 -> table/row locks) and prevent deadlocks.
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725005)"); err != nil {
+		return nil, err
+	}
 	q := sqlcdb.New(tx)
 	// Also blocks concurrent Registrations and account changes during validation.
 	if err := q.LockUserImport(ctx); err != nil {

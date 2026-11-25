@@ -1042,9 +1042,13 @@ dialog.membership-dialog[open] {
   background: var(--line);
 }
 
-/* Organization table storage usage & quota column */
+/* Organization and User table storage usage & quota column */
 .membership-quota-cell {
   min-width: 210px;
+}
+
+.membership-quota-cell.compact {
+  min-width: 170px;
 }
 
 .membership-quota-stack {

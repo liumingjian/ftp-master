@@ -339,6 +339,367 @@ func TestValidateUserChangeAndWriteAdmission(t *testing.T) {
 	}
 }
 
+func TestUserBudgetForConstrainingAncestor(t *testing.T) {
+	// Hierarchy:
+	//   1 RootA (quota 100)
+	//     ├─ 2 MidA1 (unlimited)
+	//     │   └─ user 10 (quota 40)
+	//     ├─ 3 MidA2 (unlimited)
+	//     └─ 4 SubCapped (quota 30)
+	//         └─ user 11 (quota 10)
+	//   5 RootB (quota 50)
+	//     └─ user 12 (quota 20)
+	//   6 RootUnlimited (unlimited)
+	//     └─ user 13 (quota 25)
+	// RootA allocated = 40 (user 10) + 30 (SubCapped) = 70 -> unallocated = 30.
+	// SubCapped allocated = 10 -> unallocated = 20.
+	// RootB allocated = 20 -> unallocated = 30.
+	ledger := quota.Evaluate(quota.Snapshot{
+		Organizations: []quota.Organization{
+			{ID: 1, Name: "RootA", QuotaBytes: ptr(100)},
+			{ID: 2, Name: "MidA1", ParentID: ptr(1)},
+			{ID: 3, Name: "MidA2", ParentID: ptr(1)},
+			{ID: 4, Name: "SubCapped", ParentID: ptr(1), QuotaBytes: ptr(30)},
+			{ID: 5, Name: "RootB", QuotaBytes: ptr(50)},
+			{ID: 6, Name: "RootUnlimited"},
+		},
+		Users: []quota.User{
+			{ID: 10, OrganizationID: 2, QuotaBytes: ptr(40)},
+			{ID: 11, OrganizationID: 4, QuotaBytes: ptr(10)},
+			{ID: 12, OrganizationID: 5, QuotaBytes: ptr(20)},
+			{ID: 13, OrganizationID: 6, QuotaBytes: ptr(25)},
+			{ID: 14, OrganizationID: 2, QuotaBytes: nil},
+		},
+	})
+
+	for _, tc := range []struct {
+		name            string
+		userID          *int64
+		targetOrgID     int64
+		wantNil         bool
+		wantAncestorID  int64
+		wantUnallocated int64
+		wantMaxAllowed  int64
+	}{
+		{"new user under uncapped MidA1 bounded by RootA", nil, 2, false, 1, 30, 30},
+		{"capped user 10 staying in MidA1 adds own 40 back", ptr(10), 2, false, 1, 30, 70},
+		{"capped user 10 moving to sibling uncapped MidA2 shares same RootA", ptr(10), 3, false, 1, 30, 70},
+		{"capped user 10 moving into SubCapped bounded by SubCapped 20", ptr(10), 4, false, 4, 20, 20},
+		{"capped user 10 moving into RootB bounded by RootB 30", ptr(10), 5, false, 5, 30, 30},
+		{"capped user 10 moving into RootUnlimited has no ceiling", ptr(10), 6, true, 0, 0, 0},
+		{"uncapped user 14 staying in MidA1 gets RootA remaining 30", ptr(14), 2, false, 1, 30, 30},
+		{"capped user 11 staying in SubCapped adds own 10 back", ptr(11), 4, false, 4, 20, 30},
+		{"capped user 11 moving up to MidA1 bounded by RootA remaining 30", ptr(11), 2, false, 1, 30, 30},
+		{"capped user 13 under unlimited org moving to RootB gets RootB 30", ptr(13), 5, false, 5, 30, 30},
+		{"nonexistent target org returns nil", ptr(10), 999, true, 0, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := ledger.UserBudgetFor(tc.userID, tc.targetOrgID)
+			if tc.wantNil {
+				if b != nil {
+					t.Fatalf("got %+v, want nil", b)
+				}
+				return
+			}
+			if b == nil {
+				t.Fatalf("got nil, want ancestor %d", tc.wantAncestorID)
+			}
+			if b.AncestorID != tc.wantAncestorID || b.AncestorUnallocatedBytes != tc.wantUnallocated || b.MaxAllowedQuotaBytes != tc.wantMaxAllowed {
+				t.Fatalf("budget = %+v, want ancestor=%d unallocated=%d max=%d",
+					b, tc.wantAncestorID, tc.wantUnallocated, tc.wantMaxAllowed)
+			}
+		})
+	}
+}
+
+func TestValidateUserQuotasAndAtomicMoves(t *testing.T) {
+	// Hierarchy:
+	//   1 RootA (quota 100)
+	//     ├─ 2 MidA1 (unlimited)
+	//     │   └─ 3 DeepA (unlimited)
+	//     │       ├─ user 10 (quota 40, committed 35, reserved 0)
+	//     │       └─ user 11 (unlimited, committed 10)
+	//     ├─ 4 MidA2 (unlimited)
+	//     └─ 5 SubCapped (quota 30)
+	//         └─ user 12 (quota 20)
+	//   6 RootB (quota 50)
+	//     └─ user 13 (quota 35)
+	//   7 RootUnlimited (unlimited)
+	//     └─ user 14 (quota 500, committed 200)
+	// RootA allocated = 40 (user 10) + 30 (SubCapped) = 70 -> remaining 30.
+	// SubCapped allocated = 20 -> remaining 10.
+	// RootB allocated = 35 -> remaining 15.
+	ledger := quota.Evaluate(quota.Snapshot{
+		Organizations: []quota.Organization{
+			{ID: 1, Name: "RootA", QuotaBytes: ptr(100)},
+			{ID: 2, Name: "MidA1", ParentID: ptr(1)},
+			{ID: 3, Name: "DeepA", ParentID: ptr(2)},
+			{ID: 4, Name: "MidA2", ParentID: ptr(1)},
+			{ID: 5, Name: "SubCapped", ParentID: ptr(1), QuotaBytes: ptr(30)},
+			{ID: 6, Name: "RootB", QuotaBytes: ptr(50)},
+			{ID: 7, Name: "RootUnlimited"},
+		},
+		Users: []quota.User{
+			{ID: 10, OrganizationID: 3, QuotaBytes: ptr(40), CommittedBytes: 35},
+			{ID: 11, OrganizationID: 3, QuotaBytes: nil, CommittedBytes: 10},
+			{ID: 12, OrganizationID: 5, QuotaBytes: ptr(20)},
+			{ID: 13, OrganizationID: 6, QuotaBytes: ptr(35)},
+			{ID: 14, OrganizationID: 7, QuotaBytes: ptr(500), CommittedBytes: 200},
+		},
+	})
+
+	for _, tc := range []struct {
+		name      string
+		userID    int64
+		orgID     int64
+		quota     *int64
+		wantKind  quota.ViolationKind
+		wantOrg   int64
+		wantAvail int64
+		wantReq   int64
+	}{
+		{"set quota on uncapped user within RootA budget across two uncapped mids", 11, 3, ptr(30), "", 0, 0, 0},
+		{"set quota on uncapped user exceeding RootA across two uncapped mids", 11, 3, ptr(31), quota.ViolationAncestorBudgetExceeded, 1, 30, 31},
+		{"raise capped user to exact RootA remaining (40+30=70)", 10, 3, ptr(70), "", 0, 0, 0},
+		{"raise capped user past RootA ceiling (71)", 10, 3, ptr(71), quota.ViolationAncestorBudgetExceeded, 1, 70, 71},
+		{"lower user quota below current usage (35 -> 10) allowed", 10, 3, ptr(10), "", 0, 0, 0},
+		{"zero user quota below current usage allowed", 10, 3, ptr(0), "", 0, 0, 0},
+		{"clear user quota to unlimited allowed", 10, 3, nil, "", 0, 0, 0},
+		{"set large user quota inside unlimited org allowed", 14, 7, ptr(9999), "", 0, 0, 0},
+		{"move capped user within same capped ancestor subtree preserves quota", 10, 4, ptr(40), "", 0, 0, 0},
+		{"move capped user to RootB preserving 40 rejected (RootB remaining 15)", 10, 6, ptr(40), quota.ViolationAncestorBudgetExceeded, 6, 15, 40},
+		{"atomic move to RootB lowering quota to 15 succeeds", 10, 6, ptr(15), "", 0, 0, 0},
+		{"atomic move to RootB zeroing quota succeeds", 10, 6, ptr(0), "", 0, 0, 0},
+		{"atomic move to RootB clearing quota to unlimited succeeds", 10, 6, nil, "", 0, 0, 0},
+		{"move capped user from SubCapped (20) up to MidA2 (RootA remaining 30) succeeds", 12, 4, ptr(20), "", 0, 0, 0},
+		{"move capped user from DeepA (40) into SubCapped (remaining 10) rejected", 10, 5, ptr(40), quota.ViolationAncestorBudgetExceeded, 5, 10, 40},
+		{"atomic move into SubCapped lowering quota to 10 succeeds", 10, 5, ptr(10), "", 0, 0, 0},
+		{"move uncapped user into RootB succeeds even if RootB tight", 11, 6, nil, "", 0, 0, 0},
+		{"move capped user into unlimited org preserves quota", 10, 7, ptr(40), "", 0, 0, 0},
+		{"negative user quota rejected", 10, 3, ptr(-1), quota.ViolationInvalidQuota, 0, 0, 0},
+		{"unknown target org rejected", 10, 999, ptr(10), quota.ViolationOrganizationNotFound, 0, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := ledger.ValidateUserChange(tc.userID, tc.orgID, tc.quota)
+			if tc.wantKind == "" {
+				if v != nil {
+					t.Fatalf("got unexpected violation: %+v", v)
+				}
+				return
+			}
+			if v == nil || v.Kind != tc.wantKind {
+				t.Fatalf("violation = %+v, want kind %q", v, tc.wantKind)
+			}
+			if tc.wantOrg != 0 && v.OrganizationID != tc.wantOrg {
+				t.Fatalf("violation org = %d, want %d (%+v)", v.OrganizationID, tc.wantOrg, v)
+			}
+			if tc.wantAvail != 0 && v.AvailableBytes != tc.wantAvail {
+				t.Fatalf("violation available = %d, want %d (%+v)", v.AvailableBytes, tc.wantAvail, v)
+			}
+			if tc.wantReq != 0 && v.RequiredBytes != tc.wantReq {
+				t.Fatalf("violation required = %d, want %d (%+v)", v.RequiredBytes, tc.wantReq, v)
+			}
+		})
+	}
+}
+
+func TestOrganizationDowngradeAndMoveBlockedByUserQuotas(t *testing.T) {
+	// Hierarchy:
+	//   1 RootA (quota 100)
+	//     ├─ user 1 (quota 20)
+	//     ├─ 2 UncappedMid (unlimited)
+	//     │   ├─ user 2 (quota 35)
+	//     │   └─ 3 CappedLeaf (quota 25)
+	//     │       └─ user 3 (quota 20)
+	//   4 RootB (quota 50)
+	//     └─ user 4 (quota 10)
+	// RootA allocated = 20 (user 1) + 35 (user 2 via UncappedMid) + 25 (CappedLeaf) = 80.
+	// UncappedMid allocated = 35 (user 2) + 25 (CappedLeaf) = 60.
+	// RootB remaining = 40.
+	ledger := quota.Evaluate(quota.Snapshot{
+		Organizations: []quota.Organization{
+			{ID: 1, Name: "RootA", QuotaBytes: ptr(100)},
+			{ID: 2, Name: "UncappedMid", ParentID: ptr(1)},
+			{ID: 3, Name: "CappedLeaf", ParentID: ptr(2), QuotaBytes: ptr(25)},
+			{ID: 4, Name: "RootB", QuotaBytes: ptr(50)},
+		},
+		Users: []quota.User{
+			{ID: 1, OrganizationID: 1, QuotaBytes: ptr(20)},
+			{ID: 2, OrganizationID: 2, QuotaBytes: ptr(35)},
+			{ID: 3, OrganizationID: 3, QuotaBytes: ptr(20)},
+			{ID: 4, OrganizationID: 4, QuotaBytes: ptr(10)},
+		},
+	})
+
+	for _, tc := range []struct {
+		name     string
+		orgID    int64
+		parentID *int64
+		quota    *int64
+		wantKind quota.ViolationKind
+		wantOrg  int64
+	}{
+		{"lower RootA to exact sum 80 (direct user + mid user + child org)", 1, nil, ptr(80), "", 0},
+		{"lower RootA below sum 79 rejected", 1, nil, ptr(79), quota.ViolationQuotaBelowAllocated, 1},
+		{"lower CappedLeaf to direct user quota 20 allowed", 3, ptr(2), ptr(20), "", 0},
+		{"lower CappedLeaf below direct user quota 19 rejected", 3, ptr(2), ptr(19), quota.ViolationQuotaBelowAllocated, 3},
+		{"cap UncappedMid at 60 (user 2 + CappedLeaf) allowed", 2, ptr(1), ptr(60), "", 0},
+		{"cap UncappedMid at 59 below user 2 + CappedLeaf rejected", 2, ptr(1), ptr(59), quota.ViolationQuotaBelowAllocated, 2},
+		{"move UncappedMid (carrying user 2=35 + CappedLeaf=25) into RootB (remaining 40) rejected", 2, ptr(4), nil, quota.ViolationAncestorBudgetExceeded, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := ledger.ValidateUpdateOrganization(tc.orgID, tc.parentID, tc.quota)
+			if tc.wantKind == "" {
+				if v != nil {
+					t.Fatalf("got unexpected violation: %+v", v)
+				}
+				return
+			}
+			if v == nil || v.Kind != tc.wantKind || (tc.wantOrg != 0 && v.OrganizationID != tc.wantOrg) {
+				t.Fatalf("violation = %+v, want kind=%q org=%d", v, tc.wantKind, tc.wantOrg)
+			}
+		})
+	}
+}
+
+func TestIsolatedUnallocatedPoolsAndMultiAncestorPhysicalCeilings(t *testing.T) {
+	t.Run("fully allocated org isolates uncapped pool to zero even when capped user used zero", func(t *testing.T) {
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{
+				{ID: 1, Name: "FullyAllocated", QuotaBytes: ptr(100)},
+				{ID: 2, Name: "UncappedTeam", ParentID: ptr(1)},
+			},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 1, QuotaBytes: ptr(100), CommittedBytes: 0},
+				{ID: 11, OrganizationID: 2, QuotaBytes: nil, CommittedBytes: 0},
+			},
+		})
+		// Capped user 10 gets their full guaranteed 100.
+		if d := ledger.CheckWrite(10, 100); !d.Allowed || d.AvailableBytes == nil || *d.AvailableBytes != 100 {
+			t.Fatalf("capped user 10 = %+v, want allowed with avail 100", d)
+		}
+		// Uncapped user 11 in UncappedTeam gets 0 from isolated pool despite 100 physical headroom!
+		if d := ledger.CheckWrite(11, 1); d.Allowed || d.Scope != quota.ScopeOrganizationPool || d.ConstrainingOrgID != 1 || d.AvailableBytes == nil || *d.AvailableBytes != 0 {
+			t.Fatalf("uncapped user 11 = %+v, want denied by pool on org 1 with avail 0", d)
+		}
+		// Zero-byte op still allowed.
+		if d := ledger.CheckWrite(11, 0); !d.Allowed {
+			t.Fatalf("uncapped user 11 zero-byte op = %+v, want allowed", d)
+		}
+	})
+
+	t.Run("multiple uncapped sub-orgs share one isolated unallocated pool without invading capped peers", func(t *testing.T) {
+		// Root (100):
+		//   - user 10 (capped 60, used 10) -> remaining 50 for user 10
+		//   - UncappedA: user 11 (uncapped, committed 12, reserved 3 -> 15)
+		//   - UncappedB: user 12 (uncapped, committed 10, reserved 5 -> 15)
+		// Unallocated pool = 100 - 60 = 40; UncappedPoolUsed = 15 + 15 = 30 -> pool headroom = 10!
+		// Root physical used = 10 + 15 + 15 = 40 -> physical headroom = 60.
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{
+				{ID: 1, Name: "Root", QuotaBytes: ptr(100)},
+				{ID: 2, Name: "UncappedA", ParentID: ptr(1)},
+				{ID: 3, Name: "UncappedB", ParentID: ptr(1)},
+			},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 1, QuotaBytes: ptr(60), CommittedBytes: 10},
+				{ID: 11, OrganizationID: 2, CommittedBytes: 12, ReservedBytes: 3},
+				{ID: 12, OrganizationID: 3, CommittedBytes: 10, ReservedBytes: 5},
+			},
+		})
+		for _, uid := range []int64{11, 12} {
+			if d := ledger.CheckWrite(uid, 10); !d.Allowed || d.AvailableBytes == nil || *d.AvailableBytes != 10 {
+				t.Fatalf("uncapped user %d write 10 = %+v", uid, d)
+			}
+			if d := ledger.CheckWrite(uid, 11); d.Allowed || d.Scope != quota.ScopeOrganizationPool || d.ConstrainingOrgID != 1 || d.AvailableBytes == nil || *d.AvailableBytes != 10 {
+				t.Fatalf("uncapped user %d write 11 = %+v", uid, d)
+			}
+		}
+		// Capped user 10 still gets full 50 regardless of uncapped peers using 30 of the 40 pool.
+		if d := ledger.CheckWrite(10, 50); !d.Allowed || d.AvailableBytes == nil || *d.AvailableBytes != 50 {
+			t.Fatalf("capped user 10 write 50 = %+v", d)
+		}
+		if d := ledger.CheckWrite(10, 51); d.Allowed || d.Scope != quota.ScopeUser || d.AvailableBytes == nil || *d.AvailableBytes != 50 {
+			t.Fatalf("capped user 10 write 51 = %+v", d)
+		}
+	})
+
+	t.Run("multi-ancestor physical ceiling overrides child pool and user quota", func(t *testing.T) {
+		// GrandParent (quota 100)
+		//   ├─ ChildCapped (quota 40)
+		//   │   ├─ user 10 (quota 30, used 5)  -> user headroom 25, ChildCapped headroom 30
+		//   │   └─ user 11 (uncapped, used 5)  -> ChildCapped pool = 10, pool headroom 5
+		//   └─ OverQuotaBranch (unlimited)
+		//       └─ user 12 (quota 20, committed 87) -> over-quota after downgrade
+		// GrandParent total used = 5 + 5 + 87 = 97 -> GrandParent physical headroom = 3!
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{
+				{ID: 1, Name: "GrandParent", QuotaBytes: ptr(100)},
+				{ID: 2, Name: "ChildCapped", ParentID: ptr(1), QuotaBytes: ptr(40)},
+				{ID: 3, Name: "OverQuotaBranch", ParentID: ptr(1)},
+			},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 2, QuotaBytes: ptr(30), CommittedBytes: 5},
+				{ID: 11, OrganizationID: 2, CommittedBytes: 5},
+				{ID: 12, OrganizationID: 3, QuotaBytes: ptr(20), CommittedBytes: 87},
+			},
+		})
+		// Both user 10 (capped) and user 11 (uncapped) are capped at 3 by GrandParent physical total.
+		for _, uid := range []int64{10, 11} {
+			if d := ledger.CheckWrite(uid, 3); !d.Allowed || d.AvailableBytes == nil || *d.AvailableBytes != 3 {
+				t.Fatalf("user %d write 3 = %+v", uid, d)
+			}
+			if d := ledger.CheckWrite(uid, 4); d.Allowed || d.Scope != quota.ScopeOrganizationTotal || d.ConstrainingOrgID != 1 || d.ConstrainingOrgName != "GrandParent" || d.AvailableBytes == nil || *d.AvailableBytes != 3 {
+				t.Fatalf("user %d write 4 = %+v, want GrandParent physical ceiling avail=3", uid, d)
+			}
+		}
+	})
+
+	t.Run("over-quota capped sibling shrinks physical ceiling below unallocated pool", func(t *testing.T) {
+		// Org (quota 50)
+		//   - user 10 (quota 20, committed 45 — lowered below usage!)
+		//   - user 11 (uncapped, committed 0)
+		// Unallocated pool = 50 - 20 = 30 (pool headroom 30), BUT Org physical headroom = 50 - 45 = 5!
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{
+				{ID: 1, Name: "TightOrg", QuotaBytes: ptr(50)},
+			},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 1, QuotaBytes: ptr(20), CommittedBytes: 45},
+				{ID: 11, OrganizationID: 1, CommittedBytes: 0},
+			},
+		})
+		if d := ledger.CheckWrite(11, 5); !d.Allowed || d.AvailableBytes == nil || *d.AvailableBytes != 5 {
+			t.Fatalf("user 11 write 5 = %+v", d)
+		}
+		if d := ledger.CheckWrite(11, 6); d.Allowed || d.Scope != quota.ScopeOrganizationTotal || d.ConstrainingOrgID != 1 || d.AvailableBytes == nil || *d.AvailableBytes != 5 {
+			t.Fatalf("user 11 write 6 = %+v, want TightOrg physical ceiling avail=5", d)
+		}
+	})
+
+	t.Run("unlimited hierarchy vs capped user in unlimited org", func(t *testing.T) {
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{
+				{ID: 1, Name: "UnlimitedRoot"},
+				{ID: 2, Name: "UnlimitedChild", ParentID: ptr(1)},
+			},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 2, QuotaBytes: nil, CommittedBytes: 1000},
+				{ID: 11, OrganizationID: 2, QuotaBytes: ptr(50), CommittedBytes: 20, ReservedBytes: 10},
+			},
+		})
+		if d := ledger.CheckWrite(10, 1<<40); !d.Allowed || d.AvailableBytes != nil || d.Scope != quota.ScopeNone {
+			t.Fatalf("unlimited user = %+v, want unlimited allowed", d)
+		}
+		if d := ledger.CheckWrite(11, 20); !d.Allowed || d.AvailableBytes == nil || *d.AvailableBytes != 20 {
+			t.Fatalf("capped user in unlimited org write 20 = %+v", d)
+		}
+		if d := ledger.CheckWrite(11, 21); d.Allowed || d.Scope != quota.ScopeUser || d.AvailableBytes == nil || *d.AvailableBytes != 20 {
+			t.Fatalf("capped user in unlimited org write 21 = %+v", d)
+		}
+	})
+}
+
 func TestFormatBytes(t *testing.T) {
 	for _, tc := range []struct {
 		in   int64

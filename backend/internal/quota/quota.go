@@ -459,6 +459,35 @@ func (l *Ledger) OrgBudgetFor(targetOrgID *int64, parentID *int64) *AncestorBudg
 	}
 }
 
+// UserBudgetFor returns the constraining Organization's remaining allocatable
+// budget for placing userID (nil when evaluating a new User) in targetOrgID.
+// Returns nil when targetOrgID does not exist or has no capped ancestor.
+func (l *Ledger) UserBudgetFor(userID *int64, targetOrgID int64) *AncestorBudget {
+	ancestor, ok := l.nearestCappedAncestor(&targetOrgID)
+	if !ok {
+		return nil
+	}
+	unallocated := int64(0)
+	if ancestor.UnallocatedBytes != nil {
+		unallocated = *ancestor.UnallocatedBytes
+	}
+	maxAllowed := unallocated
+	if userID != nil {
+		if u, exists := l.users[*userID]; exists && u.QuotaBytes != nil {
+			if curAnc, hasCur := l.nearestCappedAncestor(&u.OrganizationID); hasCur && curAnc.ID == ancestor.ID {
+				maxAllowed += *u.QuotaBytes
+			}
+		}
+	}
+	return &AncestorBudget{
+		AncestorID:               ancestor.ID,
+		AncestorName:             ancestor.Name,
+		AncestorQuotaBytes:       *ancestor.QuotaBytes,
+		AncestorUnallocatedBytes: unallocated,
+		MaxAllowedQuotaBytes:     maxAllowed,
+	}
+}
+
 // ValidateUserChange checks whether assigning userID to organizationID with
 // quotaBytes preserves strict nested partitioning at every capped ancestor.
 func (l *Ledger) ValidateUserChange(userID int64, organizationID int64, quotaBytes *int64) *Violation {

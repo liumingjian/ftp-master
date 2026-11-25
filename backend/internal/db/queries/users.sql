@@ -29,5 +29,11 @@ WHERE id = @id AND status IN ('active', 'deactivated');
 -- name: MoveUser :execrows
 UPDATE users SET organization_id = @organization_id WHERE id = @id AND status IN ('active', 'deactivated');
 
+-- name: MoveUserWithQuota :execrows
+UPDATE users SET organization_id = @organization_id, quota_bytes = @quota_bytes WHERE id = @id AND status IN ('active', 'deactivated');
+
+-- name: SetUserQuota :execrows
+UPDATE users SET quota_bytes = @quota_bytes WHERE id = @id AND status IN ('active', 'deactivated');
+
 -- name: ListManagedUsers :many
 SELECT * FROM users WHERE status IN ('active','deactivated') ORDER BY username;

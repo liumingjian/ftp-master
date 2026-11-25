@@ -33,6 +33,12 @@ export interface OrgAncestorBudget {
   minRequiredQuotaBytes: number
 }
 
+export interface UserOrgBudget {
+  ancestor: QuotaOrganization | null
+  ancestorUnallocatedBytes: number
+  maxAllowedQuotaBytes: number
+}
+
 export type QuotaUsageTone = 'unlimited' | 'normal' | 'warning' | 'exceeded'
 
 export function formatBinaryBytes(bytes: number): string {
@@ -151,6 +157,36 @@ export function computeOrgAncestorBudget(
     ancestorUnallocatedBytes,
     maxAllowedQuotaBytes,
     minRequiredQuotaBytes,
+  }
+}
+
+export function computeUserOrgBudget(
+  organizations: QuotaOrganization[],
+  userCurrentOrgId: number,
+  userCurrentQuotaBytes: number | null,
+  selectedOrgId: number,
+): UserOrgBudget {
+  const byId = new Map(organizations.map(org => [org.id, org]))
+  const ancestor = findNearestCappedAncestor(byId, selectedOrgId)
+  if (!ancestor) {
+    return {
+      ancestor: null,
+      ancestorUnallocatedBytes: 0,
+      maxAllowedQuotaBytes: 0,
+    }
+  }
+  const ancestorUnallocatedBytes = ancestor.unallocatedBytes ?? 0
+  let maxAllowedQuotaBytes = ancestorUnallocatedBytes
+  if (userCurrentQuotaBytes !== null) {
+    const previousAncestor = findNearestCappedAncestor(byId, userCurrentOrgId)
+    if (previousAncestor?.id === ancestor.id) {
+      maxAllowedQuotaBytes += userCurrentQuotaBytes
+    }
+  }
+  return {
+    ancestor,
+    ancestorUnallocatedBytes,
+    maxAllowedQuotaBytes,
   }
 }
 

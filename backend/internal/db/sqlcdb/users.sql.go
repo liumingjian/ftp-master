@@ -179,6 +179,41 @@ func (q *Queries) MoveUser(ctx context.Context, arg MoveUserParams) (int64, erro
 	return result.RowsAffected(), nil
 }
 
+const moveUserWithQuota = `-- name: MoveUserWithQuota :execrows
+UPDATE users SET organization_id = $1, quota_bytes = $2 WHERE id = $3 AND status IN ('active', 'deactivated')
+`
+
+type MoveUserWithQuotaParams struct {
+	OrganizationID int64
+	QuotaBytes     pgtype.Int8
+	ID             int64
+}
+
+func (q *Queries) MoveUserWithQuota(ctx context.Context, arg MoveUserWithQuotaParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveUserWithQuota, arg.OrganizationID, arg.QuotaBytes, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setUserQuota = `-- name: SetUserQuota :execrows
+UPDATE users SET quota_bytes = $1 WHERE id = $2 AND status IN ('active', 'deactivated')
+`
+
+type SetUserQuotaParams struct {
+	QuotaBytes pgtype.Int8
+	ID         int64
+}
+
+func (q *Queries) SetUserQuota(ctx context.Context, arg SetUserQuotaParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserQuota, arg.QuotaBytes, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setUserStatus = `-- name: SetUserStatus :execrows
 UPDATE users SET status = $1, session_epoch = session_epoch + CASE WHEN $1 = 'deactivated' THEN 1 ELSE 0 END
 WHERE id = $2 AND status IN ('active', 'deactivated')
