@@ -17,3 +17,29 @@ FROM upload_sessions
 WHERE state <> 'complete'
 GROUP BY owner_id
 ORDER BY owner_id;
+
+-- name: ListUserPendingUploads :many
+SELECT id, name, size, parent_id, created_at, state
+FROM upload_sessions
+WHERE owner_id = $1
+  AND state <> 'complete'
+  AND (batch_id IS NULL OR batch_id = '')
+ORDER BY created_at DESC, id ASC;
+
+-- name: ListUserPendingUploadBatches :many
+SELECT
+    b.id,
+    root.name,
+    b.expected AS file_count,
+    b.parent_id,
+    COALESCE(b.created_at, MIN(s.created_at))::timestamptz AS created_at,
+    COALESCE(SUM(s.size) FILTER (WHERE s.state <> 'complete'), 0)::bigint AS reserved_bytes,
+    COALESCE(SUM(s.size) FILTER (WHERE s.state = 'complete'), 0)::bigint AS committed_bytes,
+    COALESCE(SUM(s.size), 0)::bigint AS total_bytes
+FROM upload_batches b
+JOIN tree_nodes root ON root.id = b.root_id
+LEFT JOIN upload_sessions s ON s.batch_id = b.id
+WHERE b.owner_id = $1
+  AND EXISTS (SELECT 1 FROM upload_batch_nodes n WHERE n.batch_id = b.id)
+GROUP BY b.id, root.name, b.expected, b.parent_id, b.created_at
+ORDER BY COALESCE(b.created_at, MIN(s.created_at)) DESC, b.id ASC;

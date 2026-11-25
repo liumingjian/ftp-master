@@ -3,12 +3,18 @@ import { api } from './api/client'
 import { putPart, UPLOAD_COMPLETE_MESSAGE_MS } from './UploadRow'
 import { systemClock } from './clock'
 import { formatQuotaExceededError, isQuotaExceededError } from './quota'
-import { classifyCancelOutcome, folderBatchId, isAbortError } from './uploadCancel'
+import {
+  classifyCancelOutcome,
+  folderBatchId,
+  isAbortError,
+  STORAGE_UPLOAD_CANCELLED_EVENT,
+  type StorageUploadCancelledDetail,
+} from './uploadCancel'
 
 type DirectoryHandle = { kind: 'directory'; name: string; values: () => AsyncIterable<DirectoryHandle | { kind: 'file'; name: string; getFile: () => Promise<File> }> }
 type Manifest = { batchId?: string; name: string; files: { path: string; size: number; id: string; partSize: number; partCount: number; batchId?: string }[] }
 
-export function FolderUpload({ parentId, visible, dropZone, completed, onTaskChange, onActivityChange, onStatusChange }: { parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; onTaskChange?: (label: string) => void; onActivityChange?: (active: boolean) => void; onStatusChange?: (visible: boolean) => void }) {
+export function FolderUpload({ parentId, visible, dropZone, completed, onStorageChanged, onTaskChange, onActivityChange, onStatusChange }: { parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; onStorageChanged?: () => void; onTaskChange?: (label: string) => void; onActivityChange?: (active: boolean) => void; onStatusChange?: (visible: boolean) => void }) {
   const key = `ftp-folder:${parentId}`
   const [manifest, setManifest] = useState<Manifest | undefined>(() => { try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
   const manifestRef = useRef<Manifest | undefined>(manifest)
@@ -28,6 +34,24 @@ export function FolderUpload({ parentId, visible, dropZone, completed, onTaskCha
   const running = useRef(false)
   const abortRef = useRef<AbortController | undefined>(undefined)
   const cancelledRef = useRef(false)
+  useEffect(() => {
+    function onExternalCancel(event: Event) {
+      const detail = (event as CustomEvent<StorageUploadCancelledDetail>).detail
+      if (!detail || detail.kind !== 'batch') return
+      if (folderBatchId(manifestRef.current) !== detail.id) return
+      cancelledRef.current = true
+      abortRef.current?.abort()
+      localStorage.removeItem(key)
+      manifestRef.current = undefined
+      setManifest(undefined)
+      selected.current = []
+      setFolder('')
+      setProgress({ done: 0, total: 0 })
+      setStatus(undefined)
+    }
+    window.addEventListener(STORAGE_UPLOAD_CANCELLED_EVENT, onExternalCancel)
+    return () => window.removeEventListener(STORAGE_UPLOAD_CANCELLED_EVENT, onExternalCancel)
+  }, [key])
   useEffect(() => { if (!busy) return; const leave = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }; window.addEventListener('beforeunload', leave); return () => window.removeEventListener('beforeunload', leave) }, [busy])
   useEffect(() => { const online = () => { if (selected.current.length && !running.current && !cancelledRef.current) void upload(selected.current) }; window.addEventListener('online', online); return () => window.removeEventListener('online', online) })
   const taskCallback = useRef(onTaskChange)
@@ -85,6 +109,7 @@ export function FolderUpload({ parentId, visible, dropZone, completed, onTaskCha
           manifestRef.current = active
           localStorage.setItem(key, JSON.stringify(active))
           setManifest(active)
+          onStorageChanged?.()
         }
       }
       for (let i = 0; i < files.length; i++) {
@@ -145,10 +170,12 @@ export function FolderUpload({ parentId, visible, dropZone, completed, onTaskCha
         setFolder('')
         setProgress({ done: 0, total: 0 })
         setStatus(undefined)
+        onStorageChanged?.()
       } else if (outcome === 'already_completed') {
         clear()
         setStatus({ text: '上传已完成，无法取消', complete: true })
         completed()
+        onStorageChanged?.()
       } else {
         cancelledRef.current = false
         setStatus({ text: result.error?.message ?? '取消上传失败，请重试' })

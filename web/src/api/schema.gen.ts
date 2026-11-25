@@ -689,6 +689,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the signed-in User's own Storage Usage, User Quota, effective headroom, constraining ancestor Organization aggregate status, and pending uploads/batches. */
+        get: operations["getMyStorage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/password": {
         parameters: {
             query?: never;
@@ -996,6 +1013,96 @@ export interface components {
             /** Format: int64 */
             availableBytes: number;
             organizationName?: string;
+        };
+        /** @description Aggregate storage state of the single tightest constraining ancestor Organization; never exposes peer Users or the Organization hierarchy. */
+        ConstrainingOrganizationStorage: {
+            name: string;
+            /** Format: int64 */
+            quotaBytes: number;
+            /** Format: int64 */
+            usedBytes: number;
+            /** Format: int64 */
+            allocatedBytes: number;
+            /** Format: int64 */
+            unallocatedPoolBytes: number;
+            /** Format: int64 */
+            unallocatedPoolUsedBytes: number;
+            /** Format: int64 */
+            remainingBytes: number;
+            /** @enum {string} */
+            constraintKind: "organization_pool" | "organization_total";
+        } | null;
+        PendingUpload: {
+            id: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: int64 */
+            parentId: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** @enum {string} */
+            state: "uploading" | "completing";
+        };
+        PendingUploadBatch: {
+            id: string;
+            name: string;
+            fileCount: number;
+            /** Format: int64 */
+            reservedBytes: number;
+            /** Format: int64 */
+            committedBytes: number;
+            /** Format: int64 */
+            totalBytes: number;
+            /** Format: int64 */
+            parentId: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SelfStorageSummary: {
+            /**
+             * Format: int64
+             * @description Caller's own deduplicated retained File Version bytes.
+             */
+            committedBytes: number;
+            /**
+             * Format: int64
+             * @description Caller's own active incomplete upload reservation bytes.
+             */
+            reservedBytes: number;
+            /**
+             * Format: int64
+             * @description Caller's own total live Storage Usage (committedBytes + reservedBytes).
+             */
+            usedBytes: number;
+            /**
+             * Format: int64
+             * @description Caller's personal User Quota in bytes; null means unlimited.
+             */
+            quotaBytes: number | null;
+            /**
+             * Format: int64
+             * @description Effective remaining writable bytes; null only when neither User nor any ancestor Organization is capped.
+             */
+            availableBytes: number | null;
+            /**
+             * Format: int64
+             * @description Effective storage ceiling paired with effectiveUsedBytes for progress display; null when completely unlimited.
+             */
+            effectiveLimitBytes: number | null;
+            /**
+             * Format: int64
+             * @description Storage Usage paired with effectiveLimitBytes.
+             */
+            effectiveUsedBytes: number;
+            /**
+             * @description Active limiting quota scope; null when completely unlimited.
+             * @enum {string|null}
+             */
+            effectiveScope: "user" | "organization_pool" | "organization_total" | null;
+            constrainingOrganization: components["schemas"]["ConstrainingOrganizationStorage"];
+            pendingUploads: components["schemas"]["PendingUpload"][];
+            pendingBatches: components["schemas"]["PendingUploadBatch"][];
         };
         SignInRequest: {
             username: string;
@@ -2661,6 +2768,28 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    getMyStorage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Self-service storage summary scoped strictly to the signed-in User. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfStorageSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Unauthorized"];
         };
     };
     changePassword: {

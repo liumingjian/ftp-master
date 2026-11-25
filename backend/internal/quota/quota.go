@@ -640,6 +640,140 @@ func (l *Ledger) User(id int64) (User, bool) {
 	return u, ok
 }
 
+// ConstrainingOrganization summarizes the single tightest ancestor Organization
+// Storage Quota constraining a User, containing only aggregate metrics and never
+// peer User details or Organization tree structure.
+type ConstrainingOrganization struct {
+	Name                     string
+	QuotaBytes               int64
+	UsedBytes                int64
+	AllocatedBytes           int64
+	UnallocatedPoolBytes     int64
+	UnallocatedPoolUsedBytes int64
+	RemainingBytes           int64
+	ConstraintKind           Scope
+}
+
+// UserStorageSummary describes one User's self-service storage view: their own
+// usage, personal User Quota, effective ceiling/headroom, and the single tightest
+// constraining ancestor Organization (if any).
+type UserStorageSummary struct {
+	CommittedBytes           int64
+	ReservedBytes            int64
+	UsedBytes                int64
+	QuotaBytes               *int64
+	AvailableBytes           *int64
+	EffectiveLimitBytes      *int64
+	EffectiveUsedBytes       int64
+	EffectiveScope           Scope
+	ConstrainingOrganization *ConstrainingOrganization
+}
+
+// UserStorage computes the self-service storage view for userID using the same
+// precedence rules as CheckWrite.
+func (l *Ledger) UserStorage(userID int64) (UserStorageSummary, bool) {
+	u, ok := l.users[userID]
+	if !ok {
+		return UserStorageSummary{}, false
+	}
+	used := u.UsedBytes()
+	out := UserStorageSummary{
+		CommittedBytes:     u.CommittedBytes,
+		ReservedBytes:      u.ReservedBytes,
+		UsedBytes:          used,
+		QuotaBytes:         cloneInt64Ptr(u.QuotaBytes),
+		EffectiveUsedBytes: used,
+	}
+
+	var (
+		hasLimit    bool
+		minHeadroom int64
+		effLimit    int64
+		effUsed     int64
+		effScope    Scope
+		bestOrg     *ConstrainingOrganization
+	)
+
+	considerOverall := func(headroom, limit, currentUsed int64, s Scope) {
+		if headroom < 0 {
+			headroom = 0
+		}
+		if !hasLimit || headroom < minHeadroom {
+			hasLimit = true
+			minHeadroom = headroom
+			effLimit = limit
+			effUsed = currentUsed
+			effScope = s
+		}
+	}
+
+	considerOrg := func(org OrganizationSummary, kind Scope, remaining int64) {
+		if remaining < 0 {
+			remaining = 0
+		}
+		pool := int64(0)
+		if org.UnallocatedBytes != nil {
+			pool = *org.UnallocatedBytes
+		}
+		if bestOrg == nil || remaining < bestOrg.RemainingBytes {
+			bestOrg = &ConstrainingOrganization{
+				Name:                     org.Name,
+				QuotaBytes:               *org.QuotaBytes,
+				UsedBytes:                org.UsedBytes,
+				AllocatedBytes:           org.AllocatedBytes,
+				UnallocatedPoolBytes:     pool,
+				UnallocatedPoolUsedBytes: org.UncappedPoolUsedBytes,
+				RemainingBytes:           remaining,
+				ConstraintKind:           kind,
+			}
+		}
+	}
+
+	if u.QuotaBytes != nil {
+		considerOverall(*u.QuotaBytes-used, *u.QuotaBytes, used, ScopeUser)
+	} else if anc, hasAnc := l.nearestCappedAncestor(&u.OrganizationID); hasAnc {
+		pool := int64(0)
+		if anc.UnallocatedBytes != nil {
+			pool = *anc.UnallocatedBytes
+		}
+		headroom := pool - anc.UncappedPoolUsedBytes
+		considerOverall(headroom, pool, anc.UncappedPoolUsedBytes, ScopeOrganizationPool)
+		considerOrg(anc, ScopeOrganizationPool, headroom)
+	}
+
+	visited := make(map[int64]bool)
+	for cur := u.OrganizationID; cur != 0; {
+		if visited[cur] {
+			break
+		}
+		visited[cur] = true
+		summary, exists := l.summaries[cur]
+		if !exists {
+			break
+		}
+		if summary.QuotaBytes != nil {
+			headroom := *summary.QuotaBytes - summary.UsedBytes
+			considerOverall(headroom, *summary.QuotaBytes, summary.UsedBytes, ScopeOrganizationTotal)
+			considerOrg(summary, ScopeOrganizationTotal, headroom)
+		}
+		if summary.ParentID == nil {
+			break
+		}
+		cur = *summary.ParentID
+	}
+
+	if hasLimit {
+		avail := minHeadroom
+		limit := effLimit
+		out.AvailableBytes = &avail
+		out.EffectiveLimitBytes = &limit
+		out.EffectiveUsedBytes = effUsed
+		out.EffectiveScope = effScope
+	}
+	out.ConstrainingOrganization = bestOrg
+	return out, true
+}
+
 // FormatBytes formats a non-negative byte count in binary 1024-based units
 // (B / KB / MB / GB / TB) matching the desktop UI convention.
 func FormatBytes(bytes int64) string {

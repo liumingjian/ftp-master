@@ -719,4 +719,194 @@ func TestFormatBytes(t *testing.T) {
 	}
 }
 
+func TestUserStorageSummary(t *testing.T) {
+	t.Run("unknown user returns false", func(t *testing.T) {
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{{ID: 1, Name: "Default"}},
+		})
+		if _, ok := ledger.UserStorage(999); ok {
+			t.Fatal("expected unknown user to return ok=false")
+		}
+	})
+
+	t.Run("completely unlimited user has nil limits and no constraining organization", func(t *testing.T) {
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{
+				{ID: 1, Name: "Root"},
+				{ID: 2, Name: "Child", ParentID: ptr(1)},
+			},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 2, CommittedBytes: 400, ReservedBytes: 100},
+			},
+		})
+		got, ok := ledger.UserStorage(10)
+		if !ok {
+			t.Fatal("expected user 10 to exist")
+		}
+		if got.CommittedBytes != 400 || got.ReservedBytes != 100 || got.UsedBytes != 500 {
+			t.Fatalf("usage = (%d,%d,%d), want (400,100,500)", got.CommittedBytes, got.ReservedBytes, got.UsedBytes)
+		}
+		if got.QuotaBytes != nil || got.AvailableBytes != nil || got.EffectiveLimitBytes != nil {
+			t.Fatalf("expected nil quota/available/effectiveLimit, got %+v", got)
+		}
+		if got.EffectiveUsedBytes != 500 || got.EffectiveScope != quota.ScopeNone || got.ConstrainingOrganization != nil {
+			t.Fatalf("unexpected unlimited summary: %+v", got)
+		}
+	})
+
+	t.Run("user quota in unlimited org uses user quota as effective ceiling including zero-byte cap and over-quota downgrade", func(t *testing.T) {
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{{ID: 1, Name: "Unlimited"}},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 1, QuotaBytes: ptr(1000), CommittedBytes: 600, ReservedBytes: 250},
+				{ID: 11, OrganizationID: 1, QuotaBytes: ptr(0), CommittedBytes: 0, ReservedBytes: 0},
+				{ID: 12, OrganizationID: 1, QuotaBytes: ptr(500), CommittedBytes: 700, ReservedBytes: 50},
+			},
+		})
+
+		u10, ok := ledger.UserStorage(10)
+		if !ok || u10.QuotaBytes == nil || *u10.QuotaBytes != 1000 || u10.AvailableBytes == nil || *u10.AvailableBytes != 150 ||
+			u10.EffectiveLimitBytes == nil || *u10.EffectiveLimitBytes != 1000 || u10.EffectiveUsedBytes != 850 ||
+			u10.EffectiveScope != quota.ScopeUser || u10.ConstrainingOrganization != nil {
+			t.Fatalf("user 10 summary = %+v", u10)
+		}
+
+		u11, ok := ledger.UserStorage(11)
+		if !ok || u11.QuotaBytes == nil || *u11.QuotaBytes != 0 || u11.AvailableBytes == nil || *u11.AvailableBytes != 0 ||
+			u11.EffectiveLimitBytes == nil || *u11.EffectiveLimitBytes != 0 || u11.EffectiveUsedBytes != 0 ||
+			u11.EffectiveScope != quota.ScopeUser || u11.ConstrainingOrganization != nil {
+			t.Fatalf("zero-cap user 11 summary = %+v", u11)
+		}
+
+		u12, ok := ledger.UserStorage(12)
+		if !ok || u12.AvailableBytes == nil || *u12.AvailableBytes != 0 ||
+			u12.EffectiveLimitBytes == nil || *u12.EffectiveLimitBytes != 500 || u12.EffectiveUsedBytes != 750 ||
+			u12.EffectiveScope != quota.ScopeUser {
+			t.Fatalf("over-quota user 12 summary = %+v", u12)
+		}
+	})
+
+	t.Run("uncapped user under capped org uses isolated unallocated pool as effective ceiling", func(t *testing.T) {
+		// Eng (quota 1200):
+		//   - capped peer (quota 1000, used 100)
+		//   - uncapped user 11 (committed 120, reserved 50 -> 170)
+		//   - UncappedTeam -> uncapped user 12 (committed 10 -> 10)
+		// Pool = 1200 - 1000 = 200; poolUsed = 180; poolRemaining = 20 (90% used).
+		// Org total = 1200; totalUsed = 280; totalRemaining = 920.
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{
+				{ID: 1, Name: "Eng", QuotaBytes: ptr(1200)},
+				{ID: 2, Name: "UncappedTeam", ParentID: ptr(1)},
+			},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 1, QuotaBytes: ptr(1000), CommittedBytes: 100},
+				{ID: 11, OrganizationID: 1, CommittedBytes: 120, ReservedBytes: 50},
+				{ID: 12, OrganizationID: 2, CommittedBytes: 10},
+			},
+		})
+		got, ok := ledger.UserStorage(11)
+		if !ok {
+			t.Fatal("expected user 11")
+		}
+		if got.CommittedBytes != 120 || got.ReservedBytes != 50 || got.UsedBytes != 170 || got.QuotaBytes != nil {
+			t.Fatalf("user 11 own fields = %+v", got)
+		}
+		if got.AvailableBytes == nil || *got.AvailableBytes != 20 ||
+			got.EffectiveLimitBytes == nil || *got.EffectiveLimitBytes != 200 ||
+			got.EffectiveUsedBytes != 180 || got.EffectiveScope != quota.ScopeOrganizationPool {
+			t.Fatalf("user 11 effective fields = %+v, want avail=20 limit=200 used=180 scope=organization_pool", got)
+		}
+		if got.ConstrainingOrganization == nil ||
+			got.ConstrainingOrganization.Name != "Eng" ||
+			got.ConstrainingOrganization.QuotaBytes != 1200 ||
+			got.ConstrainingOrganization.UsedBytes != 280 ||
+			got.ConstrainingOrganization.AllocatedBytes != 1000 ||
+			got.ConstrainingOrganization.UnallocatedPoolBytes != 200 ||
+			got.ConstrainingOrganization.UnallocatedPoolUsedBytes != 180 ||
+			got.ConstrainingOrganization.RemainingBytes != 20 ||
+			got.ConstrainingOrganization.ConstraintKind != quota.ScopeOrganizationPool {
+			t.Fatalf("user 11 constraining org = %+v", got.ConstrainingOrganization)
+		}
+	})
+
+	t.Run("zero-byte unallocated pool reports zero effectiveLimitBytes and exceeded headroom", func(t *testing.T) {
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{{ID: 1, Name: "FullOrg", QuotaBytes: ptr(1000)}},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 1, QuotaBytes: ptr(1000), CommittedBytes: 0},
+				{ID: 11, OrganizationID: 1, CommittedBytes: 0},
+			},
+		})
+		got, ok := ledger.UserStorage(11)
+		if !ok || got.AvailableBytes == nil || *got.AvailableBytes != 0 ||
+			got.EffectiveLimitBytes == nil || *got.EffectiveLimitBytes != 0 ||
+			got.EffectiveUsedBytes != 0 || got.EffectiveScope != quota.ScopeOrganizationPool ||
+			got.ConstrainingOrganization == nil || got.ConstrainingOrganization.Name != "FullOrg" ||
+			got.ConstrainingOrganization.RemainingBytes != 0 {
+			t.Fatalf("zero-pool user 11 = %+v", got)
+		}
+	})
+
+	t.Run("capped user under capped org keeps user ceiling when tighter and switches to org ceiling when org is tighter", func(t *testing.T) {
+		// GrandParent (quota 1000):
+		//   - Child (quota 400):
+		//       - user 10 (quota 300, committed 50 -> user headroom 250; Child total headroom 350)
+		//   - HeavyBranch (unlimited):
+		//       - user 12 (quota 200, committed 900 -> GrandParent total used = 950, headroom = 50!)
+		ledger := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{
+				{ID: 1, Name: "GrandParent", QuotaBytes: ptr(1000)},
+				{ID: 2, Name: "Child", ParentID: ptr(1), QuotaBytes: ptr(400)},
+				{ID: 3, Name: "HeavyBranch", ParentID: ptr(1)},
+			},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 2, QuotaBytes: ptr(300), CommittedBytes: 50},
+				{ID: 12, OrganizationID: 3, QuotaBytes: ptr(200), CommittedBytes: 900},
+			},
+		})
+		got, ok := ledger.UserStorage(10)
+		if !ok {
+			t.Fatal("expected user 10")
+		}
+		if got.AvailableBytes == nil || *got.AvailableBytes != 50 ||
+			got.EffectiveLimitBytes == nil || *got.EffectiveLimitBytes != 1000 ||
+			got.EffectiveUsedBytes != 950 || got.EffectiveScope != quota.ScopeOrganizationTotal {
+			t.Fatalf("org-tight user 10 = %+v, want GrandParent total 950/1000 avail=50", got)
+		}
+		if got.ConstrainingOrganization == nil || got.ConstrainingOrganization.Name != "GrandParent" ||
+			got.ConstrainingOrganization.ConstraintKind != quota.ScopeOrganizationTotal ||
+			got.ConstrainingOrganization.RemainingBytes != 50 {
+			t.Fatalf("org-tight constraining org = %+v", got.ConstrainingOrganization)
+		}
+
+		// When GrandParent has plenty of headroom, user 10's personal quota is tighter,
+		// while ConstrainingOrganization still reflects the tightest capped ancestor (Child: 350 < GrandParent: 900).
+		ledger2 := quota.Evaluate(quota.Snapshot{
+			Organizations: []quota.Organization{
+				{ID: 1, Name: "GrandParent", QuotaBytes: ptr(1000)},
+				{ID: 2, Name: "Child", ParentID: ptr(1), QuotaBytes: ptr(400)},
+			},
+			Users: []quota.User{
+				{ID: 10, OrganizationID: 2, QuotaBytes: ptr(300), CommittedBytes: 50},
+			},
+		})
+		got2, ok := ledger2.UserStorage(10)
+		if !ok {
+			t.Fatal("expected user 10 in ledger2")
+		}
+		if got2.AvailableBytes == nil || *got2.AvailableBytes != 250 ||
+			got2.EffectiveLimitBytes == nil || *got2.EffectiveLimitBytes != 300 ||
+			got2.EffectiveUsedBytes != 50 || got2.EffectiveScope != quota.ScopeUser {
+			t.Fatalf("user-tight user 10 = %+v, want user 50/300 avail=250", got2)
+		}
+		if got2.ConstrainingOrganization == nil || got2.ConstrainingOrganization.Name != "Child" ||
+			got2.ConstrainingOrganization.QuotaBytes != 400 ||
+			got2.ConstrainingOrganization.UsedBytes != 50 ||
+			got2.ConstrainingOrganization.RemainingBytes != 350 ||
+			got2.ConstrainingOrganization.ConstraintKind != quota.ScopeOrganizationTotal {
+			t.Fatalf("user-tight constraining org = %+v", got2.ConstrainingOrganization)
+		}
+	})
+}
+
 

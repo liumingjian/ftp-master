@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from './api/client'
 import { systemClock, type Clock } from './clock'
 import { formatQuotaExceededError, isQuotaExceededError } from './quota'
-import { classifyCancelOutcome, isAbortError } from './uploadCancel'
+import {
+  classifyCancelOutcome,
+  isAbortError,
+  STORAGE_UPLOAD_CANCELLED_EVENT,
+  type StorageUploadCancelledDetail,
+} from './uploadCancel'
 
 type Session = { id: string; partCount: number; partSize: number; name: string; size: number }
 type Row = { name: string; bytes: number; total: number; speed: number; status: string; complete?: true; error?: true }
@@ -39,7 +44,7 @@ export function putPart(url: string, bytes: Blob, progress: (loaded: number) => 
   })
 }
 
-export function UploadRow({ parentId, visible, dropZone, completed, clock = systemClock, onTaskChange, onActivityChange, onStatusChange }: { onTaskChange?: (label: string) => void; onActivityChange?: (state: FileUploadState) => void; onStatusChange?: (visible: boolean) => void; parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; clock?: Clock }) {
+export function UploadRow({ parentId, visible, dropZone, completed, onStorageChanged, clock = systemClock, onTaskChange, onActivityChange, onStatusChange }: { onTaskChange?: (label: string) => void; onActivityChange?: (state: FileUploadState) => void; onStatusChange?: (visible: boolean) => void; parentId: number; visible: boolean; dropZone?: HTMLElement | null; completed: () => void; onStorageChanged?: () => void; clock?: Clock }) {
   const key = `ftp-upload:${parentId}`
   const [savedSession, setSession] = useState<Session | undefined>(() => { try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined } catch { return undefined } })
   const sessionRef = useRef<Session | undefined>(savedSession)
@@ -65,6 +70,25 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
   const [busy, setBusy] = useState(false)
   const [cancelling, setCancelling] = useState<'active' | 'idle'>()
   const [conflict, setConflict] = useState<string>()
+  const conflictRef = useRef<string | undefined>(conflict)
+  conflictRef.current = conflict
+  useEffect(() => {
+    function onExternalCancel(event: Event) {
+      const detail = (event as CustomEvent<StorageUploadCancelledDetail>).detail
+      if (!detail || detail.kind !== 'upload') return
+      if (sessionRef.current?.id !== detail.id && conflictRef.current !== detail.id) return
+      cancelledRef.current = true
+      abortRef.current?.abort()
+      localStorage.removeItem(key)
+      sessionRef.current = undefined
+      setSession(undefined)
+      fileRef.current = undefined
+      setConflict(undefined)
+      setRow(undefined)
+    }
+    window.addEventListener(STORAGE_UPLOAD_CANCELLED_EVENT, onExternalCancel)
+    return () => window.removeEventListener(STORAGE_UPLOAD_CANCELLED_EVENT, onExternalCancel)
+  }, [key])
   useEffect(() => {
     if (!busy) return
     const leave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
@@ -150,6 +174,7 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
         active = { ...init.data, name: file.name, size: file.size }
         sessionRef.current = active
         localStorage.setItem(key, JSON.stringify(active)); setSession(active)
+        onStorageChanged?.()
       }
       const stored = await api.GET('/uploads/{id}/parts', { params: { path: { id: active.id } }, signal })
       if (!stored.data) throw new Error(stored.error?.message ?? '无法读取已保存分片')
@@ -208,6 +233,7 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
         clear()
         setConflict(undefined)
         setRow(undefined)
+        onStorageChanged?.()
       } else if (outcome === 'already_completed') {
         const name = activeSession?.name ?? row?.name ?? ''
         const total = activeSession?.size ?? row?.total ?? 0
@@ -215,6 +241,7 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
         setConflict(undefined)
         setRow({ name, total, bytes: total, speed: 0, status: '上传已完成，无法取消', complete: true })
         completed()
+        onStorageChanged?.()
       } else {
         cancelledRef.current = false
         const message = result.error?.message ?? '取消上传失败，请重试'
