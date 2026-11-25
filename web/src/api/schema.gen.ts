@@ -253,6 +253,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/audit/{id}/transfer-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["getAuditTransferSeries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit/query": {
         parameters: {
             query?: never;
@@ -313,6 +331,25 @@ export interface paths {
         get: operations["listUploadParts"];
         put?: never;
         post: operations["issueUploadParts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/uploads/{id}/parts/{partNumber}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                partNumber: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["uploadPart"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -978,6 +1015,27 @@ export interface components {
             number: number;
             url: string;
         }[];
+        TransferSeries: {
+            bucketSeconds: number;
+            points: {
+                index: number;
+                /** Format: date-time */
+                timestamp: string;
+                /** Format: int64 */
+                bps: number;
+                /** Format: int64 */
+                cumulativeBytes: number;
+                stalled?: boolean;
+            }[];
+            gaps: {
+                beforeIndex: number;
+                durationSeconds: number;
+                /** Format: date-time */
+                startedAt: string;
+                /** Format: date-time */
+                resumedAt: string;
+            }[];
+        };
         FileVersion: {
             /** Format: int64 */
             id: number;
@@ -1430,6 +1488,42 @@ export interface operations {
             query?: {
                 versionId?: number;
             };
+            header?: {
+                Range?: string;
+            };
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Streaming immutable file bytes proxied through the application for authoritative throughput audit (ADR 0008). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Partial immutable file bytes for a Range request. */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    getAuditTransferSeries: {
+        parameters: {
+            query?: {
+                occurredAt?: string;
+            };
             header?: never;
             path: {
                 id: number;
@@ -1438,14 +1532,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Authorized short-lived capability for immutable file bytes. Audit records issuance. */
-            302: {
+            /** @description Time-series Transfer Profile samples for an audited file transfer. Administrator only. */
+            200: {
                 headers: {
-                    Location: string;
-                    "Cache-Control": string;
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TransferSeries"];
+                };
             };
             default: components["responses"]["Unauthorized"];
         };
@@ -1472,8 +1566,11 @@ export interface operations {
                     includeSubdirectories?: boolean;
                     action?: string;
                     /** @enum {string} */
-                    category?: "session" | "read" | "write" | "delete" | "grant" | "account";
+                    category?: "transfer" | "session" | "read" | "write" | "delete" | "grant" | "account";
                     failuresOnly?: boolean;
+                    anomaliesOnly?: boolean;
+                    /** Format: int64 */
+                    maxAvgBps?: number;
                     /** Format: int64 */
                     itemId?: number;
                     /** @default 1 */
@@ -1630,6 +1727,32 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PartURLs"];
                 };
+            };
+            default: components["responses"]["Unauthorized"];
+        };
+    };
+    uploadPart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                partNumber: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Part streamed through the application to object storage with per-second throughput recorded (ADR 0008). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Unauthorized"];
         };

@@ -34,3 +34,13 @@ SELECT (count(*)=b.expected AND bool_and(s.state='complete'))::boolean AS ready 
 INSERT INTO grants(node_id,principal_kind,principal_id,rights,scope,creator) SELECT root_id,'user',owner_id,63,'subtree',true FROM upload_batches b WHERE b.id=$1;
 -- name: RevealUploadBatch :exec
 DELETE FROM upload_batch_nodes WHERE batch_id=$1;
+
+-- name: InsertUploadTransferSample :exec
+INSERT INTO upload_transfer_samples(session_id, part_number, started_at, ended_at, bytes_transferred, samples)
+VALUES($1, $2, $3, $4, $5, $6);
+
+-- name: ListUploadTransferSamples :many
+SELECT id, session_id, part_number, started_at, ended_at, bytes_transferred, samples
+FROM upload_transfer_samples
+WHERE session_id=$1
+ORDER BY started_at ASC, id ASC;

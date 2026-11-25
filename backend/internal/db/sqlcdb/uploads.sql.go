@@ -231,6 +231,67 @@ func (q *Queries) HideUploadBatchNode(ctx context.Context, arg HideUploadBatchNo
 	return err
 }
 
+const insertUploadTransferSample = `-- name: InsertUploadTransferSample :exec
+INSERT INTO upload_transfer_samples(session_id, part_number, started_at, ended_at, bytes_transferred, samples)
+VALUES($1, $2, $3, $4, $5, $6)
+`
+
+type InsertUploadTransferSampleParams struct {
+	SessionID        string
+	PartNumber       int32
+	StartedAt        pgtype.Timestamptz
+	EndedAt          pgtype.Timestamptz
+	BytesTransferred int64
+	Samples          []byte
+}
+
+func (q *Queries) InsertUploadTransferSample(ctx context.Context, arg InsertUploadTransferSampleParams) error {
+	_, err := q.db.Exec(ctx, insertUploadTransferSample,
+		arg.SessionID,
+		arg.PartNumber,
+		arg.StartedAt,
+		arg.EndedAt,
+		arg.BytesTransferred,
+		arg.Samples,
+	)
+	return err
+}
+
+const listUploadTransferSamples = `-- name: ListUploadTransferSamples :many
+SELECT id, session_id, part_number, started_at, ended_at, bytes_transferred, samples
+FROM upload_transfer_samples
+WHERE session_id=$1
+ORDER BY started_at ASC, id ASC
+`
+
+func (q *Queries) ListUploadTransferSamples(ctx context.Context, sessionID string) ([]UploadTransferSample, error) {
+	rows, err := q.db.Query(ctx, listUploadTransferSamples, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UploadTransferSample
+	for rows.Next() {
+		var i UploadTransferSample
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.PartNumber,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.BytesTransferred,
+			&i.Samples,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markUploadCompleting = `-- name: MarkUploadCompleting :exec
 UPDATE upload_sessions SET state='completing' WHERE id=$1
 `

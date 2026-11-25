@@ -3,9 +3,9 @@ package scheduler
 
 import (
 	"context"
-	"github.com/jackc/pgx/v5/pgtype"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
@@ -37,7 +37,9 @@ func (j *Jobs) Run(ctx context.Context) error {
 		return err
 	}
 	now := j.clock.Now()
+	nowTS := pgtype.Timestamptz{Time: now, Valid: true}
 	q := sqlcdb.New(tx)
+	recorder := audit.NewRecorder(q, j.clock)
 	entries, err := q.ListRecycleEntries(ctx)
 	if err != nil {
 		return err
@@ -47,42 +49,87 @@ func (j *Jobs) Run(ctx context.Context) error {
 			if err = recycle.Purge(ctx, q, entry.NodeID); err != nil {
 				return err
 			}
-			if err = audit.NewRecorder(q, j.clock).Record(ctx, audit.Event{Username: "scheduler", Action: "automatic_purge", Outcome: audit.OutcomeSuccess, ItemID: entry.NodeID, ItemPath: entry.OriginalPath}); err != nil {
+			if err = recorder.Record(ctx, audit.Event{Username: "scheduler", Action: "automatic_purge", Outcome: audit.OutcomeSuccess, ItemID: entry.NodeID, ItemPath: entry.OriginalPath}); err != nil {
 				return err
 			}
 		}
 	}
 	// Expired unused permits no longer pin source bytes. Delivered permits
 	// retain base metadata for saving without pinning the source version.
-	if err = q.DeleteExpiredOfficePermits(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+	if err = q.DeleteExpiredOfficePermits(ctx, nowTS); err != nil {
 		return err
 	}
 	if err = q.PruneFileVersions(ctx); err != nil {
 		return err
 	}
-	if err = q.DateLegacyUploadBatches(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+	if err = q.DateLegacyUploadBatches(ctx, nowTS); err != nil {
 		return err
 	}
-	if err = q.QueueExpiredUploads(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+	// Audit expired incomplete uploads that already transferred >0 bytes (ADR 0009).
+	abandoned, err := q.ListExpiredUploadsForAudit(ctx, nowTS)
+	if err != nil {
 		return err
 	}
-	if err = q.DeleteExpiredUploads(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+	for _, u := range abandoned {
+		sampleRows, err := q.ListUploadTransferSamples(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		segments := make([]audit.TransferSegment, 0, len(sampleRows))
+		for _, row := range sampleRows {
+			decoded, decErr := audit.DecodeRawSamples(row.Samples)
+			if decErr != nil {
+				return decErr
+			}
+			segments = append(segments, audit.TransferSegment{
+				StartedAt:        row.StartedAt.Time,
+				EndedAt:          row.EndedAt.Time,
+				BytesTransferred: row.BytesTransferred,
+				Samples:          decoded,
+			})
+		}
+		reason := "会话过期未续传（已放弃）"
+		summary, series := audit.BuildTransferProfile(segments, u.Size, true, reason, nil)
+		itemPath := "/" + u.Name
+		if u.RelativePath != "" {
+			itemPath = "/" + u.RelativePath
+		}
+		if err = recorder.Record(ctx, audit.Event{
+			UserID:   u.OwnerID,
+			Username: u.Username,
+			Action:   "upload",
+			Outcome:  audit.OutcomeFailure,
+			ItemPath: itemPath,
+			Detail: map[string]any{
+				"reason":          reason,
+				"size":            u.Size,
+				"transferProfile": summary,
+			},
+			TransferSeries: series,
+		}); err != nil {
+			return err
+		}
+	}
+	if err = q.QueueExpiredUploads(ctx, nowTS); err != nil {
 		return err
 	}
-	if err = q.QueueExpiredBatchVersions(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+	if err = q.DeleteExpiredUploads(ctx, nowTS); err != nil {
 		return err
 	}
-	if err = q.DeleteExpiredBatchVersions(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+	if err = q.QueueExpiredBatchVersions(ctx, nowTS); err != nil {
 		return err
 	}
-	expiredNodes, err := q.ListExpiredBatchNodes(ctx, pgtype.Timestamptz{Time: now, Valid: true})
+	if err = q.DeleteExpiredBatchVersions(ctx, nowTS); err != nil {
+		return err
+	}
+	expiredNodes, err := q.ListExpiredBatchNodes(ctx, nowTS)
 	if err != nil {
 		return err
 	}
 	if err = q.DeleteExpiredBatchVisibility(ctx, expiredNodes); err != nil {
 		return err
 	}
-	if err = q.DeleteExpiredBatches(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+	if err = q.DeleteExpiredBatches(ctx, nowTS); err != nil {
 		return err
 	}
 	if err = q.DeleteExpiredBatchTreeNodes(ctx, expiredNodes); err != nil {

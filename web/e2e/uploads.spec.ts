@@ -46,7 +46,7 @@ test('browser sends real multipart bytes to public storage and shows in-place pr
   const transferRow = panel.locator('tr.transfer-row')
   await expect(transferRow).toHaveAttribute('hidden', '')
   const storageResponses: number[] = []
-  page.on('response', response => {if (response.request().method() === 'PUT' && response.url().includes('uploadId=')) storageResponses.push(response.status())})
+  page.on('response', response => {if (response.request().method() === 'PUT' && /\/api\/uploads\/[^/]+\/parts\/\d+$/.test(new URL(response.url()).pathname)) storageResponses.push(response.status())})
   const [picker] = await Promise.all([
     page.waitForEvent('filechooser', { timeout: 5000 }),
     panel.getByRole('button', { name: '点击选择文件，或拖到这里上传' }).click({ position: { x: 24, y: 24 } }),
@@ -116,7 +116,7 @@ test('reload resumes only missing stored parts and rejects a different file', as
   const dir = `Resume-${Date.now()}`
   await createAndOpenFolder(page, dir)
   let interrupted = false
-  await page.route('**/*partNumber=2*', async route => { interrupted = true; await route.abort() })
+  await page.route('**/api/uploads/*/parts/2', async route => { interrupted = true; await route.abort() })
   const file = {name:'resume.txt',mimeType:'text/plain',buffer:Buffer.alloc(9*1024*1024,66)}
   await panel.getByLabel('上传文件', {exact:true}).setInputFiles(file)
   await expect.poll(() => interrupted).toBe(true)
@@ -124,9 +124,9 @@ test('reload resumes only missing stored parts and rejects a different file', as
   await page.reload()
   await panel.getByLabel('重新选择文件').setInputFiles({...file,name:'wrong.txt'})
   await expect(panel.getByRole('status',{name:'上传进度'})).toContainText('不匹配')
-  await page.unroute('**/*partNumber=2*')
+  await page.unroute('**/api/uploads/*/parts/2')
   const sent: string[]=[]
-  page.on('request',r=>{if(r.method()==='PUT' && r.url().includes('uploadId=')) sent.push(new URL(r.url()).searchParams.get('partNumber')!)})
+  page.on('request',r=>{const match = r.method()==='PUT' ? new URL(r.url()).pathname.match(/\/api\/uploads\/[^/]+\/parts\/(\d+)$/) : null; if(match) sent.push(match[1]!)})
   const chooser = page.waitForEvent('filechooser')
   await panel.getByRole('button', { name: '继续上传', exact: true }).click()
   await (await chooser).setFiles(file)
@@ -173,7 +173,7 @@ test('offline uploads resume automatically and leave prompt is limited to runnin
  await createAndOpenFolder(page, name)
  let interrupted=false
  let promptWhileRunning=false
- await page.route('**/*partNumber=2*',async route=>{if(interrupted){await route.continue();return};interrupted=true;promptWhileRunning=await page.evaluate("(()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented})()");await context.setOffline(true);await route.abort()})
+ await page.route('**/api/uploads/*/parts/2',async route=>{if(interrupted){await route.continue();return};interrupted=true;promptWhileRunning=await page.evaluate("(()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented})()");await context.setOffline(true);await route.abort()})
  await panel.getByLabel('上传文件',{exact:true}).setInputFiles({name:'offline.txt',mimeType:'text/plain',buffer:Buffer.alloc(9*1024*1024,70)})
  await expect(panel.getByRole('alert')).toContainText('已保存的分片会保留')
  await expect(panel.getByLabel('重新选择文件')).toBeVisible()
@@ -188,7 +188,7 @@ test('folder PUT progress and active rows share one destination pill; empty drop
  const panel=page.getByRole('region',{name:'共享目录'}),name=`Review-${Date.now()}`
  await createAndOpenFolder(page, name)
  let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve)
- await page.route('**/*partNumber=2*',async route=>{await gate;await route.continue()})
+ await page.route('**/api/uploads/*/parts/2',async route=>{await gate;await route.continue()})
  // Chromium's drop-entry boundary carries directories that a FileList omits.
  await expect(panel.getByRole('table', {name:'文件列表'}).getByLabel('选择文件夹', {exact:true})).toBeAttached()
  await panel.getByRole('table', {name:'文件列表'}).evaluate(table=>{
@@ -231,8 +231,8 @@ test('an active multipart upload survives switching to service status and back',
 
   let releasePart!: () => void
   const gate = new Promise<void>(resolve => { releasePart = resolve })
-  const secondPart = page.waitForRequest(request => request.method() === 'PUT' && new URL(request.url()).searchParams.get('partNumber') === '2')
-  await page.route('**/*partNumber=2*', async route => {
+  const secondPart = page.waitForRequest(request => request.method() === 'PUT' && /\/api\/uploads\/[^/]+\/parts\/2$/.test(new URL(request.url()).pathname))
+  await page.route('**/api/uploads/*/parts/2', async route => {
     await gate
     await route.continue()
   })

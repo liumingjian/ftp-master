@@ -10,7 +10,7 @@ export function putPart(url: string, bytes: Blob, progress: (loaded: number) => 
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', url)
-    xhr.withCredentials = false
+    xhr.withCredentials = true
     xhr.upload.onprogress = event => progress(event.loaded)
     xhr.onload = () => xhr.status === 200 ? resolve() : reject(new Error(`存储服务 HTTP ${xhr.status}`))
     xhr.onerror = () => reject(new Error('网络中断，请重试'))

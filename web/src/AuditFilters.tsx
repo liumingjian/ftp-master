@@ -5,6 +5,7 @@ import type { components } from './api/schema.gen'
 
 export const auditRanges = { today: '今天', week: '近 7 天', month: '近 30 天', custom: '自定义' }
 export const auditCategories = {
+  transfer: '文件传输（上传/下载）',
   read: '查看与下载',
   write: '上传与修改',
   delete: '删除与恢复',
@@ -34,6 +35,8 @@ export type AuditFilters = {
   category: keyof typeof auditCategories | ''
   action: string
   failures: boolean
+  anomaliesOnly: boolean
+  maxAvgMbps: string
   itemId?: number
 }
 
@@ -41,7 +44,7 @@ export type HistoricalDirectory = { path: string; exists: boolean }
 
 export const defaultAuditFilters: AuditFilters = {
   range: 'week', from: '', to: '', userIds: [], directory: '', recursive: true,
-  category: '', action: '', failures: false,
+  category: '', action: '', failures: false, anomaliesOnly: false, maxAvgMbps: '',
 }
 
 export function withAuditRange(filters: AuditFilters, range: AuditFilters['range'], timestamp: string): AuditFilters {
@@ -109,7 +112,7 @@ export function AuditFilterDialog({
     </div>
     <form className="audit-filter-form" onSubmit={async event => {
       event.preventDefault()
-      if (await apply({ ...draft, directory: draft.directory.trim(), action: draft.action.trim() })) dismiss()
+      if (await apply({ ...draft, directory: draft.directory.trim(), action: draft.action.trim(), maxAvgMbps: draft.maxAvgMbps.trim() })) dismiss()
     }}>
       <fieldset disabled={busy}>
         <legend>时间</legend>
@@ -193,6 +196,22 @@ export function AuditFilterDialog({
           onChange={event => setDraft({ ...draft, action: event.target.value })} /></label>}
         <label className="audit-check"><input type="checkbox" checked={draft.failures}
           onChange={event => setDraft({ ...draft, failures: event.target.checked })} />只看失败</label>
+      </fieldset>
+      <fieldset disabled={busy}>
+        <legend>传输速率排查</legend>
+        <label className="audit-check">
+          <input type="checkbox" checked={draft.anomaliesOnly}
+            onChange={event => setDraft({ ...draft, anomaliesOnly: event.target.checked })} />
+          仅看异常传输（中断或掉速卡顿）
+        </label>
+        <label className="tp-threshold-label">
+          平均速率低于（MB/s）
+          <div className="tp-threshold-input-row">
+            <input type="number" min="0" step="any" placeholder="不限，例如 5" value={draft.maxAvgMbps}
+              onChange={event => setDraft({ ...draft, maxAvgMbps: event.target.value })} />
+            <span className="tp-threshold-unit">MB/s</span>
+          </div>
+        </label>
       </fieldset>
       {error && <p className="banner error" role="alert">{error}</p>}
       <div className="audit-dialog-actions">

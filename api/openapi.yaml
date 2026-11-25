@@ -257,13 +257,33 @@ paths:
       operationId: downloadFile
       parameters:
         - {in: query, name: versionId, schema: {type: integer, format: int64, minimum: 1}}
+        - {in: header, name: Range, schema: {type: string}}
       responses:
-        "302":
-          description: Authorized short-lived capability for immutable file bytes. Audit records issuance.
-          headers:
-            Location: {required: true, schema: {type: string}}
-            Cache-Control: {required: true, schema: {type: string}}
+        "200":
+          description: Streaming immutable file bytes proxied through the application for authoritative throughput audit (ADR 0008).
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        "206":
+          description: Partial immutable file bytes for a Range request.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
         default: {$ref: "#/components/responses/Unauthorized"}
+  /audit/{id}/transfer-series:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: integer, format: int64}}
+    get:
+      operationId: getAuditTransferSeries
+      parameters:
+        - {in: query, name: occurredAt, schema: {type: string, format: date-time}}
+      responses:
+        '200':
+          description: Time-series Transfer Profile samples for an audited file transfer. Administrator only.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransferSeries'}
+        default: {$ref: '#/components/responses/Unauthorized'}
   /audit/query:
     post:
       operationId: queryAudit
@@ -282,8 +302,10 @@ paths:
                 directory: {type: string}
                 includeSubdirectories: {type: boolean, default: true}
                 action: {type: string}
-                category: {type: string, enum: [session, read, write, delete, grant, account]}
+                category: {type: string, enum: [transfer, session, read, write, delete, grant, account]}
                 failuresOnly: {type: boolean}
+                anomaliesOnly: {type: boolean}
+                maxAvgBps: {type: integer, format: int64, minimum: 1}
                 itemId: {type: integer, format: int64}
                 page: {type: integer, minimum: 1, default: 1}
                 export: {type: boolean}
@@ -407,6 +429,21 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/PartURLs'}
+        default: {$ref: '#/components/responses/Unauthorized'}
+  /uploads/{id}/parts/{partNumber}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - {in: path, name: partNumber, required: true, schema: {type: integer, minimum: 1}}
+    put:
+      operationId: uploadPart
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        '200':
+          description: Part streamed through the application to object storage with per-second throughput recorded (ADR 0008).
         default: {$ref: '#/components/responses/Unauthorized'}
   /uploads/{id}/complete:
     parameters:
@@ -1594,6 +1631,32 @@ components:
         properties:
           number: {type: integer}
           url: {type: string}
+    TransferSeries:
+      type: object
+      required: [bucketSeconds, points, gaps]
+      properties:
+        bucketSeconds: {type: integer, minimum: 1}
+        points:
+          type: array
+          items:
+            type: object
+            required: [index, timestamp, bps, cumulativeBytes]
+            properties:
+              index: {type: integer}
+              timestamp: {type: string, format: date-time}
+              bps: {type: integer, format: int64}
+              cumulativeBytes: {type: integer, format: int64}
+              stalled: {type: boolean}
+        gaps:
+          type: array
+          items:
+            type: object
+            required: [beforeIndex, durationSeconds, startedAt, resumedAt]
+            properties:
+              beforeIndex: {type: integer}
+              durationSeconds: {type: integer}
+              startedAt: {type: string, format: date-time}
+              resumedAt: {type: string, format: date-time}
     FileVersion:
       type: object
       required: [id, size, format, createdBy, username, createdAt]

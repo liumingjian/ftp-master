@@ -1,4 +1,15 @@
-import { Check, ChevronRight, Copy, Download, RefreshCw, SlidersHorizontal, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Check,
+  ChevronRight,
+  Copy,
+  Download,
+  RefreshCw,
+  SlidersHorizontal,
+  X,
+  XCircle,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { PageHeading } from './PageHeading'
 import { actionNames, AuditFilterDialog, auditCategories, auditRanges, defaultAuditFilters, withAuditRange,
@@ -9,6 +20,14 @@ import { systemClock } from './clock'
 import { formatSize } from './FileIcon'
 import { redirectToSignIn } from './navigation'
 import { useRequestOnMount } from './requestOnMount'
+import { TransferSparklineCell, TransferSparklineSvg } from './TransferSparkline'
+import { TransferTrendDialog } from './TransferTrendDialog'
+import {
+  extractTransferProfile,
+  formatBytes,
+  formatDurationMs,
+  formatRate,
+} from './transferProfile'
 import { usePanelDismissal } from './usePanelDismissal'
 
 type Event = {
@@ -60,6 +79,7 @@ const detailFieldLabels: Record<string, string> = {
   nodeId: '节点编号',
   status: '状态',
   size: '文件大小',
+  partNumber: '分片编号',
   versionId: '版本编号',
   baseVersionId: '基础版本编号',
   sourceVersionId: '源版本编号',
@@ -113,7 +133,7 @@ function formatDetailValue(key: string, value: unknown): string {
 function structuredDetailEntries(detail: unknown): { label: string; value: string }[] {
   if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return []
   return Object.entries(detail as Record<string, unknown>)
-    .filter(([key, value]) => key !== 'files' && value !== undefined && value !== null && value !== '')
+    .filter(([key, value]) => key !== 'files' && key !== 'transferProfile' && value !== undefined && value !== null && value !== '')
     .map(([key, value]) => ({
       label: detailFieldLabels[key] ?? key,
       value: formatDetailValue(key, value),
@@ -133,11 +153,12 @@ export function AuditPanel() {
   const [dialog, setDialog] = useState<'more' | 'custom'>()
   const [result, setResult] = useState<Results>()
   const [detail, setDetail] = useState<Event>()
+  const [trendEvent, setTrendEvent] = useState<Event>()
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const cancelCopyTimer = useRef<(() => void) | null>(null)
   const detailTrigger = useRef<HTMLButtonElement>(null)
   const detailClose = useRef<HTMLButtonElement>(null)
-  const detailPanel = usePanelDismissal(!!detail, closeDetail)
+  const detailPanel = usePanelDismissal(!!detail && !trendEvent, closeDetail)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [serverTime, setServerTime] = useState('')
@@ -153,7 +174,7 @@ export function AuditPanel() {
   const organizationList = Array.isArray(organizations) ? organizations : []
 
   useEffect(() => () => { cancelCopyTimer.current?.() }, [])
-  useEffect(() => { if (detail) detailClose.current?.focus() }, [detail])
+  useEffect(() => { if (detail && !trendEvent) detailClose.current?.focus() }, [detail, trendEvent])
 
   function closeDetail(restoreFocus = true) {
     setDetail(undefined)
@@ -163,6 +184,7 @@ export function AuditPanel() {
 
   function copyAuditSummary(event: Event) {
     if (!navigator.clipboard) return
+    const tp = extractTransferProfile(event.detail)
     const lines = [
       `审计记录 #${event.id}`,
       `时间：${formatAuditLocalTime(event.time)}（UTC ${formatAuditUtcTime(event.time)}）`,
@@ -171,6 +193,9 @@ export function AuditPanel() {
       `操作：${actionNames[event.action] ?? event.action}`,
       `结果：${event.outcome === 'success' ? '成功' : '失败'}`,
       event.path ? `当时路径：${event.path}` : '',
+      tp ? `传输速率：平均 ${formatRate(tp.avgBps)} · 峰值 ${formatRate(tp.peakBps)} · 最低 ${formatRate(tp.minBps)}` : '',
+      tp ? `传输进度：${formatBytes(tp.bytesTransferred)} / ${formatBytes(tp.totalBytes)} · 有效耗时 ${formatDurationMs(tp.activeDurationMs)}` : '',
+      tp?.statusReason ? `中断原因：${tp.statusReason}` : '',
     ].filter(Boolean).join('\n')
     void navigator.clipboard.writeText(lines).then(() => {
       cancelCopyTimer.current?.()
@@ -205,6 +230,11 @@ export function AuditPanel() {
         setServerTime(timestamp)
         next = withAuditRange(next, next.range, timestamp)
       }
+      const maxAvgNum = Number(next.maxAvgMbps)
+      const maxAvgBps =
+        next.maxAvgMbps.trim() !== '' && Number.isFinite(maxAvgNum) && maxAvgNum > 0
+          ? Math.round(maxAvgNum * 1024 * 1024)
+          : undefined
       const response = await fetch('/api/audit/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -218,6 +248,8 @@ export function AuditPanel() {
           category: next.category || undefined,
           includeSubdirectories: next.recursive,
           failuresOnly: next.failures,
+          anomaliesOnly: next.anomaliesOnly || undefined,
+          maxAvgBps,
           itemId: next.itemId,
           page,
           export: csv,
@@ -246,6 +278,7 @@ export function AuditPanel() {
         setResult(nextResult)
         setFilters(next)
         closeDetail(false)
+        setTrendEvent(undefined)
       }
       return true
     } catch {
@@ -267,10 +300,15 @@ export function AuditPanel() {
     filters.directory ? filters.directory + (filters.recursive ? '（含子目录）' : '（仅本层）') : '',
     filters.action ? actionNames[filters.action] ?? filters.action : '',
     filters.failures ? '只看失败' : '',
+    filters.anomaliesOnly ? '仅看异常传输' : '',
+    filters.maxAvgMbps ? `平均速率 < ${filters.maxAvgMbps} MB/s` : '',
     filters.itemId !== undefined ? '项目 #' + filters.itemId : '',
   ].filter(Boolean)
   const filtered = context.length > 0 || filters.range !== 'week' || !!filters.category
   const parsedDetailEntries = detail ? structuredDetailEntries(detail.detail) : []
+  const detailProfile = detail ? extractTransferProfile(detail.detail) : undefined
+  const detailHasCurve = !!detailProfile && detailProfile.activeDurationMs >= 2000 && detailProfile.sparkline.length >= 2
+  const trendProfile = trendEvent ? extractTransferProfile(trendEvent.detail) : undefined
 
   return <section aria-label="审计记录" className="audit-panel">
     <PageHeading title="审计日志" actions={
@@ -323,7 +361,9 @@ export function AuditPanel() {
           <table>
             <thead><tr>
               <th scope="col">时间（本地）</th><th scope="col">用户</th><th scope="col">来源 IP</th><th scope="col">操作</th>
-              <th scope="col" title="操作发生时的对象路径">操作对象</th><th scope="col">结果</th><th scope="col"><span className="visually-hidden">详情</span></th>
+              <th scope="col" title="操作发生时的对象路径">操作对象</th>
+              <th scope="col" title="点击趋势图弹出每秒流量曲线窗口">传输速率</th>
+              <th scope="col">结果</th><th scope="col"><span className="visually-hidden">详情</span></th>
             </tr></thead>
             <tbody>
               {result.events.map(event => {
@@ -331,12 +371,16 @@ export function AuditPanel() {
                 const rowClass = [detail?.id === event.id ? 'selected' : '', failed ? 'audit-failed' : ''].filter(Boolean).join(' ') || undefined
                 const localTime = formatAuditLocalTime(event.time)
                 const utcTime = formatAuditUtcTime(event.time)
+                const profile = extractTransferProfile(event.detail)
                 return <tr key={event.time + '-' + event.id} className={rowClass}>
                   <td className="audit-time-cell"><time dateTime={event.time} title={`本地 ${localTime} · UTC ${utcTime}`}>{localTime.slice(5)}</time></td>
                   <td>{event.username || '—'}</td>
                   <td className="audit-time-cell">{event.sourceIp || '—'}</td>
                   <td title={event.action}>{actionNames[event.action] ?? event.action}</td>
                   <td className="audit-object"><span title={event.path}>{event.path || (event.action === 'zip_download' ? archivePaths(event).length + ' 个文件' : '—')}</span></td>
+                  <td className="tp-rate-col">
+                    <TransferSparklineCell profile={profile} onInspectTrend={() => setTrendEvent(event)} />
+                  </td>
                   <td>
                     <span className={failed ? 'pill audit-outcome-bad' : 'pill audit-outcome-ok'}>
                       {failed ? '失败' : '成功'}
@@ -351,7 +395,7 @@ export function AuditPanel() {
                   </button></td>
                 </tr>
               })}
-              {!result.events.length && <tr><td colSpan={7} className="audit-empty">没有符合当前条件的记录</td></tr>}
+              {!result.events.length && <tr><td colSpan={8} className="audit-empty">没有符合当前条件的记录</td></tr>}
             </tbody>
           </table>
         </div>
@@ -379,6 +423,94 @@ export function AuditPanel() {
           {detail.itemId !== null && <><dt>项目编号</dt><dd>#{detail.itemId}</dd></>}
           {detail.path && <><dt>当时路径</dt><dd>{detail.path}</dd></>}
         </dl>
+
+        {detailProfile && (
+          <div className="audit-detail-section tp-drawer-transfer">
+            <div className="tp-drawer-section-head">
+              <h3>传输概况</h3>
+              {detailProfile.anomaly === 'stall' && (
+                <span className="pill tp-pill-stall">
+                  <AlertTriangle size={12} aria-hidden="true" />
+                  {detailProfile.stallCount ?? 1} 次掉速
+                </span>
+              )}
+              {detailProfile.anomaly === 'failed' && (
+                <span className="pill tp-pill-failed">
+                  <XCircle size={12} aria-hidden="true" />
+                  中断
+                </span>
+              )}
+            </div>
+
+            <dl className="tp-drawer-kv">
+              <div className="tp-kv-row">
+                <dt>平均速率</dt>
+                <dd className="tp-kv-num">{formatRate(detailProfile.avgBps)}</dd>
+              </div>
+              {detailHasCurve && (
+                <div className="tp-kv-row">
+                  <dt>峰值 / 最低</dt>
+                  <dd className="tp-kv-num">{formatRate(detailProfile.peakBps)} / {formatRate(detailProfile.minBps)}</dd>
+                </div>
+              )}
+              <div className="tp-kv-row">
+                <dt>已传 / 总大小</dt>
+                <dd className="tp-kv-num">
+                  {formatBytes(detailProfile.bytesTransferred)} / {formatBytes(detailProfile.totalBytes)}
+                  {detailProfile.totalBytes > 0 && detailProfile.bytesTransferred < detailProfile.totalBytes && (
+                    <span className="muted"> ({Math.round((detailProfile.bytesTransferred / detailProfile.totalBytes) * 100)}%)</span>
+                  )}
+                </dd>
+              </div>
+              <div className="tp-kv-row">
+                <dt>{detailProfile.totalSpanMs > detailProfile.activeDurationMs + 10000 ? '有效耗时' : '传输耗时'}</dt>
+                <dd className="tp-kv-num">
+                  {formatDurationMs(detailProfile.activeDurationMs)}
+                  {detailProfile.totalSpanMs > detailProfile.activeDurationMs + 10000 && (
+                    <span className="muted">（总跨度 {formatDurationMs(detailProfile.totalSpanMs)}）</span>
+                  )}
+                </dd>
+              </div>
+              {detailProfile.range && (
+                <div className="tp-kv-row">
+                  <dt>字节范围</dt>
+                  <dd className="tp-kv-num">{formatBytes(detailProfile.range.start)} – {formatBytes(detailProfile.range.end + 1)}</dd>
+                </div>
+              )}
+              {detailProfile.statusReason && (
+                <div className="tp-kv-row">
+                  <dt>中断原因</dt>
+                  <dd className="bad">{detailProfile.statusReason}</dd>
+                </div>
+              )}
+            </dl>
+
+            {detailHasCurve && (
+              <button
+                type="button"
+                className={`tp-drawer-trend-launch tp-tone-${
+                  detailProfile.anomaly === 'failed'
+                    ? 'failed'
+                    : detailProfile.anomaly === 'stall'
+                      ? 'stall'
+                      : 'normal'
+                }`}
+                onClick={() => setTrendEvent(detail)}
+              >
+                <TransferSparklineSvg profile={detailProfile} width={88} height={24} />
+                <span className="tp-drawer-trend-label">
+                  <span>查看每秒流量曲线</span>
+                  <small>
+                    {detailProfile.bucketSeconds > 1
+                      ? `每 ${detailProfile.bucketSeconds} 秒采样 · 支持框选放大`
+                      : '逐秒采样 · 支持框选放大'}
+                  </small>
+                </span>
+                <ArrowUpRight size={16} className="tp-drawer-trend-arrow" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        )}
 
         {detail.action === 'zip_download' && (
           <div className="audit-detail-section">
@@ -422,6 +554,30 @@ export function AuditPanel() {
         </div>
       </aside>}
     </div>
+
+    {trendEvent && trendProfile && (
+      <TransferTrendDialog
+        event={{
+          id: trendEvent.id,
+          time: trendEvent.time,
+          username: trendEvent.username,
+          sourceIp: trendEvent.sourceIp,
+          action: trendEvent.action,
+          path: trendEvent.path,
+          archiveCount: archivePaths(trendEvent).length,
+          profile: trendProfile,
+        }}
+        localTime={formatAuditLocalTime(trendEvent.time)}
+        copied={copiedId === trendEvent.id}
+        onCopySummary={() => copyAuditSummary(trendEvent)}
+        onOpenDetail={() => {
+          const target = trendEvent
+          setTrendEvent(undefined)
+          setDetail(target)
+        }}
+        onClose={() => setTrendEvent(undefined)}
+      />
+    )}
   </section>
 }
 

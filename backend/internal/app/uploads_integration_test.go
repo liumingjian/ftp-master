@@ -84,7 +84,8 @@ func TestMultipartPublishesOnceWithCreatorAndExactBytes(t *testing.T) {
 	for _, part := range urls {
 		start := int64(part.Number-1) * upload.PartSize
 		end := min(start+upload.PartSize, int64(len(content)))
-		req, _ := http.NewRequest("PUT", part.URL, bytes.NewReader(content[start:end]))
+		req, _ := http.NewRequest("PUT", server.URL+part.URL, bytes.NewReader(content[start:end]))
+		req.AddCookie(b.cookie)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -131,27 +132,18 @@ func TestMultipartPublishesOnceWithCreatorAndExactBytes(t *testing.T) {
 	if len(grants) != 1 || !grants[0].Creator || grants[0].Rights != 63 {
 		t.Fatalf("Creator Grant %v", grants)
 	}
-	// The redirect is an authorized issuance; the client then reads exact immutable bytes.
+	// Single-file downloads stream through the application (ADR 0008) and audit on completion.
 	downloadPath := fmt.Sprintf("/api/tree/%d/download", published.FileID)
 	req, _ := http.NewRequest("GET", server.URL+downloadPath, nil)
 	req.AddCookie(b.cookie)
-	redirectClient := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	res, err := redirectClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	res.Body.Close()
-	if res.StatusCode != 302 || res.Header.Get("Cache-Control") != "no-store" {
-		t.Fatalf("redirect: %d", res.StatusCode)
-	}
-	downloaded, err := http.Get(res.Header.Get("Location"))
+	downloaded, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	gotBytes, _ := io.ReadAll(downloaded.Body)
 	downloaded.Body.Close()
-	if downloaded.StatusCode != 200 || !bytes.Equal(gotBytes, content) || !strings.Contains(downloaded.Header.Get("Content-Disposition"), "report.txt") {
-		t.Fatal("download bytes or filename mismatch")
+	if downloaded.StatusCode != 200 || downloaded.Header.Get("Cache-Control") != "no-store" || !bytes.Equal(gotBytes, content) || !strings.Contains(downloaded.Header.Get("Content-Disposition"), "report.txt") {
+		t.Fatalf("download mismatch: status=%d len=%d disp=%q", downloaded.StatusCode, len(gotBytes), downloaded.Header.Get("Content-Disposition"))
 	}
 	downloadEvents := 0
 	for _, event := range readAuditEvents(t, stores.config.DatabaseURL) {
@@ -250,7 +242,8 @@ func TestEmptyUploadAndConcurrentFinish(t *testing.T) {
 		URL string `json:"url"`
 	}
 	decode(t, call("POST", "/api/uploads/"+upload.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
-	req, _ := http.NewRequest("PUT", urls[0].URL, bytes.NewReader(nil))
+	req, _ := http.NewRequest("PUT", server.URL+urls[0].URL, bytes.NewReader(nil))
+	req.AddCookie(b.cookie)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -415,7 +408,8 @@ func TestFolderBatchRemainsHiddenUntilEveryChildCompletes(t *testing.T) {
 			URL string `json:"url"`
 		}
 		decode(t, call("POST", "/api/uploads/"+session.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
-		req, _ := http.NewRequest("PUT", urls[0].URL, strings.NewReader("abc"))
+		req, _ := http.NewRequest("PUT", server.URL+urls[0].URL, strings.NewReader("abc"))
+		req.AddCookie(b.cookie)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)

@@ -115,14 +115,15 @@ func (s *Server) DownloadZip(ctx context.Context, r api.DownloadZipRequestObject
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return zipResponse{s, ctx, entries}, nil
+	return zipResponse{s, ctx, entries, total}, nil
 }
 func (e membershipFailure) VisitDownloadZipResponse(w http.ResponseWriter) error { return e.write(w) }
 
 type zipResponse struct {
-	server  *Server
-	ctx     context.Context
-	entries []zipEntry
+	server        *Server
+	ctx           context.Context
+	entries       []zipEntry
+	expectedTotal int64
 }
 
 func (r zipResponse) VisitDownloadZipResponse(w http.ResponseWriter) error {
@@ -130,37 +131,76 @@ func (r zipResponse) VisitDownloadZipResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Disposition", `attachment; filename="download.zip"`)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	out := zip.NewWriter(w)
-	files := make([]map[string]any, 0, len(r.entries))
+
+	sampler := audit.NewTransferSampler(r.server.membership.Clock)
+	out := zip.NewWriter(sampler.CountingWriter(w))
+	allFiles := make([]map[string]any, 0, len(r.entries))
+	for _, entry := range r.entries {
+		allFiles = append(allFiles, map[string]any{"id": entry.id, "path": entry.path})
+	}
+	recordAudit := func(failed bool, reason string) error {
+		seg := sampler.Finish()
+		totalBytes := r.expectedTotal
+		if seg.BytesTransferred > totalBytes {
+			totalBytes = seg.BytesTransferred
+		}
+		summary, series := audit.BuildTransferProfile([]audit.TransferSegment{seg}, totalBytes, failed, reason, nil)
+		detail := map[string]any{
+			"files":           allFiles,
+			"transferProfile": summary,
+		}
+		outcome := audit.OutcomeSuccess
+		if failed {
+			outcome = audit.OutcomeFailure
+			detail["reason"] = reason
+		}
+		info := requestFrom(r.ctx)
+		return audit.NewRecorder(sqlcdb.New(r.server.membership.Pool), r.server.membership.Clock).Record(
+			context.WithoutCancel(r.ctx),
+			audit.Event{
+				UserID:         info.session.User.ID,
+				Username:       info.session.User.Username,
+				SourceIP:       info.sourceIP,
+				Action:         "zip_download",
+				Outcome:        outcome,
+				Detail:         detail,
+				TransferSeries: series,
+			},
+		)
+	}
+
+	buf := make([]byte, 32*1024)
 	for _, entry := range r.entries {
 		obj, err := r.server.transfer.Client.GetObject(r.ctx, r.server.transfer.Bucket, entry.version.ObjectKey, minio.GetObjectOptions{})
 		if err != nil {
+			_ = recordAudit(true, streamFailureReason(r.ctx, err))
 			panic(http.ErrAbortHandler)
 		}
 		info, err := obj.Stat()
 		if err != nil || info.Size != entry.version.Size {
 			obj.Close()
+			_ = recordAudit(true, "源对象读取异常")
 			panic(http.ErrAbortHandler)
 		}
 		writer, err := out.CreateHeader(&zip.FileHeader{Name: entry.name, Method: zip.Store})
 		if err != nil {
 			obj.Close()
+			_ = recordAudit(true, streamFailureReason(r.ctx, err))
 			panic(http.ErrAbortHandler)
 		}
-		copied, err := io.Copy(writer, obj)
+		copied, err := io.CopyBuffer(writer, obj, buf)
 		obj.Close()
 		if err != nil || copied != entry.version.Size {
+			_ = recordAudit(true, streamFailureReason(r.ctx, err))
 			panic(http.ErrAbortHandler)
 		}
-		files = append(files, map[string]any{"id": entry.id, "path": entry.path})
 	}
-	// Record exactly one completed packing operation, including historical tree paths.
-	info := requestFrom(r.ctx)
-	err := audit.NewRecorder(sqlcdb.New(r.server.membership.Pool), r.server.membership.Clock).Record(r.ctx, audit.Event{UserID: info.session.User.ID, Username: info.session.User.Username, SourceIP: info.sourceIP, Action: "zip_download", Outcome: audit.OutcomeSuccess, Detail: map[string]any{"files": files}})
-	if err != nil {
+	if err := out.Close(); err != nil {
+		_ = recordAudit(true, streamFailureReason(r.ctx, err))
 		panic(http.ErrAbortHandler)
 	}
-	if err = out.Close(); err != nil {
+	// Record exactly one completed packing operation with its Transfer Profile.
+	if err := recordAudit(false, ""); err != nil {
 		panic(http.ErrAbortHandler)
 	}
 	return nil

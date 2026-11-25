@@ -50,6 +50,9 @@ type Event struct {
 	ItemPath string
 	// Detail holds action-specific facts, such as why a sign-in failed.
 	Detail map[string]any
+	// TransferSeries optionally stores the companion time-series rows in
+	// audit_transfer_series atomically alongside this Audit Event.
+	TransferSeries *TransferSeries
 }
 
 // Recorder writes Audit Events, stamped by its Clock.
@@ -98,8 +101,36 @@ func (r *Recorder) Record(ctx context.Context, e Event) error {
 	if err := r.EnsurePartition(ctx, now); err != nil {
 		return err
 	}
-	if err := r.queries.InsertAuditEvent(ctx, params); err != nil {
+	inserted, err := r.queries.InsertAuditEvent(ctx, params)
+	if err != nil {
 		return fmt.Errorf("record audit event %s: %w", e.Action, err)
+	}
+	if e.TransferSeries != nil && len(e.TransferSeries.Points) > 0 {
+		pointsJSON, err := json.Marshal(e.TransferSeries.Points)
+		if err != nil {
+			return fmt.Errorf("encode transfer series points: %w", err)
+		}
+		gaps := e.TransferSeries.Gaps
+		if gaps == nil {
+			gaps = []TransferGap{}
+		}
+		gapsJSON, err := json.Marshal(gaps)
+		if err != nil {
+			return fmt.Errorf("encode transfer series gaps: %w", err)
+		}
+		bucketSec := e.TransferSeries.BucketSeconds
+		if bucketSec < 1 {
+			bucketSec = 1
+		}
+		if err := r.queries.InsertAuditTransferSeries(ctx, sqlcdb.InsertAuditTransferSeriesParams{
+			EventID:       inserted.ID.Int64,
+			OccurredAt:    inserted.OccurredAt,
+			BucketSeconds: int32(bucketSec),
+			Points:        pointsJSON,
+			Gaps:          gapsJSON,
+		}); err != nil {
+			return fmt.Errorf("record transfer series for %s: %w", e.Action, err)
+		}
 	}
 	return nil
 }

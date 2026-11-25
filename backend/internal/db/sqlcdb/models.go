@@ -23,6 +23,14 @@ type AuditEvent struct {
 	Detail     []byte
 }
 
+type AuditTransferSeries struct {
+	EventID       int64
+	OccurredAt    pgtype.Timestamptz
+	BucketSeconds int32
+	Points        []byte
+	Gaps          []byte
+}
+
 type FileVersion struct {
 	ID        int64
 	FileID    int64
@@ -132,6 +140,16 @@ type UploadSession struct {
 	Collision       string
 	BatchID         pgtype.Text
 	RelativePath    string
+}
+
+type UploadTransferSample struct {
+	ID               int64
+	SessionID        string
+	PartNumber       int32
+	StartedAt        pgtype.Timestamptz
+	EndedAt          pgtype.Timestamptz
+	BytesTransferred int64
+	Samples          []byte
 }
 
 type User struct {
