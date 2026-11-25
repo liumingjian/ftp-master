@@ -78,9 +78,10 @@ type OfficeEditPolicy struct {
 }
 
 type Organization struct {
-	ID       int64
-	Name     string
-	ParentID pgtype.Int8
+	ID         int64
+	Name       string
+	ParentID   pgtype.Int8
+	QuotaBytes pgtype.Int8
 }
 
 type RecycleEntry struct {
@@ -163,6 +164,7 @@ type User struct {
 	OrganizationID   int64
 	OrganizationHint string
 	SessionEpoch     int64
+	QuotaBytes       pgtype.Int8
 }
 
 type UserGroup struct {

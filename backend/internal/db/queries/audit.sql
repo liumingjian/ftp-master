@@ -34,7 +34,7 @@ AND (sqlc.arg(category)::text='' OR (
  WHEN a.action IN ('download','zip_download') THEN 'read'
  WHEN a.action IN ('delete','restore','purge') THEN 'delete'
  WHEN starts_with(a.action,'grant') THEN 'grant'
- WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') THEN 'account'
+ WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') OR a.action = 'quota_change' THEN 'account'
  ELSE 'write' END=sqlc.arg(category))
 ))
 AND (NOT sqlc.arg(failures_only)::boolean OR outcome='failure')
@@ -67,7 +67,7 @@ AND (sqlc.arg(category)::text='' OR (
  WHEN a.action IN ('download','zip_download') THEN 'read'
  WHEN a.action IN ('delete','restore','purge') THEN 'delete'
  WHEN starts_with(a.action,'grant') THEN 'grant'
- WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') THEN 'account'
+ WHEN starts_with(a.action,'account') OR starts_with(a.action,'password') OR starts_with(a.action,'registration') OR a.action = 'quota_change' THEN 'account'
  ELSE 'write' END=sqlc.arg(category))
 ))
 AND (NOT sqlc.arg(failures_only)::boolean OR outcome='failure')

@@ -30,7 +30,7 @@ func (q *Queries) ActivateRegistration(ctx context.Context, arg ActivateRegistra
 
 const createRegistration = `-- name: CreateRegistration :one
 INSERT INTO users(username,display_name,password_hash,status,created_at,organization_hint)
-VALUES ($1,$2,$3,'pending',$4,$5) RETURNING id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch
+VALUES ($1,$2,$3,'pending',$4,$5) RETURNING id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch, quota_bytes
 `
 
 type CreateRegistrationParams struct {
@@ -61,12 +61,13 @@ func (q *Queries) CreateRegistration(ctx context.Context, arg CreateRegistration
 		&i.OrganizationID,
 		&i.OrganizationHint,
 		&i.SessionEpoch,
+		&i.QuotaBytes,
 	)
 	return i, err
 }
 
 const listRegistrations = `-- name: ListRegistrations :many
-SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch FROM users WHERE status='pending' ORDER BY id
+SELECT id, username, display_name, password_hash, is_administrator, status, created_at, organization_id, organization_hint, session_epoch, quota_bytes FROM users WHERE status='pending' ORDER BY id
 `
 
 func (q *Queries) ListRegistrations(ctx context.Context) ([]User, error) {
@@ -89,6 +90,7 @@ func (q *Queries) ListRegistrations(ctx context.Context) ([]User, error) {
 			&i.OrganizationID,
 			&i.OrganizationHint,
 			&i.SessionEpoch,
+			&i.QuotaBytes,
 		); err != nil {
 			return nil, err
 		}

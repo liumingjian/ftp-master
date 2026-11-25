@@ -35,18 +35,24 @@ func (q *Queries) ClearUserGroupMembers(ctx context.Context, groupID int64) erro
 }
 
 const createOrganization = `-- name: CreateOrganization :one
-INSERT INTO organizations(name,parent_id) VALUES ($1,$2) RETURNING id, name, parent_id
+INSERT INTO organizations(name,parent_id,quota_bytes) VALUES ($1,$2,$3) RETURNING id, name, parent_id, quota_bytes
 `
 
 type CreateOrganizationParams struct {
-	Name     string
-	ParentID pgtype.Int8
+	Name       string
+	ParentID   pgtype.Int8
+	QuotaBytes pgtype.Int8
 }
 
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error) {
-	row := q.db.QueryRow(ctx, createOrganization, arg.Name, arg.ParentID)
+	row := q.db.QueryRow(ctx, createOrganization, arg.Name, arg.ParentID, arg.QuotaBytes)
 	var i Organization
-	err := row.Scan(&i.ID, &i.Name, &i.ParentID)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ParentID,
+		&i.QuotaBytes,
+	)
 	return i, err
 }
 
@@ -85,7 +91,7 @@ func (q *Queries) GetUserGroup(ctx context.Context, id int64) (UserGroup, error)
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT id, name, parent_id FROM organizations ORDER BY id
+SELECT id, name, parent_id, quota_bytes FROM organizations ORDER BY id
 `
 
 func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error) {
@@ -97,7 +103,12 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 	var items []Organization
 	for rows.Next() {
 		var i Organization
-		if err := rows.Scan(&i.ID, &i.Name, &i.ParentID); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ParentID,
+			&i.QuotaBytes,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -140,18 +151,29 @@ func (q *Queries) ListUserGroups(ctx context.Context) ([]ListUserGroupsRow, erro
 }
 
 const updateOrganization = `-- name: UpdateOrganization :one
-UPDATE organizations SET name= $1,parent_id=$2 WHERE id= $3 RETURNING id, name, parent_id
+UPDATE organizations SET name= $1,parent_id=$2,quota_bytes=$3 WHERE id= $4 RETURNING id, name, parent_id, quota_bytes
 `
 
 type UpdateOrganizationParams struct {
-	Name     string
-	ParentID pgtype.Int8
-	ID       int64
+	Name       string
+	ParentID   pgtype.Int8
+	QuotaBytes pgtype.Int8
+	ID         int64
 }
 
 func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error) {
-	row := q.db.QueryRow(ctx, updateOrganization, arg.Name, arg.ParentID, arg.ID)
+	row := q.db.QueryRow(ctx, updateOrganization,
+		arg.Name,
+		arg.ParentID,
+		arg.QuotaBytes,
+		arg.ID,
+	)
 	var i Organization
-	err := row.Scan(&i.ID, &i.Name, &i.ParentID)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ParentID,
+		&i.QuotaBytes,
+	)
 	return i, err
 }
