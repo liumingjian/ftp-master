@@ -7,12 +7,14 @@ import {
   computeOrgAncestorBudget,
   computePlatformStorageSummary,
   computeUserOrgBudget,
+  editQuotaWarning,
   formatBinaryBytes,
   formatQuotaExceededError,
   isQuotaExceededError,
   parseQuotaInput,
   quotaUsageState,
   sidebarStorageView,
+  utf8ByteLength,
   type QuotaOrganization,
   type SelfStorageSummaryLike,
 } from './quota.ts'
@@ -283,4 +285,26 @@ test('sidebarStorageView hides when unlimited and classifies normal, >=85% warni
     statusTag: '已满',
     pendingCount: 0,
   })
+})
+
+test('utf8ByteLength counts exact UTF-8 bytes including multi-byte Chinese characters', () => {
+  assert.equal(utf8ByteLength(''), 0)
+  assert.equal(utf8ByteLength('abc'), 3)
+  assert.equal(utf8ByteLength('中文'), 6)
+  assert.equal(utf8ByteLength('a中b'), 5)
+})
+
+test('editQuotaWarning warns only when effective headroom is tighter than file size', () => {
+  assert.equal(editQuotaWarning(null, 1024), undefined)
+  assert.equal(editQuotaWarning(undefined, 1024), undefined)
+  assert.equal(editQuotaWarning(1024, 0), undefined)
+  assert.equal(editQuotaWarning(1024, 1024), undefined)
+  assert.equal(editQuotaWarning(2048, 1024), undefined)
+
+  const tight = editQuotaWarning(512, 2048)
+  assert.ok(tight?.includes('512 B'))
+  assert.ok(tight?.includes('2 KB'))
+
+  const empty = editQuotaWarning(0, 100)
+  assert.ok(empty?.includes('0 B'))
 })

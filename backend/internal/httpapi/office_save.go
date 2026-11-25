@@ -96,7 +96,7 @@ func (s *Server) SaveOffice(ctx context.Context, r api.SaveOfficeRequestObject) 
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = lockMembershipAndTree(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)
@@ -138,6 +138,18 @@ func (s *Server) SaveOffice(ctx context.Context, r api.SaveOfficeRequestObject) 
 	latest, err := q.GetFileVersion(ctx, sqlcdb.GetFileVersionParams{FileID: p.FileID})
 	if err != nil {
 		return nil, err
+	}
+	decision, err := checkWriteQuota(ctx, q, info.session.User.ID, int64(len(data)))
+	if err != nil {
+		return nil, err
+	}
+	if !decision.Allowed {
+		itemPath := snap.Path(p.FileID)
+		_ = tx.Rollback(ctx)
+		if err = s.recordQuotaExceededAudit(ctx, info, "office_save", p.FileID, itemPath, decision); err != nil {
+			return nil, err
+		}
+		return api.SaveOffice507JSONResponse{Success: false, Message: formatQuotaExceededMessage(decision), Data: nil}, nil
 	}
 	key := opaqueKey()
 	committed := false

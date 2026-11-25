@@ -32,7 +32,7 @@ func (s *Server) OpenText(ctx context.Context, r api.OpenTextRequestObject) (api
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = lockMembershipAndTree(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)
@@ -51,6 +51,14 @@ func (s *Server) OpenText(ctx context.Context, r api.OpenTextRequestObject) (api
 	if v.Size >= textLimit {
 		return membershipFailure{413, "file must be under 10 MB"}, nil
 	}
+	info := requestFrom(ctx)
+	decision, err := checkEditOpenQuota(ctx, q, info.session.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !decision.Allowed {
+		return api.OpenText507JSONResponse{QuotaExceededJSONResponse: quotaExceededResponse(decision)}, nil
+	}
 	obj, err := s.transfer.Client.GetObject(ctx, s.transfer.Bucket, v.ObjectKey, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, err
@@ -63,14 +71,13 @@ func (s *Server) OpenText(ctx context.Context, r api.OpenTextRequestObject) (api
 	if int64(len(data)) != v.Size || !utf8.Valid(data) || bytes.ContainsRune(data, 0) {
 		return membershipFailure{415, "valid UTF-8 plain text required"}, nil
 	}
-	info := requestFrom(ctx)
 	if err = audit.NewRecorder(q, s.membership.Clock).Record(ctx, audit.Event{UserID: info.session.User.ID, Username: info.session.User.Username, SourceIP: info.sourceIP, Action: "text_open", Outcome: audit.OutcomeSuccess, ItemID: r.Id, ItemPath: snap.Path(r.Id), Detail: map[string]any{"versionId": v.ID}}); err != nil {
 		return nil, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return api.OpenText200JSONResponse{VersionId: v.ID, Content: string(data)}, nil
+	return api.OpenText200JSONResponse{VersionId: v.ID, Content: string(data), AvailableQuotaBytes: decision.AvailableBytes}, nil
 }
 func (s *Server) SaveText(ctx context.Context, r api.SaveTextRequestObject) (api.SaveTextResponseObject, error) {
 	if r.Body == nil {
@@ -88,7 +95,7 @@ func (s *Server) SaveText(ctx context.Context, r api.SaveTextRequestObject) (api
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = lockMembershipAndTree(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)
@@ -110,6 +117,19 @@ func (s *Server) SaveText(ctx context.Context, r api.SaveTextRequestObject) (api
 	if latest.ID != r.Body.BaseVersionId {
 		return membershipFailure{409, "file changed; reload and merge before saving"}, nil
 	}
+	info := requestFrom(ctx)
+	decision, err := checkWriteQuota(ctx, q, info.session.User.ID, int64(len(data)))
+	if err != nil {
+		return nil, err
+	}
+	if !decision.Allowed {
+		itemPath := snap.Path(r.Id)
+		_ = tx.Rollback(ctx)
+		if err = s.recordQuotaExceededAudit(ctx, info, "text_save", r.Id, itemPath, decision); err != nil {
+			return nil, err
+		}
+		return api.SaveText507JSONResponse{QuotaExceededJSONResponse: quotaExceededResponse(decision)}, nil
+	}
 	key := opaqueKey()
 	committed := false
 	defer s.rollbackImmutableObject(ctx, key, &committed)()
@@ -117,7 +137,6 @@ func (s *Server) SaveText(ctx context.Context, r api.SaveTextRequestObject) (api
 		return nil, err
 	}
 
-	info := requestFrom(ctx)
 	v, err := q.CreateFileVersion(ctx, sqlcdb.CreateFileVersionParams{FileID: r.Id, ObjectKey: key, Size: int64(len(data)), Format: latest.Format, CreatedBy: info.session.User.ID, CreatedAt: pgtype.Timestamptz{Time: s.membership.Clock.Now(), Valid: true}})
 	if err != nil {
 		return nil, err

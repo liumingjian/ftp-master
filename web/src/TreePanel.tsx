@@ -18,6 +18,7 @@ import { CreateFolderDialog, DeleteFolderDialog, MoveDialog, RenameDialog } from
 import { api } from './api/client'
 import { loadAncestors, loadBranches, loadDirectory } from './treePath'
 import { systemClock } from './clock'
+import { editQuotaWarning } from './quota'
 import type { components } from './api/schema.gen'
 
 type Node = components['schemas']['TreeNode']
@@ -51,9 +52,11 @@ type Props = {
   onStorageChanged?: () => void
   accountHref?: string
   openAccount?: () => void
+  availableQuotaBytes?: number | null
 }
 
-export function TreePanel({ administrator, active, hash, query, navigate, transferSlot, sidebarWidth, resizeSidebar, sidebarCollapsed = false, viewerUser, grantId, openGrant, recycle, openRecycle, recycleHref, storageSummary, onStorageChanged, accountHref, openAccount }: Props) {
+export function TreePanel({ administrator, active, hash, query, navigate, transferSlot, sidebarWidth, resizeSidebar, sidebarCollapsed = false, viewerUser, grantId, openGrant, recycle, openRecycle, recycleHref, storageSummary, onStorageChanged, accountHref, openAccount, availableQuotaBytes }: Props) {
+  const effectiveAvailableQuotaBytes = availableQuotaBytes ?? storageSummary?.availableBytes ?? null
   const [officeEditing, setOfficeEditing] = useState(false)
   useEffect(() => {
     if (!active) return
@@ -510,6 +513,9 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                     const isDropBox = !node.isFile && !(node.rights & BROWSE) && Boolean(node.rights & UPLOAD)
                     const hasOfficeEdit = officeEditing && Boolean(editableOfficeVersion(node))
                     const hasTextEdit = !hasOfficeEdit && canEditText(node)
+                    const textEditWarning = hasTextEdit && node.latestVersion
+                      ? editQuotaWarning(effectiveAvailableQuotaBytes, node.latestVersion.size)
+                      : undefined
                     const isMenuOpen = menuNode?.id === node.id
 
                     return <tr key={node.id}
@@ -551,9 +557,9 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                         : <span aria-hidden="true">—</span>}</td>
                       <td className="file-size">{node.latestVersion ? formatSize(node.latestVersion.size) : <span aria-hidden="true">—</span>}</td>
                       <td><div className="row-actions">
-                        {hasOfficeEdit && <OfficeEditAction node={node} onOpen={trackOfficeEdit} icon className="row-hover-action" />}
-                        {hasTextEdit && <button type="button" className="icon row-hover-action text-edit-indicator"
-                          title="编辑文本" aria-label={`编辑文本 ${node.name}`}
+                        {hasOfficeEdit && <OfficeEditAction node={node} onOpen={trackOfficeEdit} icon className="row-hover-action" availableQuotaBytes={effectiveAvailableQuotaBytes} />}
+                        {hasTextEdit && <button type="button" className={textEditWarning ? 'icon row-hover-action text-edit-indicator quota-tight' : 'icon row-hover-action text-edit-indicator'}
+                          title={textEditWarning ? `编辑文本（${textEditWarning}）` : '编辑文本'} aria-label={`编辑文本 ${node.name}`}
                           onClick={() => setTextEditNode(node)}>
                           <Pencil size={16} aria-hidden="true" />
                         </button>}
@@ -616,6 +622,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
         anchor={menu.anchor}
         officeEditing={officeEditing}
         canMove={canMoveNode(menuNode)}
+        availableQuotaBytes={effectiveAvailableQuotaBytes}
         onClose={closeMenu}
         onEditText={node => setTextEditNode(node)}
         onOfficeEditOpen={trackOfficeEdit}
@@ -681,12 +688,13 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       {browsing && textEditNode && <TextEditorDialog
         key={textEditNode.id}
         node={textEditNode}
+        availableQuotaBytes={effectiveAvailableQuotaBytes}
         close={() => setTextEditNode(undefined)}
         saved={refreshTreeAndStorage}
       />}
 
       {browsing && viewerNode && <FileViewer key={viewerNode.id} node={viewerNode} officePreview={officePreview}
-        viewerUser={viewerUser}
+        viewerUser={viewerUser} availableQuotaBytes={effectiveAvailableQuotaBytes}
         close={() => setViewedFile(undefined)} saved={refreshTreeAndStorage} />}
     </main>
 
