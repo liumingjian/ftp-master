@@ -8,6 +8,8 @@ import {
   computePlatformStorageSummary,
   computeUserOrgBudget,
   formatBinaryBytes,
+  formatQuotaExceededError,
+  isQuotaExceededError,
   parseQuotaInput,
   quotaUsageState,
   type QuotaOrganization,
@@ -152,4 +154,28 @@ test('quotaUsageState classifies unlimited, normal, >=85% warning, >=100% exceed
   assert.deepEqual(quotaUsageState(85, 100), { tone: 'warning', percent: 85 })
   assert.deepEqual(quotaUsageState(100, 100), { tone: 'exceeded', percent: 100 })
   assert.deepEqual(quotaUsageState(150, 100), { tone: 'exceeded', percent: 150 })
+})
+
+test('isQuotaExceededError and formatQuotaExceededError handle 507 payloads and fallbacks', () => {
+  assert.equal(isQuotaExceededError(507, undefined), true)
+  assert.equal(isQuotaExceededError(400, { code: 'quota_exceeded' }), true)
+  assert.equal(isQuotaExceededError(409, { code: 'quota_conflict' }), false)
+
+  assert.equal(
+    formatQuotaExceededError({ code: 'quota_exceeded', message: '超出个人存储配额（当前可用 0 B，本次需要 2 MB）' }, '上传被拒绝'),
+    '超出个人存储配额（当前可用 0 B，本次需要 2 MB）',
+  )
+  assert.equal(
+    formatQuotaExceededError({ code: 'quota_exceeded', scope: 'organization_pool', organizationName: '研发部', availableBytes: 1024, requiredBytes: 2048 }, '上传被拒绝'),
+    '超出组织“研发部”未分配配额池可用空间（当前可用 1 KB，本次需要 2 KB）',
+  )
+  assert.equal(
+    formatQuotaExceededError({ code: 'quota_exceeded', scope: 'organization_total', organizationName: '总公司', availableBytes: 0, requiredBytes: 512 }, '上传被拒绝'),
+    '超出组织“总公司”总存储配额（当前可用 0 B，本次需要 512 B）',
+  )
+  assert.equal(
+    formatQuotaExceededError({ code: 'quota_exceeded', scope: 'user', availableBytes: 512, requiredBytes: 1024 }, '上传被拒绝'),
+    '超出个人存储配额（当前可用 512 B，本次需要 1 KB）',
+  )
+  assert.equal(formatQuotaExceededError(undefined, '上传被拒绝'), '上传被拒绝')
 })

@@ -1160,6 +1160,14 @@ button.table-empty:focus-visible {
   color: var(--accent);
 }
 
+.upload-row.is-error {
+  color: var(--danger);
+}
+
+.transfer-row:has(.upload-row.is-error) td {
+  background: var(--danger-soft);
+}
+
 .upload-row progress {
   flex: 1;
   min-width: 80px;

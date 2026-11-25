@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api/client'
 import { systemClock, type Clock } from './clock'
+import { formatQuotaExceededError, isQuotaExceededError } from './quota'
 import { classifyCancelOutcome, isAbortError } from './uploadCancel'
 
 type Session = { id: string; partCount: number; partSize: number; name: string; size: number }
-type Row = { name: string; bytes: number; total: number; speed: number; status: string; complete?: true }
+type Row = { name: string; bytes: number; total: number; speed: number; status: string; complete?: true; error?: true }
 export const UPLOAD_COMPLETE_MESSAGE_MS = 3000
 export type FileUploadState = 'idle' | 'uploading' | 'resume' | 'conflict'
 
@@ -131,7 +132,21 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
           if (init.data) void api.DELETE('/uploads/{id}', { params: { path: { id: init.data.id } } })
           return
         }
-        if (!init.data) throw new Error(init.error?.message ?? '上传被拒绝')
+        if (!init.data) {
+          if (isQuotaExceededError(init.response.status, init.error)) {
+            clear()
+            setRow({
+              name: file.name,
+              total: file.size,
+              bytes: 0,
+              speed: 0,
+              status: formatQuotaExceededError(init.error, '存储配额不足'),
+              error: true,
+            })
+            return
+          }
+          throw new Error(init.error?.message ?? '上传被拒绝')
+        }
         active = { ...init.data, name: file.name, size: file.size }
         sessionRef.current = active
         localStorage.setItem(key, JSON.stringify(active)); setSession(active)
@@ -165,7 +180,7 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
       completed()
     } catch (error) {
       if (cancelledRef.current || isAbortError(error)) return
-      setRow(previous => previous && ({ ...previous, status: error instanceof Error ? error.message : '上传失败' }))
+      setRow(previous => previous && ({ ...previous, status: error instanceof Error ? error.message : '上传失败', error: true }))
     } finally {
       if (abortRef.current === controller) abortRef.current = undefined
       running.current = false
@@ -242,7 +257,7 @@ export function UploadRow({ parentId, visible, dropZone, completed, clock = syst
       <button type="button" disabled={Boolean(cancelling)} onClick={() => void cancel()}>取消上传</button>
     </div>}
     {visible && <label className="visually-hidden">上传文件<input id={`upload-file-${parentId}`} type="file" disabled={busy || Boolean(cancelling) || !!conflict || !!savedSession} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = '' }} /></label>}
-    {row && <div role="status" aria-label="上传进度" className="upload-row">
+    {row && <div role="status" aria-label="上传进度" className={row.error ? 'upload-row is-error' : 'upload-row'}>
       {conflict && <><span>存为新版本会更新原文件；保留两者会另存为独立文件。</span><button type="button" disabled={busy || Boolean(cancelling)} onClick={() => void resolve('new_version')}>存为新版本</button><button type="button" disabled={busy || Boolean(cancelling)} onClick={() => void resolve('keep_both')}>保留两者</button></>}
       {!busy && !cancelling && !row.complete && !conflict && fileRef.current && <button type="button" onClick={() => void upload(fileRef.current!)}>重试上传</button>}
       <span className="transfer-name">{row.name} · {row.status}</span>

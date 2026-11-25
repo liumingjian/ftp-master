@@ -27,6 +27,7 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 	}
 	files := map[string]bool{}
 	dirs := map[string]bool{}
+	var totalSize int64
 	for _, f := range r.Body.Files {
 		if !validUploadPath(f.Path) || files[f.Path] || f.Size < 0 || f.Size > 20000000000 {
 			return membershipFailure{400, "invalid folder manifest"}, nil
@@ -38,6 +39,7 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 			}
 		}
 		files[f.Path] = true
+		totalSize += f.Size
 		for d := path.Dir(f.Path); d != "."; d = path.Dir(d) {
 			dirs[d] = true
 		}
@@ -66,7 +68,7 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = lockMembershipAndTree(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)
@@ -81,6 +83,19 @@ func (s *Server) InitiateUploadBatch(ctx context.Context, r api.InitiateUploadBa
 	parent, _ := snap.Node(r.Body.ParentId)
 	if parent.IsFile {
 		return membershipFailure{409, "destination must be a directory"}, nil
+	}
+	info := requestFrom(ctx)
+	decision, err := checkWriteQuota(ctx, q, info.session.User.ID, totalSize)
+	if err != nil {
+		return nil, err
+	}
+	if !decision.Allowed {
+		batchPath := snap.Path(r.Body.ParentId) + "/" + r.Body.Name
+		_ = tx.Rollback(ctx)
+		if err = s.recordQuotaExceededAudit(ctx, info, "upload", 0, batchPath, decision); err != nil {
+			return nil, err
+		}
+		return api.InitiateUploadBatch507JSONResponse{QuotaExceededJSONResponse: quotaExceededResponse(decision)}, nil
 	}
 	root, err := q.CreateTreeNode(ctx, sqlcdb.CreateTreeNodeParams{ParentID: parentID(&r.Body.ParentId), Name: r.Body.Name})
 	if err != nil {

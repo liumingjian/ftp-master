@@ -198,3 +198,35 @@ export function quotaUsageState(usedBytes: number, quotaBytes: number | null): {
   if (percent >= 85) return { tone: 'warning', percent }
   return { tone: 'normal', percent }
 }
+
+export interface QuotaExceededPayload {
+  code?: string
+  message?: string
+  scope?: 'user' | 'organization_pool' | 'organization_total'
+  requiredBytes?: number
+  availableBytes?: number
+  organizationName?: string
+}
+
+export function isQuotaExceededError(status: number | undefined, error: { code?: string } | undefined): boolean {
+  return status === 507 || error?.code === 'quota_exceeded'
+}
+
+export function formatQuotaExceededError(error: QuotaExceededPayload | undefined, fallback: string): string {
+  if (error?.message?.trim()) return error.message
+  if (error?.scope && typeof error.availableBytes === 'number') {
+    const avail = formatBinaryBytes(error.availableBytes)
+    const need = typeof error.requiredBytes === 'number' && error.requiredBytes > 0 ? `，本次需要 ${formatBinaryBytes(error.requiredBytes)}` : ''
+    if (error.scope === 'user') {
+      return `超出个人存储配额（当前可用 ${avail}${need}）`
+    }
+    const orgLabel = error.organizationName ? `“${error.organizationName}”` : ''
+    if (error.scope === 'organization_pool') {
+      return `超出组织${orgLabel}未分配配额池可用空间（当前可用 ${avail}${need}）`
+    }
+    if (error.scope === 'organization_total') {
+      return `超出组织${orgLabel}总存储配额（当前可用 ${avail}${need}）`
+    }
+  }
+  return fallback
+}

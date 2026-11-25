@@ -985,6 +985,18 @@ export interface components {
             code: string;
             message: string;
         };
+        QuotaExceededError: {
+            /** @enum {string} */
+            code: "quota_exceeded";
+            message: string;
+            /** @enum {string} */
+            scope: "user" | "organization_pool" | "organization_total";
+            /** Format: int64 */
+            requiredBytes: number;
+            /** Format: int64 */
+            availableBytes: number;
+            organizationName?: string;
+        };
         SignInRequest: {
             username: string;
             password: string;
@@ -1177,6 +1189,15 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Storage Quota exceeded; no bytes were reserved or written. */
+        QuotaExceeded: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["QuotaExceededError"];
             };
         };
     };
@@ -1759,6 +1780,7 @@ export interface operations {
                     "application/json": components["schemas"]["UploadSession"][];
                 };
             };
+            507: components["responses"]["QuotaExceeded"];
             default: components["responses"]["Unauthorized"];
         };
     };
@@ -1805,6 +1827,7 @@ export interface operations {
                     "application/json": components["schemas"]["UploadSession"];
                 };
             };
+            507: components["responses"]["QuotaExceeded"];
             default: components["responses"]["Unauthorized"];
         };
     };
