@@ -44,3 +44,46 @@ SELECT id, session_id, part_number, started_at, ended_at, bytes_transferred, sam
 FROM upload_transfer_samples
 WHERE session_id=$1
 ORDER BY started_at ASC, id ASC;
+
+-- name: QueueCancelledUpload :exec
+INSERT INTO storage_gc(object_key, upload_id) VALUES($1, $2) ON CONFLICT DO NOTHING;
+
+-- name: DeleteUploadSession :exec
+DELETE FROM upload_sessions WHERE id=$1;
+
+-- name: GetUploadBatchForUpdate :one
+SELECT * FROM upload_batches WHERE id=$1 FOR UPDATE;
+
+-- name: ListUploadBatchNodeIDs :many
+SELECT node_id FROM upload_batch_nodes WHERE batch_id=$1;
+
+-- name: QueueUploadBatchSessions :exec
+INSERT INTO storage_gc(object_key, upload_id)
+SELECT object_key, storage_upload_id
+FROM upload_sessions
+WHERE batch_id=$1
+ON CONFLICT DO NOTHING;
+
+-- name: QueueUploadBatchVersions :exec
+INSERT INTO storage_gc(object_key)
+SELECT v.object_key
+FROM file_versions v
+JOIN upload_batch_nodes n ON n.node_id=v.file_id
+WHERE n.batch_id=$1
+ON CONFLICT DO NOTHING;
+
+-- name: DeleteUploadBatchSessions :exec
+DELETE FROM upload_sessions WHERE batch_id=$1;
+
+-- name: DeleteUploadBatchVersions :exec
+DELETE FROM file_versions
+WHERE file_id IN (SELECT node_id FROM upload_batch_nodes WHERE batch_id=$1);
+
+-- name: DeleteUploadBatchNodes :exec
+DELETE FROM upload_batch_nodes WHERE batch_id=$1;
+
+-- name: DeleteUploadBatch :exec
+DELETE FROM upload_batches WHERE id=$1;
+
+-- name: DeleteTreeNodesByIDs :exec
+DELETE FROM tree_nodes WHERE id=ANY($1::bigint[]);
