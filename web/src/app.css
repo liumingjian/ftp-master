@@ -2627,6 +2627,25 @@ dd {
   border-color: transparent;
 }
 
+.banner.warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.viewer-quota-warning {
+  margin: 0;
+  border-radius: 0;
+  border-inline: 0;
+  border-top: 0;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.quota-tight {
+  color: var(--warning);
+}
+
 .banner.success,
 .pill.positive {
   background: color-mix(in srgb, var(--success) 11%, var(--panel));

@@ -230,3 +230,20 @@ export function formatQuotaExceededError(error: QuotaExceededPayload | undefined
   }
   return fallback
 }
+
+const utf8Encoder = new TextEncoder()
+
+export function utf8ByteLength(text: string): number {
+  return utf8Encoder.encode(text).length
+}
+
+export function editQuotaWarning(availableQuotaBytes: number | null | undefined, requiredBytes: number): string | undefined {
+  if (availableQuotaBytes == null || requiredBytes <= 0) return undefined
+  if (availableQuotaBytes <= 0) {
+    return '当前可用存储配额不足（0 B），暂无法保存新版本'
+  }
+  if (availableQuotaBytes < requiredBytes) {
+    return `剩余可用配额（${formatBinaryBytes(availableQuotaBytes)}）小于当前文件大小（${formatBinaryBytes(requiredBytes)}），保存新版本可能因超出配额失败`
+  }
+  return undefined
+}

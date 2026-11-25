@@ -65,6 +65,51 @@ func TestQuotaExceededResponseFormatting(t *testing.T) {
 			wantRequired: 3 * 1024 * 1024,
 			wantSubstrs:  []string{"总公司", "总存储配额", "1 MB", "3 MB"},
 		},
+		{
+			name: "edit open precheck user quota exhausted",
+			decision: quota.WriteDecision{
+				Allowed:        false,
+				Scope:          quota.ScopeUser,
+				RequiredBytes:  0,
+				AvailableBytes: int64Ptr(0),
+			},
+			wantScope:    api.QuotaExceededErrorScopeUser,
+			wantAvail:    0,
+			wantRequired: 0,
+			wantSubstrs:  []string{"个人存储配额不足", "0 B"},
+		},
+		{
+			name: "edit open precheck organization pool exhausted",
+			decision: quota.WriteDecision{
+				Allowed:             false,
+				Scope:               quota.ScopeOrganizationPool,
+				ConstrainingOrgID:   2,
+				ConstrainingOrgName: "研发部",
+				RequiredBytes:       0,
+				AvailableBytes:      int64Ptr(0),
+			},
+			wantScope:    api.QuotaExceededErrorScopeOrganizationPool,
+			wantOrgName:  "研发部",
+			wantAvail:    0,
+			wantRequired: 0,
+			wantSubstrs:  []string{"研发部", "未分配配额池空间不足", "0 B"},
+		},
+		{
+			name: "edit open precheck organization total exhausted",
+			decision: quota.WriteDecision{
+				Allowed:             false,
+				Scope:               quota.ScopeOrganizationTotal,
+				ConstrainingOrgID:   1,
+				ConstrainingOrgName: "总公司",
+				RequiredBytes:       0,
+				AvailableBytes:      int64Ptr(0),
+			},
+			wantScope:    api.QuotaExceededErrorScopeOrganizationTotal,
+			wantOrgName:  "总公司",
+			wantAvail:    0,
+			wantRequired: 0,
+			wantSubstrs:  []string{"总公司", "总存储配额不足", "0 B"},
+		},
 	}
 
 	for _, tc := range cases {

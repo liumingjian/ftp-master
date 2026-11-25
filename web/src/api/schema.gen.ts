@@ -885,6 +885,11 @@ export interface components {
             expiresAt: string;
             /** Format: int64 */
             versionId: number;
+            /**
+             * Format: int64
+             * @description Effective remaining Storage Quota in bytes for the caller on write-mode edit permits; omitted for read-only previews and null when unlimited.
+             */
+            availableQuotaBytes?: number | null;
         };
         TreeNode: {
             /** Format: int64 */
@@ -1378,6 +1383,21 @@ export interface operations {
                     };
                 };
             };
+            /** @description Storage Quota exceeded; file unchanged. Uses the Office Plugin JSON receipt contract. */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        Success: boolean;
+                        Message: string;
+                        Data: {
+                            [key: string]: unknown;
+                        } | null;
+                    };
+                };
+            };
             /** @description Failed; file unchanged. */
             default: {
                 headers: {
@@ -1449,6 +1469,7 @@ export interface operations {
                     "application/json": components["schemas"]["OfficeEdit"];
                 };
             };
+            507: components["responses"]["QuotaExceeded"];
             default: components["responses"]["Unauthorized"];
         };
     };
@@ -1473,9 +1494,15 @@ export interface operations {
                         /** Format: int64 */
                         versionId: number;
                         content: string;
+                        /**
+                         * Format: int64
+                         * @description Effective remaining Storage Quota in bytes for the caller; null when unlimited.
+                         */
+                        availableQuotaBytes: number | null;
                     };
                 };
             };
+            507: components["responses"]["QuotaExceeded"];
             default: components["responses"]["Unauthorized"];
         };
     };
@@ -1507,6 +1534,7 @@ export interface operations {
                     "application/json": components["schemas"]["UploadReceipt"];
                 };
             };
+            507: components["responses"]["QuotaExceeded"];
             default: components["responses"]["Unauthorized"];
         };
     };

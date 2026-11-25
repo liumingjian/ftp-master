@@ -214,6 +214,23 @@ func checkWriteQuota(ctx context.Context, q *sqlcdb.Queries, userID int64, requi
 	return ledger.CheckWrite(userID, requiredBytes), nil
 }
 
+// checkEditOpenQuota evaluates whether userID has positive effective storage
+// headroom before opening built-in text editing or issuing a write-mode
+// Office Edit Permit. When available storage is <= 0, Allowed is false with
+// RequiredBytes = 0; when allowed, AvailableBytes is nil if unlimited or the
+// exact effective remaining headroom in bytes.
+func checkEditOpenQuota(ctx context.Context, q *sqlcdb.Queries, userID int64) (quota.WriteDecision, error) {
+	ledger, _, err := loadQuotaLedger(ctx, q)
+	if err != nil {
+		return quota.WriteDecision{}, err
+	}
+	decision := ledger.CheckWrite(userID, 0)
+	if decision.AvailableBytes != nil && *decision.AvailableBytes <= 0 {
+		decision.Allowed = false
+	}
+	return decision, nil
+}
+
 func quotaAvailableBytes(d quota.WriteDecision) int64 {
 	if d.AvailableBytes == nil || *d.AvailableBytes < 0 {
 		return 0
