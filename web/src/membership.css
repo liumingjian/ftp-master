@@ -1142,17 +1142,21 @@ dialog.membership-dialog[open] {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
-.membership-quota-input-row input {
-  flex: 1 1 auto;
+.membership-quota-input-row input,
+.workspace-page .panel-form.membership-dialog-form .membership-quota-input-row input {
+  flex: 1 1 0%;
+  width: auto;
   min-width: 0;
   font-variant-numeric: tabular-nums;
 }
 
-.membership-quota-input-row select {
+.membership-quota-input-row select,
+.workspace-page .panel-form.membership-dialog-form .membership-quota-input-row select {
   flex: none;
-  width: 82px;
+  width: 92px;
 }
 
 .membership-quota-clear {

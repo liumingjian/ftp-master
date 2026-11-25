@@ -46,11 +46,25 @@ test('Administrator manages hierarchical Organization Quotas and audits quota_ch
       .reduce((sum, o) => sum + topLevelCappedOrgBytes(o), 0) / (1024 ** 3),
   )
 
-  // 1. Create capped root org (10 GB).
+  // 1. Create capped root org (10 GB) and verify the quota input row layout is not squished.
   await createBtn.click()
+  const quotaInput = dialog.getByLabel('存储配额', { exact: true })
+  const quotaUnit = dialog.getByLabel('配额单位', { exact: true })
+  const [dialogBox, inputBox, unitBox] = await Promise.all([
+    dialog.boundingBox(),
+    quotaInput.boundingBox(),
+    quotaUnit.boundingBox(),
+  ])
+  expect(dialogBox).not.toBeNull()
+  expect(inputBox).not.toBeNull()
+  expect(unitBox).not.toBeNull()
+  expect(inputBox!.width).toBeGreaterThanOrEqual(180)
+  expect(unitBox!.width).toBeLessThanOrEqual(120)
+  expect(unitBox!.x + unitBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width)
+
   await dialog.getByLabel('组织名称').fill(rootName)
-  await dialog.getByLabel('存储配额', { exact: true }).fill('10')
-  await dialog.getByLabel('配额单位', { exact: true }).selectOption('GB')
+  await quotaInput.fill('10')
+  await quotaUnit.selectOption('GB')
   await dialog.getByRole('button', { name: '保存组织' }).click()
 
   const rootRow = orgRow(rootName)
