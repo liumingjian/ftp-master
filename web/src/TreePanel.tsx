@@ -52,11 +52,10 @@ type Props = {
   onStorageChanged?: () => void
   accountHref?: string
   openAccount?: () => void
-  availableQuotaBytes?: number | null
 }
 
-export function TreePanel({ administrator, active, hash, query, navigate, transferSlot, sidebarWidth, resizeSidebar, sidebarCollapsed = false, viewerUser, grantId, openGrant, recycle, openRecycle, recycleHref, storageSummary, onStorageChanged, accountHref, openAccount, availableQuotaBytes }: Props) {
-  const effectiveAvailableQuotaBytes = availableQuotaBytes ?? storageSummary?.availableBytes ?? null
+export function TreePanel({ administrator, active, hash, query, navigate, transferSlot, sidebarWidth, resizeSidebar, sidebarCollapsed = false, viewerUser, grantId, openGrant, recycle, openRecycle, recycleHref, storageSummary, onStorageChanged, accountHref, openAccount }: Props) {
+  const availableQuotaBytes = storageSummary?.availableBytes ?? null
   const [officeEditing, setOfficeEditing] = useState(false)
   useEffect(() => {
     if (!active) return
@@ -514,7 +513,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                     const hasOfficeEdit = officeEditing && Boolean(editableOfficeVersion(node))
                     const hasTextEdit = !hasOfficeEdit && canEditText(node)
                     const textEditWarning = hasTextEdit && node.latestVersion
-                      ? editQuotaWarning(effectiveAvailableQuotaBytes, node.latestVersion.size)
+                      ? editQuotaWarning(availableQuotaBytes, node.latestVersion.size)
                       : undefined
                     const isMenuOpen = menuNode?.id === node.id
 
@@ -557,7 +556,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
                         : <span aria-hidden="true">—</span>}</td>
                       <td className="file-size">{node.latestVersion ? formatSize(node.latestVersion.size) : <span aria-hidden="true">—</span>}</td>
                       <td><div className="row-actions">
-                        {hasOfficeEdit && <OfficeEditAction node={node} onOpen={trackOfficeEdit} icon className="row-hover-action" availableQuotaBytes={effectiveAvailableQuotaBytes} />}
+                        {hasOfficeEdit && <OfficeEditAction node={node} onOpen={trackOfficeEdit} icon className="row-hover-action" availableQuotaBytes={availableQuotaBytes} />}
                         {hasTextEdit && <button type="button" className={textEditWarning ? 'icon row-hover-action text-edit-indicator quota-tight' : 'icon row-hover-action text-edit-indicator'}
                           title={textEditWarning ? `编辑文本（${textEditWarning}）` : '编辑文本'} aria-label={`编辑文本 ${node.name}`}
                           onClick={() => setTextEditNode(node)}>
@@ -622,7 +621,7 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
         anchor={menu.anchor}
         officeEditing={officeEditing}
         canMove={canMoveNode(menuNode)}
-        availableQuotaBytes={effectiveAvailableQuotaBytes}
+        availableQuotaBytes={availableQuotaBytes}
         onClose={closeMenu}
         onEditText={node => setTextEditNode(node)}
         onOfficeEditOpen={trackOfficeEdit}
@@ -688,13 +687,14 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
       {browsing && textEditNode && <TextEditorDialog
         key={textEditNode.id}
         node={textEditNode}
-        availableQuotaBytes={effectiveAvailableQuotaBytes}
+        availableQuotaBytes={availableQuotaBytes}
         close={() => setTextEditNode(undefined)}
         saved={refreshTreeAndStorage}
       />}
 
       {browsing && viewerNode && <FileViewer key={viewerNode.id} node={viewerNode} officePreview={officePreview}
-        viewerUser={viewerUser} availableQuotaBytes={effectiveAvailableQuotaBytes}
+        officeEditing={officeEditing}
+        viewerUser={viewerUser} availableQuotaBytes={availableQuotaBytes}
         close={() => setViewedFile(undefined)} saved={refreshTreeAndStorage} />}
     </main>
 

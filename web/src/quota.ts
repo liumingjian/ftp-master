@@ -1,3 +1,5 @@
+import { formatSize } from './formatSize.ts'
+
 export type QuotaUnit = 'MB' | 'GB' | 'TB'
 
 export const QUOTA_UNIT_MULTIPLIERS: Record<QuotaUnit, number> = {
@@ -41,12 +43,6 @@ export interface UserOrgBudget {
 
 export type QuotaUsageTone = 'unlimited' | 'normal' | 'warning' | 'exceeded'
 
-export function formatBinaryBytes(bytes: number): string {
-  const safe = Math.max(0, bytes)
-  const unit = Math.min(4, Math.floor(Math.log(Math.max(1, safe)) / Math.log(1024)))
-  return `${(safe / 1024 ** unit).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} ${['B', 'KB', 'MB', 'GB', 'TB'][unit]}`
-}
-
 export function parseQuotaInput(raw: string, unit: QuotaUnit): { ok: true; bytes: number | null } | { ok: false; error: string } {
   const trimmed = raw.trim()
   if (!trimmed) return { ok: true, bytes: null }
@@ -62,8 +58,11 @@ export function parseQuotaInput(raw: string, unit: QuotaUnit): { ok: true; bytes
 }
 
 function formatDraftNumber(value: number): string {
-  const rounded = Math.round(value * 100) / 100
-  return String(rounded)
+  const fixed = value
+    .toFixed(6)
+    .replace(/(\.\d*?[1-9])0+$/, '$1')
+    .replace(/\.0+$/, '')
+  return fixed === '0' ? '0.000001' : fixed
 }
 
 export function bytesToQuotaDraft(bytes: number | null): { value: string; unit: QuotaUnit } {
@@ -74,6 +73,9 @@ export function bytesToQuotaDraft(bytes: number | null): { value: string; unit: 
   }
   if (bytes % QUOTA_UNIT_MULTIPLIERS.GB === 0) {
     return { value: String(bytes / QUOTA_UNIT_MULTIPLIERS.GB), unit: 'GB' }
+  }
+  if (bytes % QUOTA_UNIT_MULTIPLIERS.MB === 0) {
+    return { value: String(bytes / QUOTA_UNIT_MULTIPLIERS.MB), unit: 'MB' }
   }
   if (bytes >= QUOTA_UNIT_MULTIPLIERS.TB) {
     return { value: formatDraftNumber(bytes / QUOTA_UNIT_MULTIPLIERS.TB), unit: 'TB' }
@@ -86,6 +88,28 @@ export function bytesToQuotaDraft(bytes: number | null): { value: string; unit: 
 
 export function computePlatformStorageSummary(organizations: QuotaOrganization[]): PlatformStorageSummary {
   const byId = new Map(organizations.map(org => [org.id, org]))
+  const children = new Map<number, QuotaOrganization[]>()
+  for (const org of organizations) {
+    if (org.parentId !== null && byId.has(org.parentId)) {
+      const list = children.get(org.parentId) ?? []
+      list.push(org)
+      children.set(org.parentId, list)
+    }
+  }
+
+  const visiting = new Set<number>()
+  function topLevelCappedOrgQuota(org: QuotaOrganization): number {
+    if (org.quotaBytes !== null) return org.quotaBytes
+    if (visiting.has(org.id)) return 0
+    visiting.add(org.id)
+    let sum = 0
+    for (const child of children.get(org.id) ?? []) {
+      sum += topLevelCappedOrgQuota(child)
+    }
+    visiting.delete(org.id)
+    return sum
+  }
+
   let totalCommittedBytes = 0
   let totalReservedBytes = 0
   let totalUsedBytes = 0
@@ -98,7 +122,7 @@ export function computePlatformStorageSummary(organizations: QuotaOrganization[]
       totalCommittedBytes += org.committedBytes
       totalReservedBytes += org.reservedBytes
       totalUsedBytes += org.usedBytes
-      topLevelAllocatedBytes += org.quotaBytes !== null ? org.quotaBytes : org.allocatedBytes
+      topLevelAllocatedBytes += topLevelCappedOrgQuota(org)
     }
   }
 
@@ -215,8 +239,8 @@ export function isQuotaExceededError(status: number | undefined, error: { code?:
 export function formatQuotaExceededError(error: QuotaExceededPayload | undefined, fallback: string): string {
   if (error?.message?.trim()) return error.message
   if (error?.scope && typeof error.availableBytes === 'number') {
-    const avail = formatBinaryBytes(error.availableBytes)
-    const need = typeof error.requiredBytes === 'number' && error.requiredBytes > 0 ? `，本次需要 ${formatBinaryBytes(error.requiredBytes)}` : ''
+    const avail = formatSize(error.availableBytes)
+    const need = typeof error.requiredBytes === 'number' && error.requiredBytes > 0 ? `，本次需要 ${formatSize(error.requiredBytes)}` : ''
     if (error.scope === 'user') {
       return `超出个人存储配额（当前可用 ${avail}${need}）`
     }
@@ -287,8 +311,8 @@ export function sidebarStorageView(summary: SelfStorageSummaryLike): SidebarStor
     tone,
     percent,
     barPercent: Math.min(100, Math.max(0, percent)),
-    usageText: `${formatBinaryBytes(summary.effectiveUsedBytes)} / ${formatBinaryBytes(summary.effectiveLimitBytes)}`,
-    availableText: formatBinaryBytes(Math.max(0, summary.availableBytes ?? 0)),
+    usageText: `${formatSize(summary.effectiveUsedBytes)} / ${formatSize(summary.effectiveLimitBytes)}`,
+    availableText: formatSize(Math.max(0, summary.availableBytes ?? 0)),
     statusTag,
     pendingCount: summary.pendingUploads.length + summary.pendingBatches.length,
   }
@@ -301,12 +325,13 @@ export function utf8ByteLength(text: string): number {
 }
 
 export function editQuotaWarning(availableQuotaBytes: number | null | undefined, requiredBytes: number): string | undefined {
-  if (availableQuotaBytes == null || requiredBytes <= 0) return undefined
+  if (availableQuotaBytes == null) return undefined
   if (availableQuotaBytes <= 0) {
     return '当前可用存储配额不足（0 B），暂无法保存新版本'
   }
+  if (requiredBytes <= 0) return undefined
   if (availableQuotaBytes < requiredBytes) {
-    return `剩余可用配额（${formatBinaryBytes(availableQuotaBytes)}）小于当前文件大小（${formatBinaryBytes(requiredBytes)}），保存新版本可能因超出配额失败`
+    return `剩余可用配额（${formatSize(availableQuotaBytes)}）小于当前文件大小（${formatSize(requiredBytes)}），保存新版本可能因超出配额失败`
   }
   return undefined
 }

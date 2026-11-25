@@ -1156,6 +1156,8 @@ export interface components {
             name: string;
             /** Format: int64 */
             parentId?: number | null;
+            /** @description Optional for PATCH /organizations/{id}. When true, apply quotaBytes (including null to clear to unlimited); when false, preserve the existing Organization Quota; when omitted, preserve the existing Organization Quota unless quotaBytes is provided. */
+            updateQuota?: boolean;
             /**
              * Format: int64
              * @description Optional Organization Quota in bytes; null means unlimited, 0 blocks new storage.
@@ -1603,9 +1605,9 @@ export interface operations {
                         content: string;
                         /**
                          * Format: int64
-                         * @description Effective remaining Storage Quota in bytes for the caller; null when unlimited.
+                         * @description Effective remaining Storage Quota in bytes for the caller; null or omitted when unlimited.
                          */
-                        availableQuotaBytes: number | null;
+                        availableQuotaBytes?: number | null;
                     };
                 };
             };

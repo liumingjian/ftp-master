@@ -70,7 +70,6 @@ const detailFieldLabels: Record<string, string> = {
   organizationId: '组织编号',
   organization_id: '组织编号',
   organizationName: '受限组织',
-  constrainingOrganization: '受限组织',
   groupId: '用户组编号',
   targetKind: '配额对象类型',
   targetId: '配额对象编号',
@@ -78,7 +77,6 @@ const detailFieldLabels: Record<string, string> = {
   previousQuotaBytes: '原存储配额',
   newQuotaBytes: '新存储配额',
   requiredBytes: '本次需要空间',
-  requestedBytes: '请求空间',
   availableBytes: '当前可用空间',
   targetUserId: '目标用户编号',
   target_user_id: '目标用户编号',
@@ -120,7 +118,7 @@ const scopeLabels: Record<string, string> = {
 }
 
 const nullableQuotaFields = new Set(['previousQuotaBytes', 'newQuotaBytes'])
-const byteDetailFields = new Set(['size', 'requiredBytes', 'requestedBytes', 'availableBytes'])
+const byteDetailFields = new Set(['size', 'requiredBytes', 'availableBytes'])
 
 function formatDetailValue(key: string, value: unknown): string {
   if (nullableQuotaFields.has(key)) {

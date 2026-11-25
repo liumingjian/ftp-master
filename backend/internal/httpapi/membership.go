@@ -161,20 +161,25 @@ func (s *Server) UpdateOrganization(ctx context.Context, r api.UpdateOrganizatio
 		if !exists {
 			return nil, pgx.ErrNoRows
 		}
-		if v := ledger.ValidateUpdateOrganization(r.Id, r.Body.ParentId, r.Body.QuotaBytes); v != nil {
+		updateQuota := (r.Body.UpdateQuota != nil && *r.Body.UpdateQuota) || (r.Body.UpdateQuota == nil && r.Body.QuotaBytes != nil)
+		targetQuota := current.QuotaBytes
+		if updateQuota {
+			targetQuota = r.Body.QuotaBytes
+		}
+		if v := ledger.ValidateUpdateOrganization(r.Id, r.Body.ParentId, targetQuota); v != nil {
 			return nil, quotaViolationError(v)
 		}
 		row, err := q.UpdateOrganization(ctx, sqlcdb.UpdateOrganizationParams{
 			ID:         r.Id,
 			Name:       r.Body.Name,
 			ParentID:   parentID(r.Body.ParentId),
-			QuotaBytes: optionalInt8(r.Body.QuotaBytes),
+			QuotaBytes: optionalInt8(targetQuota),
 		})
 		if err != nil {
 			return nil, err
 		}
-		if !sameOptionalInt64(current.QuotaBytes, r.Body.QuotaBytes) {
-			if err := recordQuotaChangeAudit(ctx, q, s.membership.Clock, info, "organization", row.ID, row.Name, current.QuotaBytes, r.Body.QuotaBytes); err != nil {
+		if !sameOptionalInt64(current.QuotaBytes, targetQuota) {
+			if err := recordQuotaChangeAudit(ctx, q, s.membership.Clock, info, "organization", row.ID, row.Name, current.QuotaBytes, targetQuota); err != nil {
 				return nil, err
 			}
 		}

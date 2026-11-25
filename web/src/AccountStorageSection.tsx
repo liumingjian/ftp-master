@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Building2, FileUp, FolderUp, HardDrive, RefreshCw } from 'lucide-react'
 import { api } from './api/client'
 import type { components } from './api/schema.gen'
-import { formatBinaryBytes, sidebarStorageView } from './quota'
+import { formatSize } from './formatSize'
+import { sidebarStorageView } from './quota'
 import {
   classifyCancelOutcome,
   clearMatchingBatchResume,
@@ -11,14 +12,18 @@ import {
 } from './uploadCancel'
 
 type SelfStorageSummary = components['schemas']['SelfStorageSummary']
-type PendingUpload = components['schemas']['PendingUpload']
-type PendingUploadBatch = components['schemas']['PendingUploadBatch']
 
-type Props = {
+export interface StorageState {
   summary?: SelfStorageSummary
   loading: boolean
   error?: string
-  onRefresh: () => void
+  refresh: () => void
+}
+
+type PendingCancelTarget = {
+  kind: 'upload' | 'batch'
+  id: string
+  parentId: number
 }
 
 function formatUploadTime(value: string): string {
@@ -31,49 +36,35 @@ function formatUploadTime(value: string): string {
   })
 }
 
-export function AccountStorageSection({ summary, loading, error, onRefresh }: Props) {
+export function AccountStorageSection({ storage }: { storage: StorageState }) {
+  const { summary, loading, error, refresh } = storage
   const [cancellingKey, setCancellingKey] = useState<string>()
   const [cancelError, setCancelError] = useState<string>()
 
-  async function cancelPendingUpload(item: PendingUpload) {
-    const key = `upload:${item.id}`
+  async function cancelPending(target: PendingCancelTarget) {
+    const key = `${target.kind}:${target.id}`
     if (cancellingKey) return
     setCancellingKey(key)
     setCancelError(undefined)
+    const label = target.kind === 'batch' ? '取消文件夹上传' : '取消上传'
     try {
-      const result = await api.DELETE('/uploads/{id}', { params: { path: { id: item.id } } })
+      const result = target.kind === 'batch'
+        ? await api.DELETE('/upload-batches/{id}', { params: { path: { id: target.id } } })
+        : await api.DELETE('/uploads/{id}', { params: { path: { id: target.id } } })
       const outcome = classifyCancelOutcome(result.response.status)
       if (outcome === 'cleared' || outcome === 'already_completed') {
-        clearMatchingUploadResume(localStorage, item.parentId, item.id)
-        notifyStorageUploadCancelled({ kind: 'upload', id: item.id, parentId: item.parentId })
-        onRefresh()
+        if (target.kind === 'batch') {
+          clearMatchingBatchResume(localStorage, target.parentId, target.id)
+        } else {
+          clearMatchingUploadResume(localStorage, target.parentId, target.id)
+        }
+        notifyStorageUploadCancelled(target)
+        refresh()
       } else {
-        setCancelError(result.error?.message ?? '取消上传失败，请重试')
+        setCancelError(result.error?.message ?? `${label}失败，请重试`)
       }
     } catch {
-      setCancelError('无法连接服务，取消上传失败')
-    } finally {
-      setCancellingKey(undefined)
-    }
-  }
-
-  async function cancelPendingBatch(batch: PendingUploadBatch) {
-    const key = `batch:${batch.id}`
-    if (cancellingKey) return
-    setCancellingKey(key)
-    setCancelError(undefined)
-    try {
-      const result = await api.DELETE('/upload-batches/{id}', { params: { path: { id: batch.id } } })
-      const outcome = classifyCancelOutcome(result.response.status)
-      if (outcome === 'cleared' || outcome === 'already_completed') {
-        clearMatchingBatchResume(localStorage, batch.parentId, batch.id)
-        notifyStorageUploadCancelled({ kind: 'batch', id: batch.id, parentId: batch.parentId })
-        onRefresh()
-      } else {
-        setCancelError(result.error?.message ?? '取消文件夹上传失败，请重试')
-      }
-    } catch {
-      setCancelError('无法连接服务，取消文件夹上传失败')
+      setCancelError(`无法连接服务，${label}失败`)
     } finally {
       setCancellingKey(undefined)
     }
@@ -102,7 +93,7 @@ export function AccountStorageSection({ summary, loading, error, onRefresh }: Pr
           title="刷新存储状态"
           aria-label="刷新存储状态"
           disabled={loading}
-          onClick={onRefresh}
+          onClick={refresh}
         >
           <RefreshCw size={15} className={loading ? 'storage-spin' : undefined} aria-hidden="true" />
         </button>
@@ -140,13 +131,13 @@ export function AccountStorageSection({ summary, loading, error, onRefresh }: Pr
               </div>
               <div className="account-storage-meter-foot">
                 <span className="tabular-nums">可用 {barView.availableText}</span>
-                <span className="tabular-nums">个人总占用 {formatBinaryBytes(summary.usedBytes)}</span>
+                <span className="tabular-nums">个人总占用 {formatSize(summary.usedBytes)}</span>
               </div>
             </div>
           ) : (
             <div className="account-storage-unlimited">
               <span className="account-storage-unlimited-used tabular-nums">
-                已用 <strong>{formatBinaryBytes(summary.usedBytes)}</strong>
+                已用 <strong>{formatSize(summary.usedBytes)}</strong>
               </span>
               <span className="account-storage-unlimited-cap">当前未设置存储配额上限（不限）</span>
             </div>
@@ -155,22 +146,22 @@ export function AccountStorageSection({ summary, loading, error, onRefresh }: Pr
           <dl className="account-storage-metrics" aria-label="个人存储明细">
             <div className="account-storage-metric">
               <dt>已提交占用</dt>
-              <dd className="tabular-nums">{formatBinaryBytes(summary.committedBytes)}</dd>
+              <dd className="tabular-nums">{formatSize(summary.committedBytes)}</dd>
             </div>
             <div className="account-storage-metric">
               <dt>上传预占</dt>
-              <dd className="tabular-nums">{formatBinaryBytes(summary.reservedBytes)}</dd>
+              <dd className="tabular-nums">{formatSize(summary.reservedBytes)}</dd>
             </div>
             <div className="account-storage-metric">
               <dt>个人配额</dt>
               <dd className="tabular-nums">
-                {summary.quotaBytes === null ? '不限' : formatBinaryBytes(summary.quotaBytes)}
+                {summary.quotaBytes === null ? '不限' : formatSize(summary.quotaBytes)}
               </dd>
             </div>
             <div className="account-storage-metric">
               <dt>当前可用</dt>
               <dd className="tabular-nums">
-                {summary.availableBytes === null ? '不限' : formatBinaryBytes(summary.availableBytes)}
+                {summary.availableBytes === null ? '不限' : formatSize(summary.availableBytes)}
               </dd>
             </div>
           </dl>
@@ -189,17 +180,17 @@ export function AccountStorageSection({ summary, loading, error, onRefresh }: Pr
                 </span>
               </div>
               <div className="account-storage-org-stats tabular-nums">
-                <span>组织配额 {formatBinaryBytes(summary.constrainingOrganization.quotaBytes)}</span>
-                <span>组织已用 {formatBinaryBytes(summary.constrainingOrganization.usedBytes)}</span>
+                <span>组织配额 {formatSize(summary.constrainingOrganization.quotaBytes)}</span>
+                <span>组织已用 {formatSize(summary.constrainingOrganization.usedBytes)}</span>
                 {summary.constrainingOrganization.constraintKind === 'organization_pool' ? (
                   <>
                     <span>
-                      未分配池 {formatBinaryBytes(summary.constrainingOrganization.unallocatedPoolUsedBytes)} / {formatBinaryBytes(summary.constrainingOrganization.unallocatedPoolBytes)}
+                      未分配池 {formatSize(summary.constrainingOrganization.unallocatedPoolUsedBytes)} / {formatSize(summary.constrainingOrganization.unallocatedPoolBytes)}
                     </span>
-                    <span>池剩余 {formatBinaryBytes(summary.constrainingOrganization.remainingBytes)}</span>
+                    <span>池剩余 {formatSize(summary.constrainingOrganization.remainingBytes)}</span>
                   </>
                 ) : (
-                  <span>组织剩余 {formatBinaryBytes(summary.constrainingOrganization.remainingBytes)}</span>
+                  <span>组织剩余 {formatSize(summary.constrainingOrganization.remainingBytes)}</span>
                 )}
               </div>
             </div>
@@ -228,7 +219,7 @@ export function AccountStorageSection({ summary, loading, error, onRefresh }: Pr
                         <span className="account-pending-meta tabular-nums">
                           <span>单文件</span>
                           <span aria-hidden="true">·</span>
-                          <span>预占 {formatBinaryBytes(item.size)}</span>
+                          <span>预占 {formatSize(item.size)}</span>
                           <span aria-hidden="true">·</span>
                           <span>{item.state === 'completing' ? '提交中' : '上传中'}</span>
                           <span aria-hidden="true">·</span>
@@ -239,7 +230,7 @@ export function AccountStorageSection({ summary, loading, error, onRefresh }: Pr
                         type="button"
                         className="ghost account-pending-cancel"
                         disabled={Boolean(cancellingKey)}
-                        onClick={() => void cancelPendingUpload(item)}
+                        onClick={() => void cancelPending({ kind: 'upload', id: item.id, parentId: item.parentId })}
                       >
                         {busy ? '正在取消…' : '取消上传'}
                       </button>
@@ -258,12 +249,12 @@ export function AccountStorageSection({ summary, loading, error, onRefresh }: Pr
                         <span className="account-pending-meta tabular-nums">
                           <span>文件夹 · {batch.fileCount} 个文件</span>
                           <span aria-hidden="true">·</span>
-                          <span>总计 {formatBinaryBytes(batch.totalBytes)}</span>
+                          <span>总计 {formatSize(batch.totalBytes)}</span>
                           <span aria-hidden="true">·</span>
                           {batch.committedBytes > 0 ? (
-                            <span>已提交 {formatBinaryBytes(batch.committedBytes)} / 预占 {formatBinaryBytes(batch.reservedBytes)}</span>
+                            <span>已提交 {formatSize(batch.committedBytes)} / 预占 {formatSize(batch.reservedBytes)}</span>
                           ) : (
-                            <span>预占 {formatBinaryBytes(batch.reservedBytes)}</span>
+                            <span>预占 {formatSize(batch.reservedBytes)}</span>
                           )}
                           <span aria-hidden="true">·</span>
                           <time dateTime={batch.createdAt}>{formatUploadTime(batch.createdAt)}</time>
@@ -273,7 +264,7 @@ export function AccountStorageSection({ summary, loading, error, onRefresh }: Pr
                         type="button"
                         className="ghost account-pending-cancel"
                         disabled={Boolean(cancellingKey)}
-                        onClick={() => void cancelPendingBatch(batch)}
+                        onClick={() => void cancelPending({ kind: 'batch', id: batch.id, parentId: batch.parentId })}
                       >
                         {busy ? '正在取消…' : '取消上传'}
                       </button>

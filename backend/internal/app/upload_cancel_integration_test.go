@@ -41,14 +41,14 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 	}
 	defer conn.Close(ctx)
 
-	var uploaderID int64
-	err = conn.QueryRow(ctx, `INSERT INTO users(username,display_name,password_hash,is_administrator,status,created_at) SELECT 'cancel-user','Cancel User',password_hash,false,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`).Scan(&uploaderID)
+	var actorID int64
+	err = conn.QueryRow(ctx, `INSERT INTO users(username,display_name,password_hash,is_administrator,status,created_at) SELECT 'cancel-user','Cancel User',password_hash,false,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`).Scan(&actorID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	uploader := newBrowser(t, server)
-	if status, _ := uploader.signIn("cancel-user", initialAdministratorPassword); status != 200 {
-		t.Fatalf("sign in uploader: %d", status)
+	actor := newBrowser(t, server)
+	if status, _ := actor.signIn("cancel-user", initialAdministratorPassword); status != 200 {
+		t.Fatalf("sign in actor: %d", status)
 	}
 
 	var dir struct {
@@ -58,10 +58,10 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 	var grant struct {
 		ID int64 `json:"id"`
 	}
-	// Browse + Download + Upload so uploader can upload, resolve conflicts, and verify downloads.
+	// Browse + Download + Upload so actor can upload, resolve conflicts, and verify downloads.
 	decode(t, call(admin, "POST", fmt.Sprintf("/api/tree/%d/grants", dir.ID), map[string]any{
 		"principalKind": "user",
-		"principalId":   uploaderID,
+		"principalId":   actorID,
 		"rights":        7,
 		"scope":         "subtree",
 	}, 201), &grant)
@@ -97,7 +97,7 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 	}
 
 	// Unknown ID returns 404.
-	call(uploader, "DELETE", "/api/uploads/does-not-exist", nil, 404)
+	call(actor, "DELETE", "/api/uploads/does-not-exist", nil, 404)
 
 	// Start a 2-part upload and transfer part 1 (creating MinIO multipart parts and transfer samples).
 	content := bytes.Repeat([]byte("partdata"), 1024*1024+16) // > 8 MiB (2 parts)
@@ -107,7 +107,7 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 		PartCount int     `json:"partCount"`
 		BatchID   *string `json:"batchId"`
 	}
-	decode(t, call(uploader, "POST", "/api/uploads", map[string]any{
+	decode(t, call(actor, "POST", "/api/uploads", map[string]any{
 		"parentId": dir.ID,
 		"name":     "aborted.bin",
 		"size":     len(content),
@@ -119,9 +119,9 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 		Number int    `json:"number"`
 		URL    string `json:"url"`
 	}
-	decode(t, call(uploader, "POST", "/api/uploads/"+pending.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
+	decode(t, call(actor, "POST", "/api/uploads/"+pending.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
 	req, _ := http.NewRequest("PUT", server.URL+urls[0].URL, bytes.NewReader(content[:pending.PartSize]))
-	req.AddCookie(uploader.cookie)
+	req.AddCookie(actor.cookie)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -142,12 +142,12 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 
 	// Revoking Upload Right must NOT prevent the initiating User from cancelling their own upload.
 	call(admin, "DELETE", fmt.Sprintf("/api/tree/%d/grants/%d", dir.ID, grant.ID), nil, 204)
-	call(uploader, "POST", "/api/uploads/"+pending.ID+"/parts", map[string]any{"numbers": []int{2}}, 404)
-	call(uploader, "DELETE", "/api/uploads/"+pending.ID, nil, 204)
+	call(actor, "POST", "/api/uploads/"+pending.ID+"/parts", map[string]any{"numbers": []int{2}}, 404)
+	call(actor, "DELETE", "/api/uploads/"+pending.ID, nil, 204)
 
 	// Second cancel and subsequent part inspection return 404; MinIO multipart is aborted.
-	call(uploader, "DELETE", "/api/uploads/"+pending.ID, nil, 404)
-	call(uploader, "GET", "/api/uploads/"+pending.ID+"/parts", nil, 404)
+	call(actor, "DELETE", "/api/uploads/"+pending.ID, nil, 404)
+	call(actor, "GET", "/api/uploads/"+pending.ID+"/parts", nil, 404)
 	if got := countIncomplete(); got != 0 {
 		t.Fatalf("expected 0 incomplete multipart uploads after cancel, got %d", got)
 	}
@@ -158,7 +158,7 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 	// Restore Upload Right and complete a single-file upload.
 	decode(t, call(admin, "POST", fmt.Sprintf("/api/tree/%d/grants", dir.ID), map[string]any{
 		"principalKind": "user",
-		"principalId":   uploaderID,
+		"principalId":   actorID,
 		"rights":        7,
 		"scope":         "subtree",
 	}, 201), &grant)
@@ -167,14 +167,14 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 	var completed struct {
 		ID string `json:"id"`
 	}
-	decode(t, call(uploader, "POST", "/api/uploads", map[string]any{
+	decode(t, call(actor, "POST", "/api/uploads", map[string]any{
 		"parentId": dir.ID,
 		"name":     "published.txt",
 		"size":     len(originalBytes),
 	}, 201), &completed)
-	decode(t, call(uploader, "POST", "/api/uploads/"+completed.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
+	decode(t, call(actor, "POST", "/api/uploads/"+completed.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
 	req, _ = http.NewRequest("PUT", server.URL+urls[0].URL, bytes.NewReader(originalBytes))
-	req.AddCookie(uploader.cookie)
+	req.AddCookie(actor.cookie)
 	res, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -186,12 +186,12 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 	var receipt struct {
 		FileID int64 `json:"fileId"`
 	}
-	decode(t, call(uploader, "POST", "/api/uploads/"+completed.ID+"/complete", nil, 200), &receipt)
+	decode(t, call(actor, "POST", "/api/uploads/"+completed.ID+"/complete", nil, 200), &receipt)
 
 	// Cancelling an already completed upload returns 409 without altering the published file.
-	call(uploader, "DELETE", "/api/uploads/"+completed.ID, nil, 409)
+	call(actor, "DELETE", "/api/uploads/"+completed.ID, nil, 409)
 	req, _ = http.NewRequest("GET", server.URL+fmt.Sprintf("/api/tree/%d/download", receipt.FileID), nil)
-	req.AddCookie(uploader.cookie)
+	req.AddCookie(actor.cookie)
 	res, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -206,14 +206,14 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 	var conflictUpload struct {
 		ID string `json:"id"`
 	}
-	decode(t, call(uploader, "POST", "/api/uploads", map[string]any{
+	decode(t, call(actor, "POST", "/api/uploads", map[string]any{
 		"parentId": dir.ID,
 		"name":     "published.txt",
 		"size":     len("replacement"),
 	}, 201), &conflictUpload)
-	decode(t, call(uploader, "POST", "/api/uploads/"+conflictUpload.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
+	decode(t, call(actor, "POST", "/api/uploads/"+conflictUpload.ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
 	req, _ = http.NewRequest("PUT", server.URL+urls[0].URL, bytes.NewReader([]byte("replacement")))
-	req.AddCookie(uploader.cookie)
+	req.AddCookie(actor.cookie)
 	res, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -222,8 +222,8 @@ func TestCancelSingleFileUploadAbortsMultipartAndEnforcesOwnershipAndState(t *te
 	if res.StatusCode != 200 {
 		t.Fatalf("conflict part status: %d", res.StatusCode)
 	}
-	call(uploader, "POST", "/api/uploads/"+conflictUpload.ID+"/complete", nil, 409)
-	call(uploader, "DELETE", "/api/uploads/"+conflictUpload.ID, nil, 204)
+	call(actor, "POST", "/api/uploads/"+conflictUpload.ID+"/complete", nil, 409)
+	call(actor, "DELETE", "/api/uploads/"+conflictUpload.ID, nil, 204)
 	if got := countIncomplete(); got != 0 {
 		t.Fatalf("expected 0 incomplete multipart uploads after conflict cancel, got %d", got)
 	}
@@ -254,14 +254,14 @@ func TestCancelUploadBatchRollsBackHiddenTreeAndMinIOObjects(t *testing.T) {
 	}
 	defer conn.Close(ctx)
 
-	var uploaderID int64
-	err = conn.QueryRow(ctx, `INSERT INTO users(username,display_name,password_hash,is_administrator,status,created_at) SELECT 'batch-user','Batch User',password_hash,false,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`).Scan(&uploaderID)
+	var actorID int64
+	err = conn.QueryRow(ctx, `INSERT INTO users(username,display_name,password_hash,is_administrator,status,created_at) SELECT 'batch-user','Batch User',password_hash,false,'active',created_at FROM users WHERE is_administrator LIMIT 1 RETURNING id`).Scan(&actorID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	uploader := newBrowser(t, server)
-	if status, _ := uploader.signIn("batch-user", initialAdministratorPassword); status != 200 {
-		t.Fatalf("sign in uploader: %d", status)
+	actor := newBrowser(t, server)
+	if status, _ := actor.signIn("batch-user", initialAdministratorPassword); status != 200 {
+		t.Fatalf("sign in actor: %d", status)
 	}
 
 	var dir struct {
@@ -273,7 +273,7 @@ func TestCancelUploadBatchRollsBackHiddenTreeAndMinIOObjects(t *testing.T) {
 	}
 	decode(t, call(admin, "POST", fmt.Sprintf("/api/tree/%d/grants", dir.ID), map[string]any{
 		"principalKind": "user",
-		"principalId":   uploaderID,
+		"principalId":   actorID,
 		"rights":        7,
 		"scope":         "subtree",
 	}, 201), &grant)
@@ -322,7 +322,7 @@ func TestCancelUploadBatchRollsBackHiddenTreeAndMinIOObjects(t *testing.T) {
 	}
 
 	// Unknown batch returns 404.
-	call(uploader, "DELETE", "/api/upload-batches/does-not-exist", nil, 404)
+	call(actor, "DELETE", "/api/upload-batches/does-not-exist", nil, 404)
 
 	largeBytes := bytes.Repeat([]byte("batchdat"), 1024*1024+16) // 2 parts
 	type batchSession struct {
@@ -332,7 +332,7 @@ func TestCancelUploadBatchRollsBackHiddenTreeAndMinIOObjects(t *testing.T) {
 		BatchID   *string `json:"batchId"`
 	}
 	var sessions []batchSession
-	decode(t, call(uploader, "POST", "/api/upload-batches", map[string]any{
+	decode(t, call(actor, "POST", "/api/upload-batches", map[string]any{
 		"parentId":    dir.ID,
 		"name":        "Project",
 		"directories": []string{"empty/leaf"},
@@ -360,15 +360,15 @@ func TestCancelUploadBatchRollsBackHiddenTreeAndMinIOObjects(t *testing.T) {
 		Number int    `json:"number"`
 		URL    string `json:"url"`
 	}
-	decode(t, call(uploader, "POST", "/api/uploads/"+sessions[0].ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
-	putPart(uploader, urls[0].URL, []byte("hello"))
-	call(uploader, "POST", "/api/uploads/"+sessions[0].ID+"/complete", nil, 200)
+	decode(t, call(actor, "POST", "/api/uploads/"+sessions[0].ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
+	putPart(actor, urls[0].URL, []byte("hello"))
+	call(actor, "POST", "/api/uploads/"+sessions[0].ID+"/complete", nil, 200)
 
 	// Upload only part 1 of second child file, leave third child untouched.
-	decode(t, call(uploader, "POST", "/api/uploads/"+sessions[1].ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
-	putPart(uploader, urls[0].URL, largeBytes[:sessions[1].PartSize])
+	decode(t, call(actor, "POST", "/api/uploads/"+sessions[1].ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
+	putPart(actor, urls[0].URL, largeBytes[:sessions[1].PartSize])
 
-	if data := call(uploader, "GET", fmt.Sprintf("/api/tree?parentId=%d", dir.ID), nil, 200); strings.Contains(string(data), "Project") {
+	if data := call(actor, "GET", fmt.Sprintf("/api/tree?parentId=%d", dir.ID), nil, 200); strings.Contains(string(data), "Project") {
 		t.Fatalf("unrevealed batch leaked into tree listing: %s", data)
 	}
 	if got := countObjects(); got != 1 {
@@ -379,8 +379,8 @@ func TestCancelUploadBatchRollsBackHiddenTreeAndMinIOObjects(t *testing.T) {
 	}
 
 	// Batch child sessions cannot be cancelled individually via DELETE /uploads/{id}.
-	call(uploader, "DELETE", "/api/uploads/"+sessions[0].ID, nil, 409)
-	call(uploader, "DELETE", "/api/uploads/"+sessions[1].ID, nil, 409)
+	call(actor, "DELETE", "/api/uploads/"+sessions[0].ID, nil, 409)
+	call(actor, "DELETE", "/api/uploads/"+sessions[1].ID, nil, 409)
 
 	// Another User (Administrator) gets 404 on someone else's batch.
 	call(admin, "DELETE", "/api/upload-batches/"+batchID, nil, 404)
@@ -393,12 +393,12 @@ func TestCancelUploadBatchRollsBackHiddenTreeAndMinIOObjects(t *testing.T) {
 
 	// Owner can cancel their unrevealed batch even after Upload Right is revoked.
 	call(admin, "DELETE", fmt.Sprintf("/api/tree/%d/grants/%d", dir.ID, grant.ID), nil, 204)
-	call(uploader, "DELETE", "/api/upload-batches/"+batchID, nil, 204)
+	call(actor, "DELETE", "/api/upload-batches/"+batchID, nil, 204)
 
 	// Repeat cancel and child session lookups return 404; MinIO is completely clean.
-	call(uploader, "DELETE", "/api/upload-batches/"+batchID, nil, 404)
+	call(actor, "DELETE", "/api/upload-batches/"+batchID, nil, 404)
 	for _, s := range sessions {
-		call(uploader, "GET", "/api/uploads/"+s.ID+"/parts", nil, 404)
+		call(actor, "GET", "/api/uploads/"+s.ID+"/parts", nil, 404)
 	}
 	if got := countIncomplete(); got != 0 {
 		t.Fatalf("expected 0 incomplete multipart uploads after batch cancel, got %d", got)
@@ -410,17 +410,17 @@ func TestCancelUploadBatchRollsBackHiddenTreeAndMinIOObjects(t *testing.T) {
 	// Restore Upload Right: folder name "Project" is no longer reserved and can be uploaded and revealed.
 	decode(t, call(admin, "POST", fmt.Sprintf("/api/tree/%d/grants", dir.ID), map[string]any{
 		"principalKind": "user",
-		"principalId":   uploaderID,
+		"principalId":   actorID,
 		"rights":        7,
 		"scope":         "subtree",
 	}, 201), &grant)
 
-	if data := call(uploader, "GET", fmt.Sprintf("/api/tree?parentId=%d", dir.ID), nil, 200); strings.Contains(string(data), "Project") {
+	if data := call(actor, "GET", fmt.Sprintf("/api/tree?parentId=%d", dir.ID), nil, 200); strings.Contains(string(data), "Project") {
 		t.Fatalf("cancelled batch root still visible: %s", data)
 	}
 
 	var revealedSessions []batchSession
-	decode(t, call(uploader, "POST", "/api/upload-batches", map[string]any{
+	decode(t, call(actor, "POST", "/api/upload-batches", map[string]any{
 		"parentId": dir.ID,
 		"name":     "Project",
 		"files": []any{
@@ -428,22 +428,22 @@ func TestCancelUploadBatchRollsBackHiddenTreeAndMinIOObjects(t *testing.T) {
 		},
 	}, 201), &revealedSessions)
 	revealedBatchID := *revealedSessions[0].BatchID
-	decode(t, call(uploader, "POST", "/api/uploads/"+revealedSessions[0].ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
-	putPart(uploader, urls[0].URL, []byte("published"))
+	decode(t, call(actor, "POST", "/api/uploads/"+revealedSessions[0].ID+"/parts", map[string]any{"numbers": []int{1}}, 200), &urls)
+	putPart(actor, urls[0].URL, []byte("published"))
 	var receipt struct {
 		FileID int64 `json:"fileId"`
 	}
-	decode(t, call(uploader, "POST", "/api/uploads/"+revealedSessions[0].ID+"/complete", nil, 200), &receipt)
+	decode(t, call(actor, "POST", "/api/uploads/"+revealedSessions[0].ID+"/complete", nil, 200), &receipt)
 
 	// Already revealed batch returns 409 for owner and 404 for other Users, without altering published files.
-	call(uploader, "DELETE", "/api/upload-batches/"+revealedBatchID, nil, 409)
+	call(actor, "DELETE", "/api/upload-batches/"+revealedBatchID, nil, 409)
 	call(admin, "DELETE", "/api/upload-batches/"+revealedBatchID, nil, 404)
 
-	if data := call(uploader, "GET", fmt.Sprintf("/api/tree?parentId=%d", dir.ID), nil, 200); !strings.Contains(string(data), "Project") {
+	if data := call(actor, "GET", fmt.Sprintf("/api/tree?parentId=%d", dir.ID), nil, 200); !strings.Contains(string(data), "Project") {
 		t.Fatalf("revealed batch missing after 409 cancel: %s", data)
 	}
 	req, _ := http.NewRequest("GET", server.URL+fmt.Sprintf("/api/tree/%d/download", receipt.FileID), nil)
-	req.AddCookie(uploader.cookie)
+	req.AddCookie(actor.cookie)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

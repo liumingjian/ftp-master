@@ -41,12 +41,32 @@ E2E_BASE_URL=http://localhost:8088 pnpm test:e2e tree.spec.ts
 ## Transfer integration
 
 `POST /api/uploads` takes `{parentId,name,size}` (decimal bytes, maximum
-20,000,000,000) and returns opaque `id`, fixed `partSize` and `partCount`.
+20,000,000,000) and returns an `UploadSession` (`id`, fixed `partSize`,
+`partCount`, and optional `batchId` when initiated through
+`POST /api/upload-batches`). Both `POST /api/uploads` and
+`POST /api/upload-batches` enforce hierarchical Storage Quotas atomically under
+the canonical advisory lock order (`725005` membership/quota before `725010`
+Shared Tree), reserving the declared byte size at initiation; if available
+headroom is insufficient, they refuse with HTTP 507 (`code: "quota_exceeded"`,
+`scope`, `requiredBytes`, `availableBytes`, optional `organizationName`, and a
+Chinese `message`), create no multipart upload or provisional nodes, and record
+a failed `upload` Audit Event. Zero-byte uploads and empty-file folder batches
+stay permitted even when over quota.
 `POST /api/uploads/{id}/parts` takes `{numbers:[1,...]}` (at most 100),
-authorizes current Upload and session ownership, and returns 15-minute PUT
-capabilities. Send raw sliced bytes without cookies or application authorization.
+authorizes current Upload and session ownership, and returns application-proxied
+part upload endpoints.
 `POST /api/uploads/{id}/complete` checks every authoritative S3 part and returns
 `{fileId,versionId}`; repeated/concurrent successful calls return that receipt.
+`DELETE /api/uploads/{id}` lets the owning User cancel an incomplete single-file
+upload under advisory lock `725010`, queuing its storage multipart upload in
+`storage_gc`, deleting the session to immediately release reserved Storage
+Usage, and returning 204 (404 for unknown or foreign uploads; 409 if already
+completed or belonging to a folder upload batch). `DELETE /api/upload-batches/{id}`
+similarly lets the owning User cancel an unrevealed folder upload batch, queuing
+all batch multipart uploads and already-uploaded hidden File Version objects in
+`storage_gc`, removing hidden provisional nodes and sessions to immediately
+release reserved Storage Usage, and returning 204 (404 for unknown or foreign
+batches; 409 once the batch has been revealed).
 Zero bytes use one empty final part. Browser progress is displayed within the
 chosen destination and uses the injectable monotonic web Clock for speed/ETA.
 
@@ -276,17 +296,25 @@ Renames and moves preserve these links; Grants are evaluated anew on every read.
 
 ## Built-in text editing
 
-`GET /api/tree/{id}/text` requires current Modify, reads the latest immutable
-version and returns `{versionId, content}` after committing a `text_open` Audit
-Event. Supported formats are txt, md, csv, json, xml, log, yaml, yml, toml, ini
-and conf. Content must be UTF-8 without NUL bytes and smaller than 10,000,000
-bytes. The same limits apply to saves.
+`GET /api/tree/{id}/text` requires current Modify, acquires the canonical
+advisory lock order (`725005` before `725010`), pre-checks that the User has
+positive effective Storage Quota headroom (returning HTTP 507 with
+`code: "quota_exceeded"` when available headroom is `<= 0` without creating a
+`text_open` Audit Event), reads the latest immutable version and returns
+`{versionId, content}` plus optional nullable `availableQuotaBytes` after
+committing a `text_open` Audit Event. Supported formats are txt, md, csv, json,
+xml, log, yaml, yml, toml, ini and conf. Content must be UTF-8 without NUL bytes
+and smaller than 10,000,000 bytes. The same limits apply to saves.
 
-`PUT /api/tree/{id}/text` accepts `{baseVersionId, content}`. It rechecks Modify
-and the latest version under the publication lock. An outdated base returns 409
-without creating content, a File Version or a save Audit Event. The editor keeps
-the unsaved buffer and prompts the User to copy changes before reloading and
-merging. A successful save returns the ordinary UploadReceipt (201), appends a
+`PUT /api/tree/{id}/text` accepts `{baseVersionId, content}`. It rechecks Modify,
+the latest version, and effective Storage Quota against the saved UTF-8 byte
+length under the canonical lock order (`725005` before `725010`). An outdated
+base returns 409 without creating content, a File Version or a save Audit Event.
+Insufficient Storage Quota returns HTTP 507 with `code: "quota_exceeded"` and
+commits a failed `text_save` Audit Event (`detail.reason: "quota_exceeded"`)
+without creating content or a File Version. The editor keeps the unsaved buffer
+on both 409 and 507 refusals so the User can shorten or copy changes before
+retrying. A successful save returns the ordinary UploadReceipt (201), appends a
 fresh immutable object and File Version, and atomically records `text_save` with
 both version IDs. Database/audit failure rolls back the version and removes the
 unpublished object. Restoration and cleanup reuse the existing version seams.

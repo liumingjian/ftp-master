@@ -106,11 +106,12 @@ func TestOrganizationQuotasHierarchyMovesAndAudit(t *testing.T) {
 		t.Fatalf("zeroed LeafA2 = %+v", leafA2)
 	}
 
-	// Clearing LeafA2 back to unlimited (NULL) succeeds.
+	// Clearing LeafA2 back to unlimited (NULL) succeeds when updateQuota is explicitly true.
 	decode(t, call(admin, "PATCH", fmt.Sprintf("/organizations/%d", leafA2.ID), map[string]any{
-		"name":       "LeafA2",
-		"parentId":   midA.ID,
-		"quotaBytes": nil,
+		"name":        "LeafA2",
+		"parentId":    midA.ID,
+		"updateQuota": true,
+		"quotaBytes":  nil,
 	}, 200), &leafA2)
 	if leafA2.QuotaBytes != nil {
 		t.Fatalf("cleared LeafA2 = %+v", leafA2)
@@ -425,6 +426,103 @@ func TestLiveOrganizationStorageUsageRollupAndDowngradeBelowUsage(t *testing.T) 
 	orgs = readOrgs()
 	if orgs[otherOrg.ID].UsedBytes != 0 {
 		t.Fatalf("after purge, other=%+v, want 0", orgs[otherOrg.ID])
+	}
+}
+
+func TestOrganizationQuotasUpdatePreservesQuotaWhenOmitted(t *testing.T) {
+	stores := startStores(t)
+	clk := clock.NewFake(time.Date(2026, 11, 19, 10, 0, 0, 0, time.UTC))
+	server := startService(t, stores.config, clk)
+	admin := newBrowser(t, server)
+	signInAsAdministrator(t, admin)
+
+	call := func(b *browser, method, path string, body any, want int) []byte {
+		t.Helper()
+		status, data := b.do(method, "/api"+path, body)
+		if status != want {
+			t.Fatalf("%s %s: status=%d, want %d: %s", method, path, status, want, data)
+		}
+		return data
+	}
+
+	const mb int64 = 1024 * 1024
+
+	// Create ParentWide (100 MB) -> ChildCapped (60 MB), plus ParentTight (40 MB).
+	var parentWide, childCapped, parentTight apiOrgQuota
+	decode(t, call(admin, "POST", "/organizations", map[string]any{
+		"name":       "ParentWide",
+		"quotaBytes": 100 * mb,
+	}, 201), &parentWide)
+	decode(t, call(admin, "POST", "/organizations", map[string]any{
+		"name":       "ChildCapped",
+		"parentId":   parentWide.ID,
+		"quotaBytes": 60 * mb,
+	}, 201), &childCapped)
+	decode(t, call(admin, "POST", "/organizations", map[string]any{
+		"name":       "ParentTight",
+		"quotaBytes": 40 * mb,
+	}, 201), &parentTight)
+
+	countQuotaChanges := func() int {
+		t.Helper()
+		var auditResp struct {
+			Total int `json:"total"`
+		}
+		decode(t, call(admin, "POST", "/audit/query", map[string]any{
+			"from":   "2026-11-19T00:00:00Z",
+			"to":     "2026-11-20T00:00:00Z",
+			"action": "quota_change",
+		}, 200), &auditResp)
+		return auditResp.Total
+	}
+	if got := countQuotaChanges(); got != 3 {
+		t.Fatalf("initial quota_change count = %d, want 3", got)
+	}
+
+	// 1. Renaming ChildCapped with only { name, parentId } (omitting quotaBytes) must preserve its 60 MB Organization Quota and emit NO quota_change audit.
+	decode(t, call(admin, "PATCH", fmt.Sprintf("/organizations/%d", childCapped.ID), map[string]any{
+		"name":     "ChildRenamed",
+		"parentId": parentWide.ID,
+	}, 200), &childCapped)
+	if childCapped.QuotaBytes == nil || *childCapped.QuotaBytes != 60*mb {
+		t.Fatalf("renamed org lost quota: %+v, want 60 MB", childCapped)
+	}
+	if got := countQuotaChanges(); got != 3 {
+		t.Fatalf("quota_change count after rename = %d, want 3 (no spurious audit)", got)
+	}
+
+	// 2. Moving ChildCapped into ParentTight (40 MB) with only { name, parentId } must be rejected (409) because its preserved 60 MB quota exceeds ParentTight.
+	call(admin, "PATCH", fmt.Sprintf("/organizations/%d", childCapped.ID), map[string]any{
+		"name":     "ChildRenamed",
+		"parentId": parentTight.ID,
+	}, 409)
+
+	// 3. Explicit updateQuota: false ignores quotaBytes and preserves 60 MB without emitting quota_change.
+	decode(t, call(admin, "PATCH", fmt.Sprintf("/organizations/%d", childCapped.ID), map[string]any{
+		"name":        "ChildStillCapped",
+		"parentId":    parentWide.ID,
+		"updateQuota": false,
+		"quotaBytes":  nil,
+	}, 200), &childCapped)
+	if childCapped.QuotaBytes == nil || *childCapped.QuotaBytes != 60*mb {
+		t.Fatalf("updateQuota:false altered quota: %+v, want 60 MB", childCapped)
+	}
+	if got := countQuotaChanges(); got != 3 {
+		t.Fatalf("quota_change count after updateQuota:false = %d, want 3", got)
+	}
+
+	// 4. Explicit updateQuota: true with quotaBytes: null clears quota to unlimited and emits one quota_change audit.
+	decode(t, call(admin, "PATCH", fmt.Sprintf("/organizations/%d", childCapped.ID), map[string]any{
+		"name":        "ChildStillCapped",
+		"parentId":    parentWide.ID,
+		"updateQuota": true,
+		"quotaBytes":  nil,
+	}, 200), &childCapped)
+	if childCapped.QuotaBytes != nil {
+		t.Fatalf("updateQuota:true + quotaBytes:null did not clear quota: %+v", childCapped)
+	}
+	if got := countQuotaChanges(); got != 4 {
+		t.Fatalf("quota_change count after explicit clear = %d, want 4", got)
 	}
 }
 

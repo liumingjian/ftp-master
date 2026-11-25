@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -116,14 +115,16 @@ func TestTextOpenQuotaPrecheck(t *testing.T) {
 	fileID, _ := completeSingleUpload(t, server.URL, capped, dir.ID, "notes.txt", []byte(textContent), "")
 	textPath := fmt.Sprintf("/tree/%d/text", fileID)
 
-	// 1. Unlimited user opens notes.txt -> 200 with availableQuotaBytes: null.
+	// 1. Unlimited user opens notes.txt -> 200 with availableQuotaBytes nil/omitted.
 	raw := call(unlimited, "GET", textPath, nil, 200)
-	var rawMap map[string]any
-	if err := json.Unmarshal(raw, &rawMap); err != nil {
-		t.Fatal(err)
+	var unlimitedOpened struct {
+		VersionID           int64  `json:"versionId"`
+		Content             string `json:"content"`
+		AvailableQuotaBytes *int64 `json:"availableQuotaBytes"`
 	}
-	if val, present := rawMap["availableQuotaBytes"]; !present || val != nil {
-		t.Fatalf("unlimited open expected availableQuotaBytes: null, got %s", raw)
+	decode(t, raw, &unlimitedOpened)
+	if unlimitedOpened.Content != textContent || unlimitedOpened.AvailableQuotaBytes != nil {
+		t.Fatalf("unlimited open = %+v (raw: %s), want content and nil availableQuotaBytes", unlimitedOpened, raw)
 	}
 
 	// 2. Capped user has 40 B remaining (< 60 B file size) -> still allowed (200) with availableQuotaBytes == 40.

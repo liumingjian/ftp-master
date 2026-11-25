@@ -361,7 +361,7 @@ func TestSingleFileUploadQuotaEnforcementPoolsCeilingsAdminAndDowngrade(t *testi
 	}
 }
 
-func TestFolderBatchUploadQuotaReservationAtomicRefusalAndZeroFileAllowance(t *testing.T) {
+func TestFolderBatchUploadQuotaReservationAtomicRefusalAndZeroByteBatch(t *testing.T) {
 	stores := startStores(t)
 	clk := clock.NewFake(time.Date(2026, 11, 25, 13, 0, 0, 0, time.UTC))
 	server := startService(t, stores.config, clk)

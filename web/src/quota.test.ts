@@ -2,13 +2,13 @@
 // and constraining-ancestor budget computation.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { formatSize } from './formatSize.ts'
 import {
   bytesToQuotaDraft,
   computeOrgAncestorBudget,
   computePlatformStorageSummary,
   computeUserOrgBudget,
   editQuotaWarning,
-  formatBinaryBytes,
   formatQuotaExceededError,
   isQuotaExceededError,
   parseQuotaInput,
@@ -35,22 +35,35 @@ test('parseQuotaInput handles blank unlimited, zero, binary units, and rejects i
   assert.equal(parseQuotaInput('1000000', 'TB').ok, false)
 })
 
-test('bytesToQuotaDraft chooses clean binary unit and preserves zero vs unlimited', () => {
+test('bytesToQuotaDraft chooses clean binary unit and preserves exact MB multiples and small positive byte quotas', () => {
   assert.deepEqual(bytesToQuotaDraft(null), { value: '', unit: 'GB' })
   assert.deepEqual(bytesToQuotaDraft(0), { value: '0', unit: 'GB' })
+  assert.deepEqual(bytesToQuotaDraft(1 * TB), { value: '1', unit: 'TB' })
   assert.deepEqual(bytesToQuotaDraft(2 * TB), { value: '2', unit: 'TB' })
+  assert.deepEqual(bytesToQuotaDraft(2 * GB), { value: '2', unit: 'GB' })
   assert.deepEqual(bytesToQuotaDraft(10 * GB), { value: '10', unit: 'GB' })
   assert.deepEqual(bytesToQuotaDraft(256 * MB), { value: '256', unit: 'MB' })
-  assert.deepEqual(bytesToQuotaDraft(1536 * MB), { value: '1.5', unit: 'GB' })
+  assert.deepEqual(bytesToQuotaDraft(1500 * MB), { value: '1500', unit: 'MB' })
+  assert.deepEqual(bytesToQuotaDraft(1536 * MB), { value: '1536', unit: 'MB' })
+
+  // Non-MB-aligned positive byte quotas must stay visibly non-zero and round-trip accurately.
+  for (const bytes of [1, 100, 4096]) {
+    const draft = bytesToQuotaDraft(bytes)
+    assert.equal(draft.unit, 'MB')
+    assert.notEqual(draft.value, '0')
+    assert.ok(Number(draft.value) > 0, `expected positive value for ${bytes} bytes, got ${draft.value}`)
+    assert.deepEqual(parseQuotaInput(draft.value, draft.unit), { ok: true, bytes })
+  }
 })
 
-test('formatBinaryBytes formats 1024-based units matching desktop file sizes', () => {
-  assert.equal(formatBinaryBytes(0), '0 B')
-  assert.equal(formatBinaryBytes(512), '512 B')
-  assert.equal(formatBinaryBytes(1024), '1 KB')
-  assert.equal(formatBinaryBytes(MB), '1 MB')
-  assert.equal(formatBinaryBytes(1.5 * GB), '1.5 GB')
-  assert.equal(formatBinaryBytes(2 * TB), '2 TB')
+test('formatSize formats 1024-based units matching desktop file sizes', () => {
+  assert.equal(formatSize(-10), '0 B')
+  assert.equal(formatSize(0), '0 B')
+  assert.equal(formatSize(512), '512 B')
+  assert.equal(formatSize(1024), '1 KB')
+  assert.equal(formatSize(MB), '1 MB')
+  assert.equal(formatSize(1.5 * GB), '1.5 GB')
+  assert.equal(formatSize(2 * TB), '2 TB')
 })
 
 test('computePlatformStorageSummary sums root usage and top-level allocated quotas without double counting', () => {
@@ -67,6 +80,36 @@ test('computePlatformStorageSummary sums root usage and top-level allocated quot
     totalUsedBytes: 570,
     topLevelAllocatedBytes: 30 * GB,
     cappedOrgCount: 3,
+  })
+})
+
+test('computePlatformStorageSummary excludes User Quotas from top-level allocated Organization Quotas', () => {
+  // Uncapped root with direct User Quotas (allocatedBytes > 0) and zero capped Organizations.
+  const onlyUserQuotas: QuotaOrganization[] = [
+    { id: 1, name: 'Default', parentId: null, quotaBytes: null, committedBytes: 100, reservedBytes: 25, usedBytes: 125, allocatedBytes: 8 * GB, unallocatedBytes: null },
+    { id: 2, name: 'UncappedSubOrg', parentId: 1, quotaBytes: null, committedBytes: 40, reservedBytes: 0, usedBytes: 40, allocatedBytes: 3 * GB, unallocatedBytes: null },
+  ]
+  assert.deepEqual(computePlatformStorageSummary(onlyUserQuotas), {
+    totalCommittedBytes: 100,
+    totalReservedBytes: 25,
+    totalUsedBytes: 125,
+    topLevelAllocatedBytes: 0,
+    cappedOrgCount: 0,
+  })
+
+  // Uncapped root -> uncapped mid -> capped leaf org (4 GB) alongside User Quotas in both root & mid.
+  const mixed: QuotaOrganization[] = [
+    { id: 1, name: 'RootFree', parentId: null, quotaBytes: null, committedBytes: 50, reservedBytes: 10, usedBytes: 60, allocatedBytes: 12 * GB, unallocatedBytes: null },
+    { id: 2, name: 'MidFree', parentId: 1, quotaBytes: null, committedBytes: 30, reservedBytes: 0, usedBytes: 30, allocatedBytes: 7 * GB, unallocatedBytes: null },
+    { id: 3, name: 'LeafCapped', parentId: 2, quotaBytes: 4 * GB, committedBytes: 20, reservedBytes: 0, usedBytes: 20, allocatedBytes: 2 * GB, unallocatedBytes: 2 * GB },
+    { id: 4, name: 'DeepCapped', parentId: 3, quotaBytes: 2 * GB, committedBytes: 10, reservedBytes: 0, usedBytes: 10, allocatedBytes: 0, unallocatedBytes: 2 * GB },
+  ]
+  assert.deepEqual(computePlatformStorageSummary(mixed), {
+    totalCommittedBytes: 50,
+    totalReservedBytes: 10,
+    totalUsedBytes: 60,
+    topLevelAllocatedBytes: 4 * GB,
+    cappedOrgCount: 2,
   })
 })
 
@@ -294,9 +337,10 @@ test('utf8ByteLength counts exact UTF-8 bytes including multi-byte Chinese chara
   assert.equal(utf8ByteLength('a中b'), 5)
 })
 
-test('editQuotaWarning warns only when effective headroom is tighter than file size', () => {
+test('editQuotaWarning warns when over quota even for 0-byte files and when headroom is tighter than file size', () => {
   assert.equal(editQuotaWarning(null, 1024), undefined)
   assert.equal(editQuotaWarning(undefined, 1024), undefined)
+  assert.equal(editQuotaWarning(null, 0), undefined)
   assert.equal(editQuotaWarning(1024, 0), undefined)
   assert.equal(editQuotaWarning(1024, 1024), undefined)
   assert.equal(editQuotaWarning(2048, 1024), undefined)
@@ -307,4 +351,8 @@ test('editQuotaWarning warns only when effective headroom is tighter than file s
 
   const empty = editQuotaWarning(0, 100)
   assert.ok(empty?.includes('0 B'))
+
+  // 0-byte files must still show the over-quota warning when available <= 0 (matching GET /tree/{id}/text 507).
+  const zeroByteOverQuota = editQuotaWarning(0, 0)
+  assert.ok(zeroByteOverQuota?.includes('0 B'))
 })

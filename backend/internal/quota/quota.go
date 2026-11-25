@@ -51,25 +51,15 @@ type OrganizationSummary struct {
 	UncappedPoolUsedBytes int64
 }
 
-// PlatformSummary holds aggregate metrics across all root Organizations.
-type PlatformSummary struct {
-	CommittedBytes         int64
-	ReservedBytes          int64
-	UsedBytes              int64
-	TopLevelAllocatedBytes int64
-}
-
 // Ledger holds the evaluated quota hierarchy for a Snapshot.
 type Ledger struct {
 	orgs        map[int64]Organization
 	orgOrder    []int64
 	children    map[int64][]int64
-	roots       []int64
 	users       map[int64]User
 	userOrder   []int64
 	directUsers map[int64][]int64
 	summaries   map[int64]OrganizationSummary
-	platform    PlatformSummary
 }
 
 func cloneInt64Ptr(p *int64) *int64 {
@@ -107,10 +97,8 @@ func Evaluate(snap Snapshot) *Ledger {
 		if o.ParentID != nil {
 			if _, ok := l.orgs[*o.ParentID]; ok {
 				l.children[*o.ParentID] = append(l.children[*o.ParentID], id)
-				continue
 			}
 		}
-		l.roots = append(l.roots, id)
 	}
 	for _, u := range snap.Users {
 		cp := User{
@@ -172,17 +160,6 @@ func Evaluate(snap Snapshot) *Ledger {
 		return s
 	}
 
-	for _, rootID := range l.roots {
-		root := compute(rootID)
-		l.platform.CommittedBytes += root.CommittedBytes
-		l.platform.ReservedBytes += root.ReservedBytes
-		l.platform.UsedBytes += root.UsedBytes
-		if root.QuotaBytes != nil {
-			l.platform.TopLevelAllocatedBytes += *root.QuotaBytes
-		} else {
-			l.platform.TopLevelAllocatedBytes += root.AllocatedBytes
-		}
-	}
 	for _, id := range l.orgOrder {
 		if _, ok := l.summaries[id]; !ok {
 			compute(id)
@@ -195,11 +172,6 @@ func Evaluate(snap Snapshot) *Ledger {
 func (l *Ledger) Organization(id int64) (OrganizationSummary, bool) {
 	s, ok := l.summaries[id]
 	return s, ok
-}
-
-// PlatformSummary returns platform-wide usage and top-level allocated quotas.
-func (l *Ledger) PlatformSummary() PlatformSummary {
-	return l.platform
 }
 
 // ViolationKind identifies why a Storage Quota or hierarchy change was refused.
@@ -315,10 +287,7 @@ func (l *Ledger) ValidateCreateOrganization(parentID *int64, quotaBytes *int64) 
 	if !ok {
 		return nil
 	}
-	avail := int64(0)
-	if ancestor.UnallocatedBytes != nil {
-		avail = *ancestor.UnallocatedBytes
-	}
+	avail := unallocatedBytes(ancestor)
 	if *quotaBytes > avail {
 		return &Violation{
 			Kind:             ViolationAncestorBudgetExceeded,
@@ -416,78 +385,6 @@ func (l *Ledger) ValidateUpdateOrganization(orgID int64, parentID *int64, quotaB
 	return nil
 }
 
-// AncestorBudget describes the nearest capped ancestor Organization's remaining
-// allocatable budget when creating or editing an Organization.
-type AncestorBudget struct {
-	AncestorID               int64
-	AncestorName             string
-	AncestorQuotaBytes       int64
-	AncestorUnallocatedBytes int64
-	MaxAllowedQuotaBytes     int64
-}
-
-// OrgBudgetFor returns the constraining ancestor Organization's budget for
-// placing targetOrgID (nil when creating a new Organization) under parentID.
-// Returns nil when no ancestor Organization has an Organization Quota.
-func (l *Ledger) OrgBudgetFor(targetOrgID *int64, parentID *int64) *AncestorBudget {
-	ancestor, ok := l.nearestCappedAncestor(parentID)
-	if !ok {
-		return nil
-	}
-	unallocated := int64(0)
-	if ancestor.UnallocatedBytes != nil {
-		unallocated = *ancestor.UnallocatedBytes
-	}
-	maxAllowed := unallocated
-	if targetOrgID != nil {
-		if target, exists := l.summaries[*targetOrgID]; exists {
-			if curAnc, hasCur := l.nearestCappedAncestor(target.ParentID); hasCur && curAnc.ID == ancestor.ID {
-				if target.QuotaBytes != nil {
-					maxAllowed += *target.QuotaBytes
-				} else {
-					maxAllowed += target.AllocatedBytes
-				}
-			}
-		}
-	}
-	return &AncestorBudget{
-		AncestorID:               ancestor.ID,
-		AncestorName:             ancestor.Name,
-		AncestorQuotaBytes:       *ancestor.QuotaBytes,
-		AncestorUnallocatedBytes: unallocated,
-		MaxAllowedQuotaBytes:     maxAllowed,
-	}
-}
-
-// UserBudgetFor returns the constraining Organization's remaining allocatable
-// budget for placing userID (nil when evaluating a new User) in targetOrgID.
-// Returns nil when targetOrgID does not exist or has no capped ancestor.
-func (l *Ledger) UserBudgetFor(userID *int64, targetOrgID int64) *AncestorBudget {
-	ancestor, ok := l.nearestCappedAncestor(&targetOrgID)
-	if !ok {
-		return nil
-	}
-	unallocated := int64(0)
-	if ancestor.UnallocatedBytes != nil {
-		unallocated = *ancestor.UnallocatedBytes
-	}
-	maxAllowed := unallocated
-	if userID != nil {
-		if u, exists := l.users[*userID]; exists && u.QuotaBytes != nil {
-			if curAnc, hasCur := l.nearestCappedAncestor(&u.OrganizationID); hasCur && curAnc.ID == ancestor.ID {
-				maxAllowed += *u.QuotaBytes
-			}
-		}
-	}
-	return &AncestorBudget{
-		AncestorID:               ancestor.ID,
-		AncestorName:             ancestor.Name,
-		AncestorQuotaBytes:       *ancestor.QuotaBytes,
-		AncestorUnallocatedBytes: unallocated,
-		MaxAllowedQuotaBytes:     maxAllowed,
-	}
-}
-
 // ValidateUserChange checks whether assigning userID to organizationID with
 // quotaBytes preserves strict nested partitioning at every capped ancestor.
 func (l *Ledger) ValidateUserChange(userID int64, organizationID int64, quotaBytes *int64) *Violation {
@@ -561,41 +458,68 @@ type WriteDecision struct {
 	AvailableBytes      *int64
 }
 
-// CheckWrite evaluates whether userID can write deltaBytes more bytes.
-// Zero-byte operations (deltaBytes <= 0) are always allowed even when over quota.
-func (l *Ledger) CheckWrite(userID int64, deltaBytes int64) WriteDecision {
-	u, ok := l.users[userID]
-	if !ok {
-		return WriteDecision{Allowed: true, RequiredBytes: deltaBytes}
+type userConstraints struct {
+	hasLimit                 bool
+	availableBytes           int64
+	effectiveLimitBytes      int64
+	effectiveUsedBytes       int64
+	effectiveScope           Scope
+	effectiveOrgID           int64
+	effectiveOrgName         string
+	constrainingOrganization *ConstrainingOrganization
+}
+
+func unallocatedBytes(s OrganizationSummary) int64 {
+	if s.UnallocatedBytes == nil {
+		return 0
 	}
-	var (
-		hasLimit    bool
-		minHeadroom int64
-		scope       Scope
-		orgID       int64
-		orgName     string
-	)
-	consider := func(headroom int64, s Scope, oid int64, oname string) {
+	return *s.UnallocatedBytes
+}
+
+func (l *Ledger) evaluateUserConstraints(u User) userConstraints {
+	used := u.UsedBytes()
+	var out userConstraints
+
+	considerOverall := func(headroom, limit, currentUsed int64, s Scope, oid int64, oname string) {
 		if headroom < 0 {
 			headroom = 0
 		}
-		if !hasLimit || headroom < minHeadroom {
-			hasLimit = true
-			minHeadroom = headroom
-			scope = s
-			orgID = oid
-			orgName = oname
+		if !out.hasLimit || headroom < out.availableBytes {
+			out.hasLimit = true
+			out.availableBytes = headroom
+			out.effectiveLimitBytes = limit
+			out.effectiveUsedBytes = currentUsed
+			out.effectiveScope = s
+			out.effectiveOrgID = oid
+			out.effectiveOrgName = oname
+		}
+	}
+
+	considerOrg := func(org OrganizationSummary, kind Scope, remaining int64) {
+		if remaining < 0 {
+			remaining = 0
+		}
+		if out.constrainingOrganization == nil || remaining < out.constrainingOrganization.RemainingBytes {
+			out.constrainingOrganization = &ConstrainingOrganization{
+				Name:                     org.Name,
+				QuotaBytes:               *org.QuotaBytes,
+				UsedBytes:                org.UsedBytes,
+				AllocatedBytes:           org.AllocatedBytes,
+				UnallocatedPoolBytes:     unallocatedBytes(org),
+				UnallocatedPoolUsedBytes: org.UncappedPoolUsedBytes,
+				RemainingBytes:           remaining,
+				ConstraintKind:           kind,
+			}
 		}
 	}
 
 	if u.QuotaBytes != nil {
-		consider(*u.QuotaBytes-u.UsedBytes(), ScopeUser, 0, "")
+		considerOverall(*u.QuotaBytes-used, *u.QuotaBytes, used, ScopeUser, 0, "")
 	} else if anc, hasAnc := l.nearestCappedAncestor(&u.OrganizationID); hasAnc {
-		pool := int64(0)
-		if anc.UnallocatedBytes != nil {
-			pool = *anc.UnallocatedBytes
-		}
-		consider(pool-anc.UncappedPoolUsedBytes, ScopeOrganizationPool, anc.ID, anc.Name)
+		pool := unallocatedBytes(anc)
+		headroom := pool - anc.UncappedPoolUsedBytes
+		considerOverall(headroom, pool, anc.UncappedPoolUsedBytes, ScopeOrganizationPool, anc.ID, anc.Name)
+		considerOrg(anc, ScopeOrganizationPool, headroom)
 	}
 
 	visited := make(map[int64]bool)
@@ -609,7 +533,9 @@ func (l *Ledger) CheckWrite(userID int64, deltaBytes int64) WriteDecision {
 			break
 		}
 		if summary.QuotaBytes != nil {
-			consider(*summary.QuotaBytes-summary.UsedBytes, ScopeOrganizationTotal, summary.ID, summary.Name)
+			headroom := *summary.QuotaBytes - summary.UsedBytes
+			considerOverall(headroom, *summary.QuotaBytes, summary.UsedBytes, ScopeOrganizationTotal, summary.ID, summary.Name)
+			considerOrg(summary, ScopeOrganizationTotal, headroom)
 		}
 		if summary.ParentID == nil {
 			break
@@ -617,15 +543,26 @@ func (l *Ledger) CheckWrite(userID int64, deltaBytes int64) WriteDecision {
 		cur = *summary.ParentID
 	}
 
+	return out
+}
+
+// CheckWrite evaluates whether userID can write deltaBytes more bytes.
+// Zero-byte operations (deltaBytes <= 0) are always allowed even when over quota.
+func (l *Ledger) CheckWrite(userID int64, deltaBytes int64) WriteDecision {
+	u, ok := l.users[userID]
+	if !ok {
+		return WriteDecision{Allowed: true, RequiredBytes: deltaBytes}
+	}
+	c := l.evaluateUserConstraints(u)
 	decision := WriteDecision{
 		Allowed:             true,
-		Scope:               scope,
-		ConstrainingOrgID:   orgID,
-		ConstrainingOrgName: orgName,
+		Scope:               c.effectiveScope,
+		ConstrainingOrgID:   c.effectiveOrgID,
+		ConstrainingOrgName: c.effectiveOrgName,
 		RequiredBytes:       deltaBytes,
 	}
-	if hasLimit {
-		avail := minHeadroom
+	if c.hasLimit {
+		avail := c.availableBytes
 		decision.AvailableBytes = &avail
 		if deltaBytes > 0 && deltaBytes > avail {
 			decision.Allowed = false
@@ -677,100 +614,23 @@ func (l *Ledger) UserStorage(userID int64) (UserStorageSummary, bool) {
 		return UserStorageSummary{}, false
 	}
 	used := u.UsedBytes()
+	c := l.evaluateUserConstraints(u)
 	out := UserStorageSummary{
-		CommittedBytes:     u.CommittedBytes,
-		ReservedBytes:      u.ReservedBytes,
-		UsedBytes:          used,
-		QuotaBytes:         cloneInt64Ptr(u.QuotaBytes),
-		EffectiveUsedBytes: used,
+		CommittedBytes:           u.CommittedBytes,
+		ReservedBytes:            u.ReservedBytes,
+		UsedBytes:                used,
+		QuotaBytes:               cloneInt64Ptr(u.QuotaBytes),
+		EffectiveUsedBytes:       used,
+		ConstrainingOrganization: c.constrainingOrganization,
 	}
-
-	var (
-		hasLimit    bool
-		minHeadroom int64
-		effLimit    int64
-		effUsed     int64
-		effScope    Scope
-		bestOrg     *ConstrainingOrganization
-	)
-
-	considerOverall := func(headroom, limit, currentUsed int64, s Scope) {
-		if headroom < 0 {
-			headroom = 0
-		}
-		if !hasLimit || headroom < minHeadroom {
-			hasLimit = true
-			minHeadroom = headroom
-			effLimit = limit
-			effUsed = currentUsed
-			effScope = s
-		}
-	}
-
-	considerOrg := func(org OrganizationSummary, kind Scope, remaining int64) {
-		if remaining < 0 {
-			remaining = 0
-		}
-		pool := int64(0)
-		if org.UnallocatedBytes != nil {
-			pool = *org.UnallocatedBytes
-		}
-		if bestOrg == nil || remaining < bestOrg.RemainingBytes {
-			bestOrg = &ConstrainingOrganization{
-				Name:                     org.Name,
-				QuotaBytes:               *org.QuotaBytes,
-				UsedBytes:                org.UsedBytes,
-				AllocatedBytes:           org.AllocatedBytes,
-				UnallocatedPoolBytes:     pool,
-				UnallocatedPoolUsedBytes: org.UncappedPoolUsedBytes,
-				RemainingBytes:           remaining,
-				ConstraintKind:           kind,
-			}
-		}
-	}
-
-	if u.QuotaBytes != nil {
-		considerOverall(*u.QuotaBytes-used, *u.QuotaBytes, used, ScopeUser)
-	} else if anc, hasAnc := l.nearestCappedAncestor(&u.OrganizationID); hasAnc {
-		pool := int64(0)
-		if anc.UnallocatedBytes != nil {
-			pool = *anc.UnallocatedBytes
-		}
-		headroom := pool - anc.UncappedPoolUsedBytes
-		considerOverall(headroom, pool, anc.UncappedPoolUsedBytes, ScopeOrganizationPool)
-		considerOrg(anc, ScopeOrganizationPool, headroom)
-	}
-
-	visited := make(map[int64]bool)
-	for cur := u.OrganizationID; cur != 0; {
-		if visited[cur] {
-			break
-		}
-		visited[cur] = true
-		summary, exists := l.summaries[cur]
-		if !exists {
-			break
-		}
-		if summary.QuotaBytes != nil {
-			headroom := *summary.QuotaBytes - summary.UsedBytes
-			considerOverall(headroom, *summary.QuotaBytes, summary.UsedBytes, ScopeOrganizationTotal)
-			considerOrg(summary, ScopeOrganizationTotal, headroom)
-		}
-		if summary.ParentID == nil {
-			break
-		}
-		cur = *summary.ParentID
-	}
-
-	if hasLimit {
-		avail := minHeadroom
-		limit := effLimit
+	if c.hasLimit {
+		avail := c.availableBytes
+		limit := c.effectiveLimitBytes
 		out.AvailableBytes = &avail
 		out.EffectiveLimitBytes = &limit
-		out.EffectiveUsedBytes = effUsed
-		out.EffectiveScope = effScope
+		out.EffectiveUsedBytes = c.effectiveUsedBytes
+		out.EffectiveScope = c.effectiveScope
 	}
-	out.ConstrainingOrganization = bestOrg
 	return out, true
 }
 
