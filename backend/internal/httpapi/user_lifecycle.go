@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 )
 
@@ -109,7 +110,7 @@ func (s *Server) SetUserQuota(ctx context.Context, r api.SetUserQuotaRequestObje
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725005)"); err != nil {
+	if err := db.LockMembershipTx(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)

@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
 	"github.com/liumingjian/ftp-master/backend/internal/recycle"
@@ -56,7 +57,7 @@ func (s *Server) recycleChange(ctx context.Context, id int64, action string, tar
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = db.LockSharedTreeTx(ctx, tx); err != nil {
 		return err
 	}
 	q := sqlcdb.New(tx)

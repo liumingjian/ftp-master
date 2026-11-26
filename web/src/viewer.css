@@ -1,0 +1,166 @@
+/* File preview dialog, read-only watermark, and built-in text editor styles. */
+
+.viewer-quota-warning {
+  margin: 0;
+  border-radius: 0;
+  border-inline: 0;
+  border-top: 0;
+  padding: 8px 16px;
+  font-size: var(--text-sm);
+}
+
+.file-viewer {
+  width: min(1120px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--surface-radius);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.file-viewer::backdrop {
+  background: #101622a0;
+}
+
+.file-viewer[open] {
+  animation: enter-menu var(--enter);
+}
+
+.file-viewer.compact {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.file-viewer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.file-viewer-header h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-md);
+}
+
+.file-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-viewer-actions a.office-edit {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: var(--primary);
+}
+
+.file-viewer-actions a.office-edit:hover {
+  background: var(--primary-hover);
+}
+
+.file-viewer-body {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.file-viewer-body.image,
+.file-viewer-body.video {
+  padding: 16px;
+}
+
+.file-viewer-body :is(img, video) {
+  max-width: 100%;
+  max-height: 72dvh;
+  object-fit: contain;
+}
+
+.file-viewer-body.audio {
+  padding: 32px 16px;
+}
+
+.file-viewer-body audio {
+  max-width: 100%;
+}
+
+.file-viewer-body iframe {
+  display: block;
+  width: 100%;
+  height: 76dvh;
+  border: 0;
+  background: white;
+}
+
+.file-viewer-body p,
+.file-viewer-notice {
+  padding: 16px;
+  color: var(--muted);
+}
+
+.file-viewer-notice p {
+  margin: 0;
+}
+
+.preview-watermark {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+  background-repeat: repeat;
+}
+
+.viewer-readonly-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+@media (max-width: 560px) {
+  .file-viewer-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .file-viewer-actions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .file-viewer-body :is(img, video) {
+    max-height: 64dvh;
+  }
+
+  .file-viewer-body iframe {
+    height: 68dvh;
+  }
+}
+
+.edit-form {
+  display: grid;
+  gap: 12px;
+}
+
+.edit-form textarea {
+  height: min(49dvh, 460px);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.edit-form .banner {
+  margin: 0;
+}

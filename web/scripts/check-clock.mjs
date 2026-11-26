@@ -1,8 +1,6 @@
 // Fails when code under src/ reads or waits on the wall clock directly.
-// Time-dependent code must read time through one injectable Clock, the same
-// rule backend/internal/clock enforces for the service. The web app has no
-// time-dependent code yet; the first one to need it adds src/clock.ts and
-// lists it in clockModules below.
+// Time-dependent code must read time through the injectable Clock in src/clock.ts,
+// mirroring backend/internal/clock/clock_usage_test.go.
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'

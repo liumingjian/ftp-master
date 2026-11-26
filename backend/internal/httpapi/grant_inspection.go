@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/jackc/pgx/v5"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
 	"github.com/liumingjian/ftp-master/backend/internal/tree"
@@ -26,7 +27,7 @@ func (s *Server) previewGrantDraft(ctx context.Context, r api.PreviewGrantDraftR
 		return api.PreviewGrantDraft200JSONResponse{}, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = db.LockSharedTreeTx(ctx, tx); err != nil {
 		return api.PreviewGrantDraft200JSONResponse{}, err
 	}
 	q := sqlcdb.New(tx)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/minio/minio-go/v7"
 )
@@ -40,7 +41,7 @@ func Collect(ctx context.Context, pool *pgxpool.Pool, client *minio.Client, buck
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = db.LockSharedTreeTx(ctx, tx); err != nil {
 		return err
 	}
 	q := sqlcdb.New(tx)

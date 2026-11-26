@@ -32,7 +32,7 @@ make test-integration  # HTTP API against real PostgreSQL, MinIO, Redis via test
 make test-e2e          # Playwright against the running stack (`make up` first)
 ```
 
-During QA, open the address printed by `make qa-up`. Saving React, CSS or other
+During QA, open the address printed by `make qa-up`. Saving React, CSS, `index.html`, or other
 source files under `web/src` updates the running page. Rerun `make qa-up` after
 changing package dependencies or build configuration.
 
@@ -72,13 +72,15 @@ changing package dependencies or build configuration.
   testcontainers), the browser (Playwright in `web/e2e`), and pure units (plain `go test`;
   on the web, `src/**/*.test.ts` under Node's test runner).
 
-## Direct browser uploads
+## File transfers
 
 Open a directory with Upload, then choose **上传文件**. Progress, speed and ETA
 appear in that directory. Administrators configure the extension policy through
-**上传扩展名限制**. The local stack signs the browser's localhost MinIO port;
-if deploying separately, configure `MINIO_PUBLIC_ENDPOINT`,
-`MINIO_PUBLIC_USE_SSL`, `MINIO_REGION`, and storage CORS for the web origin.
+**上传扩展名限制**. Per [ADR 0008](docs/adr/0008-proxy-transfers-for-throughput-audit.md),
+all upload parts, single-file downloads (with HTTP Range support), and ZIP
+downloads stream through the Go application to and from MinIO so the server can
+authoritatively record per-second Transfer Profiles and completion/failure Audit
+Events. Browsers do not connect to MinIO directly.
 See [transfer contracts](docs/shared-tree.md#transfer-integration).
 ## Bulk User import
 

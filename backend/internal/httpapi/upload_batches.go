@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
 	"github.com/liumingjian/ftp-master/backend/internal/recycle"
@@ -194,7 +195,7 @@ func (s *Server) CancelUploadBatch(ctx context.Context, r api.CancelUploadBatchR
 	}
 	defer tx.Rollback(ctx)
 	// Serialize with upload publication and scheduler retention via the Shared Tree lock.
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = db.LockSharedTreeTx(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/identity"
 )
@@ -48,7 +49,7 @@ func (s *Server) ImportUsers(ctx context.Context, r api.ImportUsersRequestObject
 	defer tx.Rollback(ctx)
 	// Acquire the membership advisory lock before locking public.users to match
 	// canonical lock ordering (725005 -> table/row locks) and prevent deadlocks.
-	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725005)"); err != nil {
+	if err := db.LockMembershipTx(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)
