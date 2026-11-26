@@ -11,6 +11,7 @@ import (
 
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
 	"github.com/minio/minio-go/v7"
@@ -41,7 +42,7 @@ func (s *Server) DownloadZip(ctx context.Context, r api.DownloadZipRequestObject
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = db.LockSharedTreeTx(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)

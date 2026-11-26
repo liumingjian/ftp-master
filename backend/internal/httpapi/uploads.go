@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
 	"github.com/liumingjian/ftp-master/backend/internal/recycle"
@@ -394,7 +395,7 @@ func (s *Server) CompleteUpload(ctx context.Context, r api.CompleteUploadRequest
 	}
 	defer tx.Rollback(ctx)
 	// Share the tree mutation lock so publication and collision resolution are atomic.
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = db.LockSharedTreeTx(ctx, tx); err != nil {
 		return nil, err
 	}
 	u, snap, err := s.loadUpload(ctx, tx, r.Id)
@@ -704,7 +705,7 @@ func (s *Server) CancelUpload(ctx context.Context, r api.CancelUploadRequestObje
 	defer tx.Rollback(ctx)
 	// Acquire the Shared Tree lock before locking upload_sessions FOR UPDATE to
 	// match CompleteUpload Tx2 and scheduler lock order.
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+	if err = db.LockSharedTreeTx(ctx, tx); err != nil {
 		return nil, err
 	}
 	q := sqlcdb.New(tx)

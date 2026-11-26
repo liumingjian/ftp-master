@@ -18,6 +18,7 @@ services:
     command: ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
     volumes:
       - ../../web/src:/src/web/src:ro
+      - ../../web/index.html:/src/web/index.html:ro
     healthcheck:
       test:
         - CMD

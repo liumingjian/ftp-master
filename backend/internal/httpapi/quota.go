@@ -10,6 +10,7 @@ import (
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
 	"github.com/liumingjian/ftp-master/backend/internal/clock"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/quota"
 )
@@ -194,11 +195,7 @@ func recordQuotaChangeAudit(ctx context.Context, q *sqlcdb.Queries, clk clock.Cl
 // lockMembershipAndTree acquires the canonical advisory lock order
 // (725005 membership/quota BEFORE 725010 Shared Tree/storage) inside tx.
 func lockMembershipAndTree(ctx context.Context, tx pgx.Tx) error {
-	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725005)"); err != nil {
-		return err
-	}
-	_, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)")
-	return err
+	return db.LockMembershipAndSharedTreeTx(ctx, tx)
 }
 
 // checkWriteQuota evaluates whether userID may reserve or write requiredBytes

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/liumingjian/ftp-master/backend/internal/api"
 	"github.com/liumingjian/ftp-master/backend/internal/audit"
+	"github.com/liumingjian/ftp-master/backend/internal/db"
 	"github.com/liumingjian/ftp-master/backend/internal/db/sqlcdb"
 	"github.com/liumingjian/ftp-master/backend/internal/permission"
 )
@@ -34,7 +35,7 @@ func (s *Server) StartOfficeEdit(ctx context.Context, r api.StartOfficeEditReque
 	defer tx.Rollback(ctx)
 	// Serialize against membership/quota and tree/grant mutations in canonical lock order.
 	if preview {
-		if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(725010)"); err != nil {
+		if err = db.LockSharedTreeTx(ctx, tx); err != nil {
 			return nil, err
 		}
 	} else {

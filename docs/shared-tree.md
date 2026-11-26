@@ -75,30 +75,41 @@ replaces the case-insensitive extension list and audits the change. Upload
 validation happens before storage capabilities are issued. Default policy blocks
 common executable and script extensions; an empty list explicitly allows all.
 
-Operational MinIO uses MINIO_ENDPOINT. MINIO_PUBLIC_ENDPOINT and
-MINIO_PUBLIC_USE_SSL configure a separately signed browser-reachable endpoint;
-MINIO_REGION defaults to us-east-1. Do not rewrite signed hosts, queries or paths.
-Local Compose sets MinIO's global CORS origin to the web address. Production must
-configure the corresponding origin; bucket contents remain private. Permission
-revocation prevents new capabilities; already issued capabilities expire normally.
+Operational MinIO uses `MINIO_ENDPOINT` (`MINIO_REGION` defaults to `us-east-1`).
+Per [ADR 0008](adr/0008-proxy-transfers-for-throughput-audit.md), all upload parts
+and downloads stream through the Go application to and from MinIO using small
+in-memory buffers without disk spooling; browsers never receive presigned MinIO
+URLs and bucket contents remain private. Permission revocation takes effect on
+each authenticated request.
 
-Persistence seams for subsequent tickets: upload_sessions records owner,
-destination, name, exact expected size, immutable random object_key, storage
-upload id, fixed part layout, state, receipt and Clock creation time. Resume can
-list authoritative S3 parts through minio.Core and request bounded replacement
-URLs. file_versions records file_id, object_key, size, actual format, created_by
-and created_at; latest is the largest version id for a file. Download and Office
-read the selected immutable reference rather than deriving a key from a path.
+Persistence and resume seams: `upload_sessions` records owner, destination, name,
+exact expected size, immutable random `object_key`, storage upload id, fixed part
+layout, state, receipt and Clock creation time. `GET /api/uploads/{id}/parts`
+reads the authoritative storage multipart listing through `minio.Core`, validates
+expected part sizes, and paginates (completed sessions report all parts so folder
+retries reuse completed child receipts). Browser resume persists session id,
+filename, size, and geometry; reselect requires name/size match, skips already
+stored parts, retries automatically when connectivity returns, and registers
+`beforeunload` only during active transfers. `file_versions` records `file_id`,
+`object_key`, `size`, actual format, `created_by` and `created_at`; latest is the
+largest version id for a file. Download and Office read the selected immutable
+reference rather than deriving a key from a path.
+
+Folder manifests reuse per-file upload sessions. A pending-node registry
+(`upload_batches` + `upload_batch_nodes`) hides the reserved root, directories,
+and completed children from all tree snapshots until the last completed child
+reveals them atomically under the Shared Tree mutation lock (`725010`). Empty
+directories are not represented by the browser's file manifest.
 
 Completion persists `completing` before S3 completion, then locks the session and
-Shared Tree mutation advisory lock 725010. An exact-key StatObject with matching
+Shared Tree mutation advisory lock `725010`. An exact-key StatObject with matching
 intent metadata and size recovers S3 success if the metadata transaction failed.
-File, initial version, Creator Grant, upload Audit Event and receipt publish in
-one PostgreSQL transaction. Visible name collisions use the resolution flow
-below; existing storage objects are never overwritten.
+File, initial version, Creator Grant, upload Audit Event (with Transfer Profile)
+and receipt publish in one PostgreSQL transaction. Visible name collisions use
+the resolution flow below; existing storage objects are never overwritten.
 An S3 object completed before a failed publication remains discoverable through
 the session for retry or later abandoned-upload cleanup. S3 and PostgreSQL do not
-share a transaction. Upload bodies never pass through the application.
+share a transaction.
 
 For isolated local acceptance, Compose also accepts FTP_MASTER_SUBNET and
 FTP_MASTER_WEB_IP alongside the existing port overrides.
@@ -145,21 +156,21 @@ historical unsanitized tree paths. A failed storage stream aborts the response;
 it never appends a JSON error to a partial archive. ZIP generation uses bounded
 buffers and retains only entry metadata in memory.
 
-`GET /api/tree/{id}/download` authorizes current Download and redirects (302)
-to a separately signed public MinIO GET capability, valid for 15 minutes.
+`GET /api/tree/{id}/download` authorizes current Download and streams the
+selected immutable File Version through the Go application with HTTP Range
+support (`200` / `206` / `416`), `Cache-Control: no-store`, and an attachment
+`Content-Disposition` using the current Unicode filename and `application/octet-stream`.
 Optional `versionId` selects that file's immutable version; omit for latest.
 Invisible files return 404, visible files without Download return 403, and
 folders return 409. Invalid or unrelated versions never disclose bytes.
-The redirect has `Cache-Control: no-store`; the signed storage response forces
-an attachment with the current Unicode filename and octet-stream content type.
-Each issued redirect records one `download` Audit Event with stable item ID,
-current path, version ID and size. Issuance is audited, not completed receipt
-of bytes; existing capabilities survive permission revocation until expiry.
+Per [ADR 0008](adr/0008-proxy-transfers-for-throughput-audit.md), each transfer
+records one `download` Audit Event (with stable item ID, current path, version ID,
+size, and Transfer Profile) upon completion (`success`) or interruption (`failure`).
 
 The UI links only to the extensionless application endpoint and uses native
-browser downloads. No transfer body or progress travels through the app.
-Subsequent read flows can reuse `fileAccess` for current Right checks and
-`GetFileVersion` for file-bound immutable references (version 0 selects latest).
+browser downloads. Subsequent read flows reuse `fileAccess` for current Right
+checks and `GetFileVersion` for file-bound immutable references (`versionId = 0`
+selects latest).
 
 ### Same-name uploads
 
@@ -233,10 +244,10 @@ latest File Version attributed to the restoring User, and commits its
 Missing or foreign-file versions return 404 after non-disclosing authorization.
 
 Restoration shares the source's immutable `object_key`; it does not copy bytes.
-The scheduled cleanup seam (#21) must queue removed keys in `storage_gc` and use
-`recycle.Collect` to remove only unreferenced content. Pruning one version must
-never remove bytes still referenced by a restored version. Retention remains the
-scheduler's responsibility; version history itself does not prune on read.
+Scheduled retention queues removed keys in `storage_gc` and uses `recycle.Collect`
+to remove only unreferenced content, so pruning one version never removes bytes
+still referenced by a restored version. Retention remains the scheduler's
+responsibility; version history itself does not prune on read.
 
 ## Scheduled retention
 
