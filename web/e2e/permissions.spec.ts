@@ -132,7 +132,7 @@ test('delegated permissions show direct badges on visible, manageable branches',
     const inherited = permissions.getByRole('row').filter({ has: delegate.getByLabel('授权（继承）') })
     await expect(inherited).toBeVisible()
     await expect(inherited.getByRole('checkbox')).toHaveCount(0)
-    await permissions.getByText('添加人员、组织或用户组', { exact: true }).click()
+    await permissions.getByRole('tab', { name: '添加授权' }).click()
     await permissions.getByRole('group', { name: '授权对象类型' }).getByRole('button', { name: '用户', exact: true }).click()
     await permissions.getByLabel('用户编号').fill(String(additionalRecipient))
     await permissions.getByRole('button', { name: '添加到草稿' }).click()
@@ -142,7 +142,7 @@ test('delegated permissions show direct badges on visible, manageable branches',
     expect((await delegate.request.get(`/api/tree/${outside}/grants`)).status()).toBe(403)
     await tree.getByRole('button', { name: `Outside-${suffix}` }).click()
     await expect(permissions.getByText('当前项目没有授权权限，可查看自己的有效权限。')).toBeVisible()
-    await expect(permissions.getByText('添加人员、组织或用户组', { exact: true })).toHaveCount(0)
+    await expect(permissions.getByRole('tab', { name: '添加授权' })).toHaveCount(0)
   } finally {
     await delegate.close()
   }
@@ -170,7 +170,7 @@ test('creator handover distinguishes namesakes and applies only the saved draft'
   await expect(page.locator('.grant-save')).toContainText(username)
   await page.getByRole('button', {name:'保存全部授权'}).click()
   await expect(page.getByText('授权已保存', {exact:true})).toBeVisible()
-  await page.locator('.permission-inspection > summary').click()
+  await page.getByRole('tab', { name: '有效权限查询' }).click()
   const query = page.getByRole('region', {name:'有效权限查询'})
   await query.getByRole('searchbox').fill(username)
   await query.getByRole('button', {name:`接任测试（${username}）`}).click()

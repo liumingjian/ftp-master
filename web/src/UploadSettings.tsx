@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
-import { Pencil, ShieldCheck } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 import { api } from './api/client'
+import { AppIcon } from './icons/AppIcon'
 import { PageHeading } from './PageHeading'
 
 export function UploadSettings() {
@@ -71,7 +72,7 @@ export function UploadSettings() {
     <OfficeEditSetting />
     <section className="panel upload-policy" aria-labelledby="upload-policy-title">
       <div className="upload-policy-heading">
-        <span className="upload-policy-icon"><ShieldCheck size={18} aria-hidden="true" /></span>
+        <span className="upload-policy-icon"><AppIcon name="policy-upload-guard" size={36} /></span>
         <div>
           <h2 id="upload-policy-title">上传扩展名限制</h2>
           <p>匹配列表中扩展名的文件会在上传前被拒绝</p>
@@ -148,7 +149,7 @@ function OfficeEditSetting() {
   }
   return <section className="panel upload-policy" aria-labelledby="office-setting-title">
     <div className="upload-policy-heading">
-      <span className="upload-policy-icon"><Pencil size={18} aria-hidden="true" /></span>
+      <span className="upload-policy-icon"><AppIcon name="policy-office-edit" size={36} /></span>
       <div><h2 id="office-setting-title">Office 在线编辑</h2>
         <p id="office-setting-hint">启用后，有修改权限的用户可通过 WPS 插件编辑文件。关闭后将暂停编辑与保存，只读预览仍可使用。</p>
       </div>

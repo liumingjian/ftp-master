@@ -4,6 +4,7 @@ import { App } from './App'
 import '@fontsource-variable/geist'
 import './app.css'
 import './fileDetails.css'
+import './grants.css'
 import './membership.css'
 import './storage.css'
 

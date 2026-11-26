@@ -52,7 +52,7 @@ test("Administrator grants a directory and another User can browse it", async ({
   await createAndOpenFolder(page, name);
   await panel.getByRole("button", { name: "管理当前权限" }).click();
   const permissions = page.getByRole("region", {name: "权限管理"});
-  await permissions.getByText("添加人员、组织或用户组", { exact: true }).click();
+  await permissions.getByRole("tab", { name: "添加授权" }).click();
   await permissions.getByRole("searchbox", { name: "搜索用户组" }).fill(groupName);
   await permissions.getByRole("button", { name: groupName + " 1 位有效成员", exact: true }).click();
   await permissions.getByLabel("修改", {exact:true}).check();

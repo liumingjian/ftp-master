@@ -100,7 +100,7 @@ export function ItemInspectorDialog({
     }}
     onClick={event => { if (event.target === event.currentTarget) dismiss() }}>
     <header className="inspector-header">
-      <FileIcon node={node} size={18} tile />
+      <FileIcon node={node} size={34} tile />
       <h2 id="item-inspector-title" title={node.name}>{node.name}</h2>
       <button type="button" className="ghost icon dialog-close" title="关闭" aria-label="关闭详情" autoFocus onClick={dismiss}>
         <X size={16} aria-hidden="true" />

@@ -41,7 +41,7 @@ function buildWatermarkDataUri(user: ViewerUser, timestamp: string) {
   const line1 = escapeXml(`${user.displayName} (${user.username})`)
   const line2 = escapeXml(user.organizationName ? `${user.organizationName} · ${timestamp}` : timestamp)
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="190" viewBox="0 0 320 190">` +
-    `<g transform="rotate(-24 160 95)" fill="#5e6b70" fill-opacity="0.16" font-family="system-ui, PingFang SC, Microsoft YaHei, sans-serif" text-anchor="middle">` +
+    `<g transform="rotate(-24 160 95)" fill="#5e6b70" fill-opacity="0.16" font-family="'Geist Variable', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', system-ui, sans-serif" text-anchor="middle">` +
     `<text x="160" y="88" font-size="14" font-weight="600">${line1}</text>` +
     `<text x="160" y="109" font-size="12">${line2}</text>` +
     `</g></svg>`

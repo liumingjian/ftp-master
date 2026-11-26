@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Clock, Database, Gauge, HardDrive, RefreshCw, TriangleAlert, Zap } from 'lucide-react'
+import { Clock, Gauge, RefreshCw } from 'lucide-react'
 import { api, type Health } from './api/client'
 import { systemClock } from './clock'
+import { AppIcon, type AppIconName } from './icons/AppIcon'
 import { PageHeading } from './PageHeading'
 
 function formatUptime(totalSeconds: number): string {
@@ -50,11 +51,19 @@ export function HealthPanel() {
     return () => controller.abort()
   }, [])
 
-  const services = health ? [
+  const services: Array<{
+    label: string
+    role: string
+    icon: AppIconName
+    up: boolean
+    testId?: string
+    status: string
+    impact: string
+  }> = health ? [
     {
       label: '数据库',
       role: '元数据、组织架构与权限存储',
-      icon: Database,
+      icon: 'service-database',
       up: health.database.up,
       testId: 'health-database',
       status: health.database.up ? `正常，架构版本 ${health.database.schemaVersion}` : '不可用',
@@ -63,7 +72,7 @@ export function HealthPanel() {
     {
       label: '对象存储',
       role: '文件实体与历史版本存储',
-      icon: HardDrive,
+      icon: 'service-storage',
       up: health.objectStorage.up,
       status: health.objectStorage.up ? '正常' : '不可用',
       impact: '对象存储异常将影响文件上传、下载与在线预览。',
@@ -71,7 +80,7 @@ export function HealthPanel() {
     {
       label: '缓存',
       role: '会话状态与高频访问缓存',
-      icon: Zap,
+      icon: 'service-cache',
       up: health.cache.up,
       status: health.cache.up ? '正常' : '不可用',
       impact: '缓存异常可能导致会话校验或接口响应下降。',
@@ -93,7 +102,7 @@ export function HealthPanel() {
       <div className={`health-overview panel ${health.status === 'ok' ? 'positive' : 'warning'}`}>
         <div className="health-overview-lead">
           <span className="health-status-icon" aria-hidden="true">
-            {health.status === 'ok' ? <CheckCircle2 size={22} /> : <TriangleAlert size={22} />}
+            <AppIcon name={health.status === 'ok' ? 'health-ok' : 'health-degraded'} size={44} />
           </span>
           <div className="health-overview-text">
             <div className="health-overview-title">
@@ -127,10 +136,10 @@ export function HealthPanel() {
       </div>
 
       <div className="status-grid health-services">
-        {services.map(({ label, role, icon: Icon, up, status, impact, testId }) => (
+        {services.map(({ label, role, icon, up, status, impact, testId }) => (
           <section key={label} className={`panel health-service-card ${up ? 'up' : 'down'}`}>
             <div className="health-service-header">
-              <span className="health-service-icon" aria-hidden="true"><Icon size={18} /></span>
+              <span className="health-service-icon" aria-hidden="true"><AppIcon name={icon} size={36} /></span>
               <div className="health-service-title">
                 <h2>{label}</h2>
                 <p>{role}</p>

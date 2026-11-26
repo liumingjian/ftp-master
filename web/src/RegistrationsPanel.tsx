@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Inbox, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { api } from './api/client'
 import { avatarInitial } from './avatar'
 import type { components } from './api/schema.gen'
+import { AppIcon } from './icons/AppIcon'
 import { PageHeading } from './PageHeading'
 
 export function RegistrationsPanel() {
@@ -73,7 +74,7 @@ export function RegistrationsPanel() {
     <section className="panel" aria-labelledby="pending-heading">
       <div className="section-heading"><h2 id="pending-heading">待审批注册</h2>{!loading && <span className="pill">{rows.length} 条</span>}</div>
       {loading && <p className="panel-empty" role="status">正在加载申请…</p>}
-      {!loading && !error && !rows.length && <div className="panel-empty"><Inbox size={26} />暂无待审批的申请</div>}
+      {!loading && !error && !rows.length && <div className="panel-empty"><AppIcon name="empty-approvals" size={60} /><span>暂无待审批的申请</span></div>}
       <ul className="record-list approval-list">
         {rows.map(row => <li key={row.id}>
           <div className="identity-row">

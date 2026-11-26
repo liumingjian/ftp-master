@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowLeft, Building2, ChevronRight, Lock, SearchCheck, TriangleAlert, UserRound, UserRoundPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, Building2, Check, ChevronRight, Lock, SearchCheck, Shield, TriangleAlert, UserRound, UserRoundPlus, Users, X } from 'lucide-react'
 import { DirectorySearch, matchesSearch } from './DirectorySearch'
-import { PageHeading } from './PageHeading'
 import { api } from './api/client'
 import { FileIcon } from './FileIcon'
 import { loadAncestors, loadBranches } from './treePath'
@@ -14,6 +13,9 @@ type PrincipalKind = Grant['principalKind']
 type Principal = { id: number; name: string; detail?: string }
 const presets = [[1, '仅浏览'], [3, '只读'], [15, '读写'], [31, '读写删除'], [63, '完全控制'], [4, '投递箱']] as const
 export const rights = [[1, '浏览'], [2, '下载'], [4, '上传'], [8, '修改'], [16, '删除'], [32, '授权']] as const
+const readRights = [[1, '浏览'], [2, '下载']] as const
+const writeRights = [[4, '上传'], [8, '修改'], [16, '删除']] as const
+const adminRights = [[32, '授权']] as const
 const principalLabels = { user: '用户', organization: '组织', user_group: '用户组' }
 const principalKinds = ['user_group', 'organization', 'user'] as const
 const principalIcons = { user: UserRound, organization: Building2, user_group: Users }
@@ -100,11 +102,13 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
   const [path, setPath] = useState<Node[]>([])
   const [branches, setBranches] = useState<Record<number, Node[]>>({ 0: [node] })
   const [selected, setSelected] = useState(node)
+  const [activeView, setActiveView] = useState<'ledger' | 'add' | 'inspect'>('ledger')
   const [sources, setSources] = useState<Source[]>([])
   const [added, setAdded] = useState<Grant[]>([])
   const [changes, setChanges] = useState<Record<number, Grant | null>>({})
   const [impact, setImpact] = useState<components['schemas']['GrantImpact']>()
   const [value, setValue] = useState(3)
+  const [scope, setScope] = useState<Grant['scope']>('subtree')
   const [principalKind, setPrincipalKind] = useState<PrincipalKind>('user_group')
   const [principalId, setPrincipalId] = useState<number>()
   const [principals, setPrincipals] = useState<Partial<Record<PrincipalKind, Principal[]>>>({})
@@ -114,7 +118,7 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [parentCanGrant, setParentCanGrant] = useState(administrator)
-  const grantTree = useRef<HTMLElement>(null)
+  const grantTree = useRef<HTMLDivElement>(null)
   const managedUsers = useManagedUsers(administrator)
   const users = managedUsers?.map<Principal>(user => ({
     id: user.id,
@@ -133,6 +137,7 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
   const inherited = sources.filter(entry => entry.inherited)
   const individualGrants = [...direct.map(source => source.grant.id in changes ? changes[source.grant.id] : source.grant), ...added]
     .filter(grant => grant?.principalKind === 'user' && !grant.creator).length
+  const effectiveView = canGrant ? activeView : 'inspect'
 
   useEffect(() => { onDirtyChange(dirty || saving) }, [dirty, saving, onDirtyChange])
 
@@ -181,8 +186,8 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
   useEffect(() => {
     if (!administrator) return
     const controller = new AbortController()
-    const options = { signal: controller.signal }
-    void Promise.all([api.GET('/organizations', options), api.GET('/user-groups', options)])
+    const requestOptions = { signal: controller.signal }
+    void Promise.all([api.GET('/organizations', requestOptions), api.GET('/user-groups', requestOptions)])
       .then(([organizations, groups]) => {
         if (controller.signal.aborted) return
         setRawOrgs(organizations.data ?? [])
@@ -221,13 +226,23 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
       ?? principalLabels[grant.principalKind] + ' #' + grant.principalId
   }
 
-  function principalCell(grant: Grant) {
+  function principalCell(grant: Grant, extraTag?: { label: string; tone?: 'accent' | 'danger' }) {
     const Icon = principalIcons[grant.principalKind]
     const entry = principalEntry(grant)
     const roleLabel = grant.creator ? '创建者' : principalLabels[grant.principalKind]
     const subline = !grant.creator && entry?.detail ? `${roleLabel} · ${entry.detail}` : roleLabel
-    return <span className="grant-principal"><Icon size={16} aria-hidden="true" />
-      <span><strong>{principalName(grant)}</strong><small>{subline}</small></span>
+    return <span className="grant-principal">
+      <span className={grant.creator ? 'grant-principal-badge is-creator' : 'grant-principal-badge'} aria-hidden="true">
+        <Icon size={15} />
+      </span>
+      <span className="grant-principal-text">
+        <strong>
+          <span>{principalName(grant)}</span>
+          {grant.creator && <span className="grant-tag accent">创建者</span>}
+          {extraTag && <span className={`grant-tag ${extraTag.tone ?? ''}`}>{extraTag.label}</span>}
+        </strong>
+        <small>{subline}</small>
+      </span>
     </span>
   }
 
@@ -272,6 +287,7 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
     setPrincipalId(undefined)
     setMessage('')
     setBusy(false)
+    setActiveView('ledger')
     setSelected(next)
   }
 
@@ -314,12 +330,12 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
       const expanded = !entry.isFile && (isSelected || path.some(ancestor => ancestor.id === entry.id))
       const individualCount = entry.directIndividualGrantCount ?? 0
       return <div key={entry.id}>
-        <button className="sidebar-link" style={{ paddingInlineStart: 8 + depth * 12 }}
+        <button className="sidebar-link" style={{ paddingInlineStart: 10 + depth * 14 }}
           aria-current={isSelected ? 'location' : undefined} onClick={() => pick(entry)}>
-          <ChevronRight size={12} className={expanded ? 'expanded' : undefined} style={{ visibility: entry.isFile ? 'hidden' : 'visible' }} />
+          <ChevronRight size={12} className={expanded ? 'grant-tree-chevron expanded' : 'grant-tree-chevron'} style={{ visibility: entry.isFile ? 'hidden' : 'visible' }} />
           <FileIcon node={entry} size={16} /><span className="ellipsis">{entry.name}</span>
           {!!entry.directGrantCount && <span className="pill">{entry.directGrantCount}</span>}
-          {individualCount >= individualGrantWarningThreshold && <TriangleAlert size={14} role="img"
+          {individualCount >= individualGrantWarningThreshold && <TriangleAlert size={14} className="grant-tree-warn" role="img"
             aria-label={`${individualCount} 条个人授权`}><title>{individualCount} 条个人授权</title></TriangleAlert>}
         </button>
         {expanded && renderTree(entry.id, depth + 1)}
@@ -327,157 +343,364 @@ export function GrantsPanel({ node, close, administrator, onDirtyChange }: {
     })
   }
 
+  const creatorSource = direct.find(entry => entry.grant.creator) ?? inherited.find(entry => entry.grant.creator)
+  const creatorLabel = creatorSource ? principalName(creatorSource.grant) : '—'
+
   return <section aria-label="权限管理" className="grants-page">
-    <PageHeading title="权限管理" actions={
-      <button className="ghost" disabled={saving} onClick={() => {
-        if (dirty && !window.confirm('有未保存的更改，确定返回目录？')) return
-        discard()
-        close()
-      }}><ArrowLeft size={16} />返回目录</button>
-    } />
-    <div className="tree-layout">
-      <nav className="grant-tree panel" aria-label="授权目录树" ref={grantTree}>
-        <h2>授权目录</h2>{renderTree(0, 0)}
-      </nav>
-      <div className="grant-body panel">
+    <nav className="grant-tree" aria-label="授权目录树">
+      <div className="grant-tree-head">
+        <h1>授权目录结构</h1>
+        <button type="button" className="ghost grant-tree-back" disabled={saving} onClick={() => {
+          if (dirty && !window.confirm('有未保存的更改，确定返回目录？')) return
+          discard()
+          close()
+        }}><ArrowLeft size={14} aria-hidden="true" />返回目录</button>
+      </div>
+      <div className="grant-tree-scroll" ref={grantTree}>
+        {renderTree(0, 0)}
+      </div>
+      <div className="grant-tree-foot">
+        <span>权限台账视图</span>
+        <span>数字为直接授权数</span>
+      </div>
+    </nav>
+
+    <div className="grant-body">
+      <header className="grant-topbar">
         <div className="grant-heading">
-          <FileIcon node={selected} tile /><div><h2>{selected.name}</h2>
+          <FileIcon node={selected} tile />
+          <div style={{ minWidth: 0 }}>
+            <h2>{selected.name}</h2>
             <nav className="grant-path" aria-label="授权目录路径">
-              <span>全部文件</span><ChevronRight size={12} />
-              {path.map(entry => <button key={entry.id} className="ghost" onClick={() => pick(entry)}>{entry.name}<ChevronRight size={12} /></button>)}
+              <span>全部文件</span><ChevronRight size={12} aria-hidden="true" />
+              {path.map(entry => <button key={entry.id} type="button" className="ghost" onClick={() => pick(entry)}>{entry.name}<ChevronRight size={12} aria-hidden="true" /></button>)}
               <span aria-current="location">{selected.name}</span>
             </nav>
           </div>
         </div>
-        {!canGrant && <p className="notice">当前项目没有授权权限，可查看自己的有效权限。</p>}
-        {selected.isFile && canGrant && <p className="notice">{parentCanGrant
+
+        <div className="grant-view-tabs" role="tablist" aria-label="权限视图切换">
+          {canGrant && (
+            <button type="button" role="tab" className="grant-view-tab"
+              aria-selected={effectiveView === 'ledger'} onClick={() => setActiveView('ledger')}>
+              <Shield size={14} aria-hidden="true" />授权台账
+            </button>
+          )}
+          {canGrant && (
+            <button type="button" role="tab" className="grant-view-tab"
+              aria-selected={effectiveView === 'add'} onClick={() => setActiveView('add')}>
+              <UserRoundPlus size={14} aria-hidden="true" />添加授权
+            </button>
+          )}
+          <button type="button" role="tab" className="grant-view-tab"
+            aria-selected={effectiveView === 'inspect'} onClick={() => setActiveView('inspect')}>
+            <SearchCheck size={14} aria-hidden="true" />有效权限查询
+          </button>
+        </div>
+      </header>
+
+      {canGrant && (
+        <div className="grant-kpi-strip">
+          <div className="grant-kpis">
+            <div className="grant-kpi">
+              <span>直接授权</span>
+              <strong>{direct.length + added.length}</strong>
+            </div>
+            <div className="grant-kpi">
+              <span>上层继承</span>
+              <strong>{inherited.length}</strong>
+            </div>
+            <div className="grant-kpi">
+              <span>创建者归属</span>
+              <strong className="grant-kpi-creator">{creatorLabel}</strong>
+            </div>
+          </div>
+          <span className="grant-kpi-hint">权限按「只读访问 / 内容变更 / 管理控制」三组审计列示</span>
+        </div>
+      )}
+
+      <div className="grant-scroll">
+        {!canGrant && <p className="grant-inline-notice">当前项目没有授权权限，可查看自己的有效权限。</p>}
+        {selected.isFile && canGrant && <p className="grant-inline-notice">{parentCanGrant
           ? '您可以移除或转移创建者授权。'
           : '只能分享给已能看到父目录的人。移除或转移创建者授权需要父目录的授权权限。'}</p>}
-        {canGrant && <details className="grant-add" key={selected.id}><summary><UserRoundPlus size={16} />添加人员、组织或用户组<ChevronRight className="grant-disclosure" size={16} /></summary>
-        <form className="grant-form" onSubmit={event => {
-          event.preventDefault()
-          const form = new FormData(event.currentTarget)
-          const id = options ? principalId : Number(form.get('principal'))
-          if (!id || !Number.isSafeInteger(id) || id < 1) return
-          setAdded(previous => [...previous, {
-            principalKind,
-            principalId: id, rights: value,
-            scope: selected.isFile ? 'subtree' : form.get('scope') as Grant['scope'],
-          }])
-          setPrincipalId(undefined)
-          setMessage('')
-        }}>
-          <div className="grant-picker">
-            <div className="membership-tabs" role="group" aria-label="授权对象类型">
-              {principalKinds.map(kind => {
-                const Icon = principalIcons[kind]
-                return <button type="button" key={kind} className="ghost" aria-pressed={principalKind === kind} onClick={() => {
-                  if (principalKind === kind) return
-                  setPrincipalKind(kind)
-                  setPrincipalId(undefined)
-                }}><Icon size={16} />{principalLabels[kind]}</button>
-              })}
-            </div>
-            {options ? <GrantPrincipalPicker key={principalKind} kind={principalKind} options={options}
-              selected={principalId} onPick={setPrincipalId} disabled={saving} />
-              : <label>{principalLabels[principalKind]}编号<input key={principalKind} name="principal" type="number" min="1" required disabled={saving} /></label>}
-          </div>
-          <div className="grant-config">
-            <label>权限预设<Preset value={value} setValue={setValue} disabled={saving} /></label>
-            {!selected.isFile && <label>范围<Scope name="scope" disabled={saving} /></label>}
-            <button className="primary" disabled={!value || busy || saving || (!!options && !principalId)}>添加到草稿</button>
-          </div>
-          <fieldset><legend>权限细项</legend>{rights.map(([bit, label]) =>
-            <label key={bit}><input type="checkbox" disabled={saving} checked={!!(value & bit)} onChange={event =>
-              setValue(toggleRight(value, bit, event.target.checked))} />{label}</label>)}</fieldset>
-        </form></details>}
-        {canGrant && individualGrants >= individualGrantWarningThreshold && <p className="notice grant-nudge">此处有 {individualGrants} 条个人授权。可将同一职责的人员加入用户组，再统一授权。</p>}
-        {canGrant && <div className="grant-table" tabIndex={0} role="region" aria-label="权限矩阵">
-          <table><thead><tr><th scope="col">对象</th><th scope="col">预设</th>{rights.map(([bit, label]) => <th scope="col" key={bit}>{label}</th>)}<th scope="col">范围／来源</th><th scope="col">操作</th></tr></thead>
-            <tbody>
-              <tr className="grant-group"><td colSpan={10}>直接授权 · {direct.length}</td></tr>
-              {!direct.length && !added.length && <tr><td colSpan={10} className="muted">{busy ? '正在加载…' : '此处没有直接授权'}</td></tr>}
-              {direct.map(source => {
-                const original = source.grant
-                const changed = original.id in changes
-                const grant = changed ? changes[original.id] : original
-                const locked = original.creator
-                const inheritedRights = inherited.filter(entry => entry.grant.principalKind === original.principalKind
-                  && entry.grant.principalId === original.principalId).reduce((value, entry) => value | entry.grant.rights, 0)
-                return <tr key={original.id} className={changed ? 'draft-row' : undefined}>
-                  <td>{principalCell(original)}{!grant && <small className="muted">待移除</small>}</td>
-                  <td>{grant && (locked ? '完全控制' : <Preset value={grant.rights} disabled={saving} setValue={rights => change(original, { ...grant, rights })} />)}</td>
-                  {rights.map(([bit, label]) => <td key={bit} title={inheritedRights & bit ? '已从上级继承' : undefined}>
-                    {locked || !!(inheritedRights & bit) ? <Lock size={13} aria-label={`${label}（锁定）`} /> : grant &&
-                      <input type="checkbox" aria-label={`${principalName(grant)} ${label}`}
-                        checked={!!(grant.rights & bit)} disabled={saving} onChange={event => {
-                          const rights = toggleRight(grant.rights, bit, event.target.checked)
-                          change(original, rights ? { ...grant, rights } : null)
-                        }} />}
-                  </td>)}
-                  <td>{grant && (selected.isFile ? '此文件' : <Scope value={grant.scope} disabled={saving || locked}
-                    onChange={scope => change(original, { ...grant, scope })} />)}</td>
-                  <td><button className="ghost" disabled={saving || transferSource?.grant.id === original.id || handover?.source.grant.id === original.id || (locked && !parentCanGrant)}
-                    onClick={() => change(original, changed ? original : null)}>{changed ? '撤销草稿' : '删除授权'}</button>
-                    {grant && locked && parentCanGrant && <button disabled={saving || !!handover} onClick={() => { setSuccessor(undefined); setTransferSource(source) }}>转移创建者</button>}</td>
-                </tr>
-              })}
-              {added.map((grant, index) => <tr className="draft-row" key={index}>
-                <td>{principalCell(grant)}</td>
-                <td><span className="pill">{presets.find(([value]) => value === grant.rights)?.[1] ?? '自定义'} · 待保存</span></td>
-                {rights.map(([bit, label]) => <td key={bit}>{grant.rights & bit ? <span aria-label={label}>✓</span> : ''}</td>)}
-                <td>{selected.isFile ? '此文件' : grant.scope === 'subtree' ? '本层及以下' : '仅本层'}</td>
-                <td><button className="ghost" onClick={() => setAdded(entries => entries.filter((_, i) => i !== index))}>移除草稿</button></td>
-              </tr>)}
-              {!!inherited.length && <tr className="grant-group"><td colSpan={10}><button className="ghost" aria-expanded={showInherited}
-                onClick={() => setShowInherited(value => !value)}><ChevronRight className={showInherited ? 'grant-expanded' : undefined} size={16} />
-                从上层继承 · {inherited.length}</button></td></tr>}
-              {showInherited && inherited.map(source => <tr key={source.grant.id} className="muted">
-                <td>{principalCell(source.grant)}</td>
-                <td>{presets.find(([value]) => value === source.grant.rights)?.[1] ?? '自定义'}</td>
-                {rights.map(([bit, label]) => <td key={bit}>{source.grant.rights & bit ? <Lock size={13} aria-label={`${label}（继承）`} /> : ''}</td>)}
-                <td colSpan={2}>{path.some(entry => entry.id === source.sourceId) ? <button className="ghost grant-source" onClick={() => {
-                  const parent = path.find(entry => entry.id === source.sourceId)
-                  if (parent) pick(parent)
-                }}>{source.sourcePath}</button> : source.sourcePath}</td>
-              </tr>)}
-            </tbody>
-          </table>
-        </div>}
-        {transferSource && <fieldset className="stack">
+        {canGrant && individualGrants >= individualGrantWarningThreshold && (
+          <p className="grant-inline-notice grant-nudge">此处有 {individualGrants} 条个人授权。可将同一职责的人员加入用户组，再统一授权。</p>
+        )}
+        {message && <p className={'banner ' + (message === '授权已保存' ? 'success' : 'error')}
+          role={message === '授权已保存' ? 'status' : 'alert'}>{message}</p>}
+
+        {transferSource && <fieldset className="grant-handover-card">
           <legend>转移创建者</legend>
           <p>{selected.name} · 原创建者 {principalName(transferSource.grant)}</p>
           {administrator ? <GrantPrincipalPicker kind="user" options={users?.filter(user => !user.detail && user.id !== transferSource.grant.principalId)}
             selected={successor} onPick={setSuccessor} disabled={saving} />
-            : <label>接任者用户 ID<input type="number" min="1" onChange={event => setSuccessor(event.target.valueAsNumber)} /></label>}
+            : <label className="grant-manual-id">接任者用户 ID<input type="number" min="1" onChange={event => setSuccessor(event.target.valueAsNumber)} /></label>}
           <div className="form-actions">
-            <button onClick={() => setTransferSource(undefined)}>取消移交</button>
-            <button disabled={saving || !Number.isSafeInteger(successor) || !successor || successor < 1 || successor === transferSource.grant.principalId}
-              onClick={() => { setHandover({source: transferSource, userId: successor!}); setTransferSource(undefined) }}>加入移交草稿</button>
+            <button type="button" onClick={() => setTransferSource(undefined)}>取消移交</button>
+            <button type="button" className="primary" disabled={saving || !Number.isSafeInteger(successor) || !successor || successor < 1 || successor === transferSource.grant.principalId}
+              onClick={() => { setHandover({ source: transferSource, userId: successor! }); setTransferSource(undefined) }}>加入移交草稿</button>
           </div>
         </fieldset>}
-        {dirty && <div className="grant-save">
+
+        {effectiveView === 'ledger' && canGrant && (
+          <div className="grant-table" tabIndex={0} role="region" aria-label="权限矩阵">
+            <table>
+              <colgroup>
+                <col className="col-principal" />
+                <col className="col-preset" />
+                {rights.map(([bit]) => <col key={bit} className="col-bit" />)}
+                <col className="col-scope" />
+                <col className="col-action" />
+              </colgroup>
+              <thead>
+                <tr className="grant-tier-1">
+                  <th colSpan={2} style={{ textAlign: 'left', paddingLeft: 24 }}>主体与策略预设</th>
+                  <th colSpan={2} className="grant-grp-start">只读访问</th>
+                  <th colSpan={3} className="grant-grp-start">内容变更</th>
+                  <th colSpan={1} className="grant-grp-start">管理</th>
+                  <th colSpan={2} className="grant-grp-start" style={{ textAlign: 'right', paddingRight: 24 }}>作用域与操作</th>
+                </tr>
+                <tr className="grant-tier-2">
+                  <th scope="col">对象</th>
+                  <th scope="col">预设</th>
+                  {rights.map(([bit, label]) => (
+                    <th scope="col" key={bit} className={bit === 1 || bit === 4 || bit === 32 ? 'grant-grp-start' : undefined}>{label}</th>
+                  ))}
+                  <th scope="col" className="grant-grp-start">范围／来源</th>
+                  <th scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="grant-group"><td colSpan={10}>直接授权 · {direct.length}</td></tr>
+                {!direct.length && !added.length && (
+                  <tr>
+                    <td colSpan={10} style={{ padding: 0 }}>
+                      <div className="grant-empty-cell">
+                        <strong>{busy ? '正在加载…' : '此处没有直接授权'}</strong>
+                        {!busy && <>
+                          <span>当前目录访问权限由上层目录继承，可点击下方按钮补充专项权限策略。</span>
+                          <div style={{ marginTop: 4 }}>
+                            <button type="button" className="primary" onClick={() => setActiveView('add')}>
+                              <UserRoundPlus size={15} aria-hidden="true" />添加授权
+                            </button>
+                          </div>
+                        </>}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {direct.map(source => {
+                  const original = source.grant
+                  const changed = original.id in changes
+                  const grant = changed ? changes[original.id] : original
+                  const locked = original.creator
+                  const inheritedRights = inherited.filter(entry => entry.grant.principalKind === original.principalKind
+                    && entry.grant.principalId === original.principalId).reduce((acc, entry) => acc | entry.grant.rights, 0)
+                  return <tr key={original.id} className={changed ? 'draft-row' : undefined}>
+                    <td>{principalCell(original, !grant ? { label: '待移除', tone: 'danger' } : changed ? { label: '已改', tone: 'accent' } : undefined)}</td>
+                    <td>{grant && (locked ? <span className="grant-tag accent">完全控制</span> : <Preset value={grant.rights} disabled={saving} setValue={nextRights => change(original, { ...grant, rights: nextRights })} />)}</td>
+                    {rights.map(([bit, label]) => {
+                      const groupStart = bit === 1 || bit === 4 || bit === 32
+                      const bitLocked = locked || !!(inheritedRights & bit)
+                      const checked = !!(grant && (grant.rights & bit))
+                      return <td key={bit} className={groupStart ? 'grant-grp-start' : undefined} title={inheritedRights & bit ? '已从上级继承' : undefined}>
+                        {bitLocked ? (
+                          <span className="grant-bit-lock">
+                            <Lock size={12} aria-label={`${label}（锁定）`} />
+                          </span>
+                        ) : grant ? (
+                          <button type="button" role="checkbox" aria-checked={checked}
+                            aria-label={`${principalName(grant)} ${label}`}
+                            className="grant-bit-tile" disabled={saving}
+                            onClick={() => {
+                              const nextRights = toggleRight(grant.rights, bit, !checked)
+                              change(original, nextRights ? { ...grant, rights: nextRights } : null)
+                            }}>
+                            <Check size={14} strokeWidth={2.4} aria-hidden="true" />
+                          </button>
+                        ) : (
+                          <span className="grant-bit-empty" aria-hidden="true">—</span>
+                        )}
+                      </td>
+                    })}
+                    <td className="grant-grp-start">{grant && (selected.isFile ? '此文件' : <Scope value={grant.scope} disabled={saving || locked}
+                      onChange={nextScope => change(original, { ...grant, scope: nextScope })} />)}</td>
+                    <td>
+                      <div className="grant-row-actions">
+                        {grant && locked && parentCanGrant && (
+                          <button type="button" className="ghost" disabled={saving || !!handover}
+                            onClick={() => { setSuccessor(undefined); setTransferSource(source) }}>转移创建者</button>
+                        )}
+                        <button type="button" className={changed ? 'ghost' : 'ghost grant-delete-btn'}
+                          disabled={saving || transferSource?.grant.id === original.id || handover?.source.grant.id === original.id || (locked && !parentCanGrant)}
+                          onClick={() => change(original, changed ? original : null)}>{changed ? '撤销草稿' : '删除授权'}</button>
+                      </div>
+                    </td>
+                  </tr>
+                })}
+                {added.map((grant, index) => <tr className="draft-row" key={index}>
+                  <td>{principalCell(grant, { label: '草稿', tone: 'accent' })}</td>
+                  <td><span className="pill">{presets.find(([presetVal]) => presetVal === grant.rights)?.[1] ?? '自定义'} · 待保存</span></td>
+                  {rights.map(([bit, label]) => {
+                    const groupStart = bit === 1 || bit === 4 || bit === 32
+                    return <td key={bit} className={groupStart ? 'grant-grp-start' : undefined}>
+                      {grant.rights & bit ? (
+                        <span className="grant-bit-tile is-static" aria-checked="true" aria-label={label}>
+                          <Check size={14} strokeWidth={2.4} aria-hidden="true" />
+                        </span>
+                      ) : (
+                        <span className="grant-bit-empty" aria-hidden="true">·</span>
+                      )}
+                    </td>
+                  })}
+                  <td className="grant-grp-start">{selected.isFile ? '此文件' : grant.scope === 'subtree' ? '本层及以下' : '仅本层'}</td>
+                  <td>
+                    <div className="grant-row-actions">
+                      <button type="button" className="ghost" onClick={() => setAdded(entries => entries.filter((_, i) => i !== index))}>移除草稿</button>
+                    </div>
+                  </td>
+                </tr>)}
+                {!!inherited.length && <tr className="grant-group"><td colSpan={10}><button type="button" className="ghost" aria-expanded={showInherited}
+                  onClick={() => setShowInherited(prev => !prev)}><ChevronRight className={showInherited ? 'grant-expanded' : undefined} size={15} />
+                  从上层继承 · {inherited.length}</button></td></tr>}
+                {showInherited && inherited.map(source => <tr key={source.grant.id} className="muted">
+                  <td>{principalCell(source.grant)}</td>
+                  <td><span className="grant-tag">{presets.find(([presetVal]) => presetVal === source.grant.rights)?.[1] ?? '自定义'}</span></td>
+                  {rights.map(([bit, label]) => {
+                    const groupStart = bit === 1 || bit === 4 || bit === 32
+                    return <td key={bit} className={groupStart ? 'grant-grp-start' : undefined}>
+                      {source.grant.rights & bit ? (
+                        <span className="grant-bit-lock">
+                          <Lock size={12} aria-label={`${label}（继承）`} />
+                        </span>
+                      ) : (
+                        <span className="grant-bit-empty" aria-hidden="true">·</span>
+                      )}
+                    </td>
+                  })}
+                  <td colSpan={2} className="grant-grp-start" style={{ textAlign: 'right', paddingRight: 24 }}>
+                    {path.some(entry => entry.id === source.sourceId) ? <button type="button" className="ghost grant-source" onClick={() => {
+                      const parent = path.find(entry => entry.id === source.sourceId)
+                      if (parent) pick(parent)
+                    }}>{source.sourcePath}</button> : source.sourcePath}
+                  </td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {effectiveView === 'add' && canGrant && (
+          <form className="grant-add-grid" key={selected.id} onSubmit={event => {
+            event.preventDefault()
+            const form = new FormData(event.currentTarget)
+            const id = options ? principalId : Number(form.get('principal'))
+            if (!id || !Number.isSafeInteger(id) || id < 1) return
+            setAdded(previous => [...previous, {
+              principalKind,
+              principalId: id,
+              rights: value,
+              scope: selected.isFile ? 'subtree' : scope,
+            }])
+            setPrincipalId(undefined)
+            setMessage('')
+            setActiveView('ledger')
+          }}>
+            <div className="grant-composer-card">
+              <div className="grant-step-kicker">
+                <strong>1. 选定授权主体</strong>
+                <span>用户组 / 组织 / 个人</span>
+              </div>
+              <div className="grant-picker">
+                <div className="grant-principal-tabs" role="group" aria-label="授权对象类型">
+                  {principalKinds.map(kind => {
+                    const Icon = principalIcons[kind]
+                    return <button type="button" key={kind} aria-pressed={principalKind === kind} onClick={() => {
+                      if (principalKind === kind) return
+                      setPrincipalKind(kind)
+                      setPrincipalId(undefined)
+                    }}><Icon size={15} aria-hidden="true" />{principalLabels[kind]}</button>
+                  })}
+                </div>
+                {options ? <GrantPrincipalPicker key={principalKind} kind={principalKind} options={options}
+                  selected={principalId} onPick={setPrincipalId} disabled={saving} />
+                  : <label className="grant-manual-id">{principalLabels[principalKind]}编号<input key={principalKind} name="principal" type="number" min="1" required disabled={saving} /></label>}
+              </div>
+            </div>
+
+            <div className="grant-composer-card">
+              <div className="grant-step-kicker">
+                <strong>2. 策略预设与分组细项</strong>
+                <span>勾选细项时自动补全依赖权限</span>
+              </div>
+
+              <div className="grant-field-block">
+                <span>快捷预设</span>
+                <div className="grant-preset-strip">
+                  {presets.map(([presetVal, label]) => (
+                    <button key={presetVal} type="button" className="grant-preset-pill"
+                      aria-pressed={value === presetVal} disabled={saving}
+                      onClick={() => setValue(presetVal)}>{label}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grant-tier-groups" role="group" aria-label="权限细项">
+                {([
+                  ['只读访问', readRights],
+                  ['内容变更', writeRights],
+                  ['管理控制', adminRights],
+                ] as const).map(([title, groupRights]) => (
+                  <div className="grant-tier-card" key={title}>
+                    <div className="grant-tier-card-head">{title}</div>
+                    {groupRights.map(([bit, label]) => {
+                      const checked = !!(value & bit)
+                      return <label key={bit} className="grant-right-toggle" data-checked={checked ? 'true' : undefined}>
+                        <input type="checkbox" disabled={saving} checked={checked}
+                          onChange={event => setValue(toggleRight(value, bit, event.target.checked))} />
+                        <span>{label}</span>
+                      </label>
+                    })}
+                  </div>
+                ))}
+              </div>
+
+              {!selected.isFile && (
+                <label className="grant-field-block grant-scope-field">
+                  <span>生效范围</span>
+                  <Scope name="scope" value={scope} disabled={saving} onChange={setScope} />
+                </label>
+              )}
+
+              <div className="grant-composer-foot">
+                <button type="button" onClick={() => setActiveView('ledger')}>返回台账</button>
+                <button className="primary" disabled={!value || busy || saving || (!!options && !principalId)}>添加到草稿</button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {effectiveView === 'inspect' && (
+          <div className="grant-inspect-pane">
+            <PermissionInspection key={`${selected.id}-${revision}`} node={selected} administrator={administrator} />
+          </div>
+        )}
+      </div>
+
+      {dirty && <div className="grant-save">
+        <div className="grant-save-summary">
           {handover && <p>移交「{selected.name}」：{principalName(handover.source.grant)} → {principalName({ ...handover.source.grant, principalId: handover.userId })}
-            <button disabled={saving} onClick={() => setHandover(undefined)}>撤销移交</button></p>}
+            <button type="button" className="ghost" style={{ marginLeft: 8, minHeight: 26, padding: '0 8px' }} disabled={saving} onClick={() => setHandover(undefined)}>撤销移交</button></p>}
           {impact && <div aria-label="授权影响预览">
             <p>权限变化：{impact.changedUsers} 位用户，覆盖 {impact.coveredItems} 个项目。</p>
             {impact.warnings.map(warning => <p role="alert" key={warning}>{warning === 'self_grant_loss'
               ? '保存后您将失去此项目的授权权限。' : '此授权将向大型组织或用户组开放整个大型子树，请确认范围。'}</p>)}
           </div>}
-          <button type="button" className="ghost" disabled={saving} onClick={discard}>放弃更改</button>
-          <button type="button" className="primary" disabled={!impact || saving || !!transferSource} onClick={() => void save()}>保存全部授权</button>
-        </div>}
-        <details className="permission-inspection">
-          <summary>
-            <SearchCheck size={16} aria-hidden="true" />
-            <span>有效权限查询</span>
-            <ChevronRight className="grant-disclosure" size={16} aria-hidden="true" />
-          </summary>
-          <PermissionInspection key={`${selected.id}-${revision}`} node={selected} administrator={administrator} />
-        </details>
-        {message && <p className={'banner ' + (message === '授权已保存' ? 'success' : 'error')}
-          role={message === '授权已保存' ? 'status' : 'alert'}>{message}</p>}
-      </div>
+        </div>
+        <button type="button" className="ghost" disabled={saving} onClick={discard}>放弃更改</button>
+        <button type="button" className="primary" disabled={!impact || saving || !!transferSource} onClick={() => void save()}>保存全部授权</button>
+      </div>}
     </div>
   </section>
 }
@@ -556,17 +779,17 @@ export function PermissionInspection({ node, administrator }: { node: Node; admi
   }
 
   return <section className="permission-query" aria-label="有效权限查询">
-    <div className="form-actions"><button className="primary" disabled={busy} onClick={() => void inspect()}>查询我的有效权限</button></div>
+    <div className="form-actions"><button type="button" className="primary" disabled={busy} onClick={() => void inspect()}>查询我的有效权限</button></div>
     {administrator && <form onSubmit={event => {
       event.preventDefault()
       if (person) void inspect(person)
     }}>
       <GrantPrincipalPicker kind="user" options={users} selected={person} onPick={setPerson} disabled={busy} />
-      <button disabled={busy || !person}>查询用户有效权限</button>
+      <div><button disabled={busy || !person}>查询用户有效权限</button></div>
     </form>}
     {busy && <p className="muted" role="status">正在查询…</p>}
     {message && <p className="banner error" role="alert">{message}</p>}
-    {inspection && <div>
+    {inspection && <div className="grant-inspect-result">
       <div className="section-heading"><h3>{users?.find(user => user.id === inspection.userId)?.name ?? '用户 #' + inspection.userId}</h3>
         {inspection.administrator && <span className="pill">管理员</span>}</div>
       <div className="chip-list">
