@@ -92,9 +92,9 @@
   border-radius: 6px;
   background: transparent;
   color: var(--text);
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 20px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-normal);
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -206,16 +206,15 @@ dialog.action-dialog::backdrop {
 .inspector-header .icon-tile {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
 }
 
 .inspector-header h2 {
   flex: 1;
   min-width: 0;
   margin: 6px 0 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.45;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
   overflow-wrap: anywhere;
 }
 
@@ -235,8 +234,8 @@ dialog.action-dialog::backdrop {
   border-radius: 4px 4px 0 0;
   background: transparent;
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
   transition: color 140ms var(--ease-ui);
 }
 
@@ -278,7 +277,7 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
 
 .inspector-status {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 /* Overview tab: Archival summary strip + hairline-divided metadata rows */
@@ -309,16 +308,16 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
 
 .inspector-metric-label {
   color: var(--muted);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 400;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  font-weight: var(--weight-regular);
 }
 
 .inspector-metric-value {
   color: var(--text);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-normal);
   font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -334,7 +333,7 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .inspector-meta-row {
@@ -359,15 +358,15 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
 
 .inspector-meta dt {
   color: var(--muted);
-  font-weight: 400;
-  line-height: 20px;
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-normal);
 }
 
 .inspector-meta dd {
   min-width: 0;
   margin: 0;
   color: var(--text);
-  line-height: 20px;
+  line-height: var(--leading-normal);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -390,7 +389,7 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
   max-width: 100%;
   color: var(--accent);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .inspector-location-link:hover {
@@ -413,7 +412,7 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
 
 .versions-embedded .banner {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .versions-embedded .versions-list {
@@ -497,22 +496,22 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  line-height: 20px;
+  line-height: var(--leading-normal);
 }
 
 .versions-embedded .version-title strong {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
   color: var(--text);
 }
 
 .versions-embedded .versions-list > li[data-current='true'] .version-title strong {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .versions-embedded .version-meta {
-  font-size: 12px;
-  line-height: 16px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
   font-variant-numeric: tabular-nums;
 }
 
@@ -527,8 +526,8 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
   min-height: 32px;
   padding: 4px 8px;
   gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   color: var(--secondary);
 }
 
@@ -546,8 +545,8 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
 
 .versions-embedded .version-restore p {
   margin: 0 0 12px;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
   color: var(--secondary);
 }
 
@@ -558,7 +557,7 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
 .versions-embedded .version-restore-actions button {
   min-height: 32px;
   padding: 4px 12px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 /* My Permissions tab */
@@ -574,10 +573,10 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
 
 .permission-section h3 {
   margin: 0;
-  font-size: 12px;
-  line-height: 16px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
   color: var(--muted);
-  font-weight: 500;
+  font-weight: var(--weight-semibold);
 }
 
 .my-permission .permission-sources {
@@ -606,15 +605,15 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
 }
 
 .permission-source-title strong {
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 20px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-normal);
   color: var(--text);
 }
 
 .permission-source-path {
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .my-permission .permission-source-meta {
@@ -623,8 +622,8 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
   align-items: center;
   gap: 6px;
   margin-top: 0;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
   font-variant-numeric: tabular-nums;
 }
 
@@ -634,8 +633,8 @@ dialog.item-inspector[data-kind='folder'] .inspector-body {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--hover);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
 }
 
 /* Anchored dialog footer for My Permissions -> Manage Grants */
@@ -685,9 +684,9 @@ dialog.action-dialog[open] {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.4;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -709,7 +708,7 @@ dialog.action-dialog[open] {
 
 .action-dialog-form label {
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .action-dialog-form input {
@@ -733,7 +732,7 @@ dialog.action-dialog[open] {
   border-radius: var(--radius);
   background: var(--rail);
   border: 1px solid var(--line);
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--secondary);
   overflow-wrap: anywhere;
 }
@@ -741,8 +740,8 @@ dialog.action-dialog[open] {
 .action-dialog-warning {
   margin: 0 0 20px;
   color: var(--secondary);
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
 }
 
 .action-dialog-footer {
@@ -780,7 +779,7 @@ dialog.action-dialog[open] {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--hover);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .move-dialog-body .directory-picker .scroll-list {

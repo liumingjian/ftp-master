@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, FolderOpen, FolderPlus, MoreHorizontal, PanelLeft, Pencil, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Download, FolderOpen, FolderPlus, MoreHorizontal, PanelLeft, Pencil, ShieldCheck, Trash2, TriangleAlert, Upload, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
+import { AppIcon } from './icons/AppIcon'
 import { canEditText, TextEditorDialog } from './TextEditor'
 import { copiedItemId } from './BrowseTools'
 import { canPreviewOffice, editableOfficeVersion, FileViewer, OfficeEditAction, type ViewerUser } from './FileViewer'
@@ -152,7 +153,6 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
   const pending = locationPending || (query ? searching : loading)
   const retainDirectory = !query && locationPending && resolvedHash !== undefined && !loadFailed
   const failed = query ? searchFailed : loadFailed
-  const EmptyIcon = query ? Search : FolderOpen
   const scrollKey = JSON.stringify([hash, query])
 
   function canMoveNode(node: Node): boolean {
@@ -588,12 +588,16 @@ export function TreePanel({ administrator, active, hash, query, navigate, transf
               !failed && !query && canUpload ? (
                 <button type="button" className="table-empty" disabled={locationPending || fileUpload !== 'idle'}
                   onClick={() => chooseUploadFile(currentId)}>
-                  <span className="empty-icon"><Upload size={24} aria-hidden="true" /></span>
+                  <span className="empty-icon"><AppIcon name="empty-upload" size={60} /></span>
                   <strong>点击选择文件，或拖到这里上传</strong>
                 </button>
               ) : (
                 <div className="table-empty">
-                  <span className="empty-icon"><EmptyIcon size={24} aria-hidden="true" /></span>
+                  {failed ? (
+                    <span className="empty-icon error"><TriangleAlert size={24} aria-hidden="true" /></span>
+                  ) : (
+                    <span className="empty-icon"><AppIcon name={query ? 'empty-search' : 'empty-folder'} size={60} /></span>
+                  )}
                   {failed ? <>
                     <strong role="alert">{query ? '无法完成搜索' : '无法加载目录内容'}</strong>
                     <button onClick={() => refresh(value => value + 1)}>重试</button>

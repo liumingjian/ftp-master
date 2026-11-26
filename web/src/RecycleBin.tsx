@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { ArchiveRestore, FileX, RefreshCw, Trash2 } from 'lucide-react'
+import { ArchiveRestore, RefreshCw } from 'lucide-react'
 import { api } from './api/client'
 import type { operations } from './api/schema.gen'
 import { DirectoryPicker } from './DirectoryPicker'
+import { AppIcon } from './icons/AppIcon'
 import { PageHeading } from './PageHeading'
 
 type Entry = operations['listRecycleBin']['responses'][200]['content']['application/json'][number]
@@ -71,9 +72,9 @@ export function RecycleBin({ administrator, changed }: { administrator: boolean;
     <section className="panel" aria-labelledby="deleted-heading">
       <div className="section-heading"><h2 id="deleted-heading">已删除项目</h2>{!loading && <span className="pill">{entries.length} 项</span>}</div>
       {loading && <p className="panel-empty" role="status">正在加载回收站…</p>}
-      {!loading && !error && !entries.length && <div className="panel-empty"><Trash2 size={25} />回收站为空</div>}
+      {!loading && !error && !entries.length && <div className="panel-empty"><AppIcon name="empty-recycle" size={60} /><span>回收站为空</span></div>}
       <ul className="record-list recycle-list">{entries.map(entry => <li key={entry.id}>
-        <div className="identity-row"><FileX size={22} /><span>
+        <div className="identity-row"><AppIcon name="file-deleted" size={28} /><span>
           <strong>{entry.originalPath.split('/').at(-1)}</strong>
           <small>{entry.originalPath}</small>
         </span><time dateTime={entry.deletedAt}>{new Date(entry.deletedAt).toLocaleString('zh-CN')}</time></div>
